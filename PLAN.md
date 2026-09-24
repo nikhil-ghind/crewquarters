@@ -5,8 +5,8 @@
 - Version: 1.2 branded blueprint with UI/UX specification
 - Research and decision date: 2026-09-24
 - Target: a working demo on laptops and an NVIDIA GB10/DGX OS-class appliance
-- Team: five full-time developers
-- Recommended duration: six weeks, with a vertical-slice demo at the end of week 3
+- Team: Nikhil Hiro Ghind, Akshay Sunil Navani, Nikhil Sajan Khaneja, Srija Taduri, Vineet Kumar
+- Delivery: six sequential stages, each closed by a gate; the first stakeholder vertical-slice demo happens at the end of Stage 3
 
 ## 1. Executive decision record
 
@@ -1284,21 +1284,23 @@ Do not back up model weights by default; they are large and reproducible from pi
 
 ## 17. Five-person work division
 
-Each person owns a vertical area and its tests, documentation, generated contracts, and operational runbook. Shared contract changes require review from affected owners. No person waits for another service: mocks are generated from frozen OpenAPI/events during week 1.
+Each person owns a vertical area and its tests, documentation, generated contracts, and operational runbook. Shared contract changes require review from affected owners. No person waits for another service: mocks are generated from frozen OpenAPI/events during Stage 1.
 
 | Person | Primary ownership | Secondary duty |
 | --- | --- | --- |
-| 1 — Platform/API lead | Control API, PostgreSQL schema/migrations, job queue, scheduler, auth, contracts | Integration lead and release branch |
-| 2 — Runtime/model lead | Host daemon, Docker isolation, model catalog/install/load/leases, vLLM gateway, appliance package | GB10 performance/capacity validation |
-| 3 — Data/connectors lead | Knowledge pipeline, pgvector retrieval, secret store, Google OAuth/Gmail/Sheets, Twilio and cloud adapters | Security/privacy review |
-| 4 — Web product lead | React UI, generated client, SSE UX, configuration forms, chat/citations, accessibility | Demo UX and operator documentation |
-| 5 — SDK/agents/QA lead | Python SDK, CLI/manifest tooling, both agents, contract fixtures, E2E harness | Compose, demo scripts, acceptance report |
+| 1 — Nikhil Hiro Ghind · Platform/API lead | Control API, PostgreSQL schema/migrations, job queue, scheduler, auth, contracts | Integration lead and release branch |
+| 2 — Akshay Sunil Navani · Runtime/model lead | Host daemon, Docker isolation, model catalog/install/load/leases, vLLM gateway, appliance package | GB10 performance/capacity validation |
+| 3 — Nikhil Sajan Khaneja · Data/connectors lead | Knowledge pipeline, pgvector retrieval, secret store, Google OAuth/Gmail/Sheets, Twilio and cloud adapters | Security/privacy review |
+| 4 — Srija Taduri · Web product lead | React UI, generated client, SSE UX, configuration forms, chat/citations, accessibility | Demo UX and operator documentation |
+| 5 — Vineet Kumar · SDK/agents/QA lead | Python SDK, CLI/manifest tooling, both agents, contract fixtures, E2E harness | Compose, demo scripts, acceptance report |
 
-Load balancing rule: Person 5 owns Compose during laptop development; Person 2 owns the host `.deb` and DGX profile. Person 1 owns canonical OpenAPI/data migrations. Person 3 owns capability strings and provider adapters. Person 4 owns no backend business logic.
+Load balancing rule: Vineet Kumar (Person 5) owns Compose during laptop development; Akshay Sunil Navani (Person 2) owns the host `.deb` and DGX profile. Nikhil Hiro Ghind (Person 1) owns canonical OpenAPI/data migrations. Nikhil Sajan Khaneja (Person 3) owns capability strings and provider adapters. Srija Taduri (Person 4) owns no backend business logic.
 
-## 18. Six-week delivery sequence
+## 18. Six-stage delivery sequence
 
-### Week 1 — Contract freeze and walking skeleton
+Delivery is organized as six sequential stages rather than calendar weeks. A stage is complete only when its gate passes; the next stage may start preparatory work in parallel, but it does not close until the prior gate is green.
+
+### Stage 1 — Contract freeze and walking skeleton
 
 Shared deliverables:
 
@@ -1310,9 +1312,9 @@ Shared deliverables:
 - Compose starts UI placeholder, API health, PostgreSQL/pgvector, scheduler placeholder, brokers, and mock runtime.
 - A fake agent run moves `QUEUED → RUNNING → SUCCEEDED` and streams events to the UI.
 
-Gate W1: `make dev-up && make test-contract` passes on `amd64`; CI builds an `arm64` smoke image.
+Gate S1: `make dev-up && make test-contract` passes on `amd64`; CI builds an `arm64` smoke image.
 
-### Week 2 — Core platform and SDK
+### Stage 2 — Core platform and SDK
 
 - Owner bootstrap/login/session/CSRF.
 - Catalog/install/config/run/schedule APIs.
@@ -1322,9 +1324,9 @@ Gate W1: `make dev-up && make test-contract` passes on `amd64`; CI builds an `ar
 - UI catalog, installation, run detail, schedules, pending-input panel.
 - Secret store and provider connection skeleton.
 
-Gate W2: a scheduled sample agent asks for input, receives it in the UI, finishes, and survives a worker crash without duplicate run creation.
+Gate S2: a scheduled sample agent asks for input, receives it in the UI, finishes, and survives a worker crash without duplicate run creation.
 
-### Week 3 — Local model vertical slice
+### Stage 3 — Local model vertical slice
 
 - Model catalog/download states and progress.
 - vLLM local adapter, gateway streaming, model lease/load/unload/reaper.
@@ -1333,9 +1335,9 @@ Gate W2: a scheduled sample agent asks for input, receives it in the UI, finishe
 - Chat enable/disable and streaming UI without knowledge.
 - Cloud adapter skeleton with explicit permission/profile checks.
 
-Gate W3: a bundled sample agent and chat share one local model; after both release leases, the model unloads and memory release is observed. This is the first stakeholder demo.
+Gate S3: a bundled sample agent and chat share one local model; after both release leases, the model unloads and memory release is observed. This is the first stakeholder demo.
 
-### Week 4 — Knowledge and Google
+### Stage 4 — Knowledge and Google
 
 - Upload/extraction/chunking/embedding/index/query.
 - RAG chat with citations and injection fixtures.
@@ -1344,9 +1346,9 @@ Gate W3: a bundled sample agent and chat share one local model; after both relea
 - Connection, knowledge, and cited chat UI.
 - Gmail digest agent end-to-end with fixtures and a live test account.
 
-Gate W4: upload three documents and receive cited chat; schedule a live previous-day Gmail digest with no token exposed to the agent.
+Gate S4: upload three documents and receive cited chat; schedule a live previous-day Gmail digest with no token exposed to the agent.
 
-### Week 5 — Caller and appliance deployment
+### Stage 5 — Caller and appliance deployment
 
 - Twilio connection and signed callbacks through fixed tunnel.
 - Caller agent, approval/input, idempotency, Sheets results.
@@ -1355,9 +1357,9 @@ Gate W4: upload three documents and receive cited chat; schedule a live previous
 - On-device model benchmark/tuning and conservative model catalog values.
 - Reboot/upgrade/backup/restore paths.
 
-Gate W5: fresh GB10 installation completes both agents and local RAG chat; verified phones receive no duplicate calls during injected retries.
+Gate S5: fresh GB10 installation completes both agents and local RAG chat; verified phones receive no duplicate calls during injected retries.
 
-### Week 6 — Hardening and release rehearsal
+### Stage 6 — Hardening and release rehearsal
 
 - Security negatives, vulnerability/SBOM/secret scans, log redaction audit.
 - Failure injection: provider timeout, OAuth expiry, out-of-memory, full disk, worker/agent/model crash, duplicate webhook, reboot.
@@ -1366,13 +1368,13 @@ Gate W5: fresh GB10 installation completes both agents and local RAG chat; verif
 - Two complete fresh-install demo rehearsals by someone who did not build the feature.
 - Known-limitations and go/no-go report.
 
-Gate W6: every release checklist item has evidence; no Sev-1/Sev-2 defect; demo can be reset and repeated from written instructions.
+Gate S6: every release checklist item has evidence; no Sev-1/Sev-2 defect; demo can be reset and repeated from written instructions.
 
 ## 19. Ready-to-use implementation prompts
 
-These prompts are intended to be handed to the five developers or coding agents after the week-1 contract files are created. Replace bracketed repository paths only if the agreed layout changes. Each prompt requires small, reviewed commits and prohibits unilateral contract drift.
+These prompts are intended to be handed to the five developers or coding agents after the Stage 1 contract files are created. Replace bracketed repository paths only if the agreed layout changes. Each prompt requires small, reviewed commits and prohibits unilateral contract drift.
 
-### Person 1 prompt — Platform/API lead
+### Person 1 prompt (Nikhil Hiro Ghind) — Platform/API lead
 
 ```text
 You own the Crewquarters control plane in services/control_api and
@@ -1404,7 +1406,7 @@ Done means make test-platform passes, generated clients show no diff, API docs
 match behavior, and a fake runtime adapter drives a scheduled run through SSE.
 ```
 
-### Person 2 prompt — Runtime/model lead
+### Person 2 prompt (Akshay Sunil Navani) — Runtime/model lead
 
 ```text
 You own services/runtime_daemon, services/model_gateway, infra/systemd,
@@ -1440,7 +1442,7 @@ one model instance, no active lease is killed, idle unload frees memory, and an
 agent cannot reach Docker, DB, vLLM directly, host gateway, or public internet.
 ```
 
-### Person 3 prompt — Data/connectors lead
+### Person 3 prompt (Nikhil Sajan Khaneja) — Data/connectors lead
 
 ```text
 You own services/knowledge and services/capability_broker. Read README.md and
@@ -1477,7 +1479,7 @@ dependency smoke tests. Done means live Google/Twilio tests work while an agent
 cannot obtain any provider credential or use an undeclared operation.
 ```
 
-### Person 4 prompt — Web product lead
+### Person 4 prompt (Srija Taduri) — Web product lead
 
 ```text
 You own apps/web. Read README.md and PLAN.md. Use only the generated TypeScript
@@ -1514,7 +1516,7 @@ are no direct provider/model calls in the browser bundle. Capture the final
 1440, 1024, 768, and 390 px screenshots and attach a WCAG 2.2 AA evidence report.
 ```
 
-### Person 5 prompt — SDK/agents/QA lead
+### Person 5 prompt (Vineet Kumar) — SDK/agents/QA lead
 
 ```text
 You own packages/python_sdk, the crewctl developer tool, agents/caller,
@@ -1543,7 +1545,7 @@ Implement, in this order:
 Provide SDK unit/contract tests, both-architecture image builds, fake Google and
 Twilio end-to-end tests in CI, opt-in live tests, malicious email/document
 fixtures, DST cases, duplicate-call/write cases, and restart/cancel/timeouts.
-Coordinate DGX Compose/installer boundaries with Person 2; do not modify the host
+Coordinate DGX Compose/installer boundaries with Akshay Sunil Navani (Person 2); do not modify the host
 daemon. Done means both bundled agents pass fake E2E on every PR and live GB10
 rehearsal evidence satisfies section 23 of PLAN.md.
 ```
@@ -1551,7 +1553,7 @@ rehearsal evidence satisfies section 23 of PLAN.md.
 ## 20. Cross-team contract and integration rules
 
 1. Contract files merge before implementations that depend on them.
-2. Each service publishes a fake/stub on week 1 and consumer-driven contract tests thereafter.
+2. Each service publishes a fake/stub in Stage 1 and consumer-driven contract tests thereafter.
 3. Database tables have one owner; other services call an API unless the table is explicitly designated shared. The job queue, leases, and knowledge chunks are approved shared operational tables with reviewed access modules.
 4. No service adds an environment variable without documenting type, default, secret status, and deployment profiles.
 5. No manifest capability is a free-form URL or provider scope. Add named capabilities to the vocabulary with tests and UI copy.
