@@ -11,22 +11,20 @@ import time
 import uuid
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from crewquarters_fake.faults import FaultRegistry
+from crewquarters_fake.gateway import Gateway
+from crewquarters_fake.knowledge import KnowledgeIndex
+from crewquarters_fake.providers.gmail import GmailProvider
+from crewquarters_fake.providers.sheets import SheetsProvider
+from crewquarters_fake.providers.twilio import TwilioProvider
 from crewquarters_fake.settings import FakeSettings
 from crewquarters_fake.statemachine import check_transition
+from crewquarters_fake.timeutil import iso, utcnow
 
-
-def utcnow() -> datetime:
-    return datetime.now(UTC)
-
-
-def iso(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+__all__ = ["iso", "utcnow"]
 
 
 def new_id(prefix: str) -> str:
@@ -163,6 +161,16 @@ class Store:
         self.auto_answers: list[AutoAnswer] = []
         self.traffic: list[dict[str, Any]] = []
         self.faults.clear()
+        self.reset_providers()
+
+    def reset_providers(self) -> None:
+        self.connections = {"google": "connected", "twilio": "connected"}
+        self.auto_answers = []
+        self.gmail = GmailProvider()
+        self.sheets = SheetsProvider()
+        self.twilio = TwilioProvider()
+        self.knowledge = KnowledgeIndex()
+        self.gateway = Gateway(self.settings)
 
     # --- events -------------------------------------------------------------------------------
     def append_event(self, run: Run, event_type: str, payload: dict[str, Any]) -> Event:

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from crewquarters_fake import services
+from crewquarters_fake import scenario, services
 from crewquarters_fake.control import store_of
 from crewquarters_fake.errors import ApiError
 from crewquarters_fake.store import AutoAnswer
@@ -44,6 +46,11 @@ class AutoAnswerIn(BaseModel):
     delaySeconds: float = 0.0
 
 
+class ScenarioIn(BaseModel):
+    path: str
+    now: str | None = None
+
+
 class ConnectionIn(BaseModel):
     provider: Literal["google", "twilio"]
     status: Literal["connected", "expired", "missing"]
@@ -53,6 +60,18 @@ class ConnectionIn(BaseModel):
 async def reset(request: Request) -> dict[str, Any]:
     store_of(request).reset()
     return {"reset": True}
+
+
+@router.post("/scenarios/load")
+async def load_scenario(body: ScenarioIn, request: Request) -> dict[str, Any]:
+    store = store_of(request)
+    path = Path(body.path)
+    if not path.is_absolute() and store.settings.scenarios_dir is not None:
+        path = store.settings.scenarios_dir / path
+    if not (path / "scenario.yaml").is_file():
+        raise ApiError(404, "NOT_FOUND", f"no scenario.yaml in {path}")
+    now = datetime.fromisoformat(body.now) if body.now else None
+    return scenario.load(store, path, now=now)
 
 
 @router.post("/catalog")
@@ -113,4 +132,14 @@ async def state(kind: str, request: Request) -> Any:
         return [{"runId": run_id, **idempotency_view(r)} for (run_id, _), r in store.idempotency.items()]
     if kind == "traffic":
         return store.traffic
+    if kind == "calls":
+        return store.twilio.snapshot()
+    if kind == "sheets":
+        return store.sheets.snapshot()
+    if kind == "llm":
+        return store.gateway.log
+    if kind == "gmail":
+        return sorted(store.gmail.messages)
+    if kind == "connections":
+        return store.connections
     raise ApiError(404, "NOT_FOUND", f"unknown state kind {kind}")

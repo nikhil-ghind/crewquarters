@@ -2,9 +2,8 @@
 
 from fastapi import APIRouter
 
-from crewquarters_fake.broker import idempotency, input, lifecycle
+from crewquarters_fake.broker import google, idempotency, input, knowledge, lifecycle, llm, telephony
 
 router = APIRouter(prefix="/internal/v1/sdk")
-router.include_router(lifecycle.router)
-router.include_router(input.router)
-router.include_router(idempotency.router)
+for module in (lifecycle, input, idempotency, llm, knowledge, google, telephony):
+    router.include_router(module.router)
