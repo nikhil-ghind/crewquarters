@@ -62,7 +62,7 @@ The user statement “if the model is not in use it should be loaded” is treat
 - Maximum individual knowledge file 25 MiB and knowledge base 1 GiB by default.
 - Text extraction only; scanned PDFs are rejected with a useful error.
 - One primary generative vLLM server is the default. Concurrent small models are an experimental setting guarded by measured admission control.
-- A waiting input keeps its agent container alive for up to 24 hours. Host restart interrupts the attempt.
+- A waiting input keeps its agent container alive for up to 24 hours (`maxInputWaitSeconds`). Time spent in `WAITING_INPUT` does not count against the run's `activeTimeoutSeconds`. Host restart interrupts the attempt.
 - The marketplace accepts only bundled images or an administrator-imported image pinned by digest.
 - The public internet never sees the Docker API, database, runtime daemon, vLLM, or internal broker.
 
@@ -149,6 +149,7 @@ flowchart LR
     B --> P
     T --> P
     P --> API
+    P -. "callback paths only" .-> CB
     API --> DB
     API --> Q
     Q --> RD
@@ -165,6 +166,7 @@ flowchart LR
 Enforcement rules:
 
 - Reverse proxy routes only documented public endpoints. Internal routes reject edge-network traffic.
+- The proxy forwards exactly two callback groups to the capability broker: the Google OAuth callback (`/api/v1/connections/google/callback`) and the Twilio voice/gather/status paths (`/api/v1/callbacks/twilio/*`). Every other path goes to the control API or UI.
 - Runtime daemon listens on a Unix socket with a dedicated group, not TCP.
 - Only the daemon process can access Docker.
 - Agent networks can reach one capability-broker address. They cannot resolve or connect to PostgreSQL, vLLM, the control API, Docker, or the host gateway.
@@ -178,9 +180,9 @@ Enforcement rules:
 | Reverse proxy/UI | Container | `8080` dev; `443` HTTPS profile | none | non-root |
 | Control API | Container | none directly | none | non-root |
 | Scheduler/worker | Container | none | none | non-root |
-| Capability broker | Container | none | none | non-root; outbound allowlist |
+| Capability broker | Container | none directly; proxy forwards callback paths only | none | non-root; outbound allowlist; master key read-only |
 | Knowledge service | Container | none | documents directory read/write | non-root |
-| Model gateway | Container | none | none | non-root |
+| Model gateway | Container | none | none | non-root; outbound allowlist for OpenAI/Anthropic; master key read-only |
 | PostgreSQL/pgvector | Container | none | database directory | postgres user |
 | Runtime daemon | Host systemd service | Unix socket | models, run scratch, logs | dedicated service user; controlled Docker access |
 | vLLM | On-demand container | private network only | model cache read-only | NVIDIA GPU device only |
@@ -277,6 +279,18 @@ One database is used. Alembic owns migrations. The `vector` extension is enabled
 | `telephony_calls` | run_id, idempotency key, provider SID, destination hash/last4, state, transcript, timestamps; never log full number |
 | `audit_events` | actor, action, target, request_id, security metadata, created_at; append-only application policy |
 
+Table ownership (the owner designs the table and its access module; Nikhil Hiro Ghind reviews and merges every migration so Alembic has one linear history):
+
+| Owner | Tables |
+| --- | --- |
+| Nikhil Hiro Ghind (Person 1) | `users`, `sessions`, `settings`, `agent_catalog_entries`, `agent_versions`, `agent_installations`, `agent_runs`, `run_attempts`, `run_events`, `input_requests`, `schedules`, `jobs`, `audit_events` |
+| Akshay Sunil Navani (Person 2) | `model_catalog`, `model_installations`, `model_instances`, `model_leases` |
+| Nikhil Sajan Khaneja (Person 3) | `encrypted_secrets`, `oauth_connections`, `provider_profiles`, `telephony_calls`, `knowledge_bases`, `documents`, `document_chunks` |
+| Srija Taduri (Person 4) | none (UI only) |
+| Vineet Kumar (Person 5) | none; uses APIs and test fixtures |
+
+`chat_sessions` and `chat_messages` belong to Akshay Sunil Navani (Person 2) because chat holds model leases. Shared operational tables (`jobs`, `model_leases`, `document_chunks`) are accessed by other services only through their owner's reviewed access module.
+
 Agent-specific configuration/results live in typed JSON snapshots for v1; shared operational facts use normalized tables. Every API list is paginated. Deletes of installations/connections are soft until no active run depends on them; document bytes and secrets are securely deleted after the database transaction commits and a cleanup job succeeds.
 
 ### 6.2 Job queue rules
@@ -305,19 +319,30 @@ Queue correctness tests must kill a worker between claim and completion and prov
 stateDiagram-v2
     [*] --> QUEUED
     QUEUED --> PREPARING
+    QUEUED --> CANCELLED
     PREPARING --> RUNNING
+    PREPARING --> FAILED
+    PREPARING --> CANCELLING
+    RUNNING --> LOADING_MODEL
+    LOADING_MODEL --> RUNNING
+    LOADING_MODEL --> FAILED
+    LOADING_MODEL --> CANCELLING
     RUNNING --> WAITING_INPUT
     WAITING_INPUT --> RUNNING
+    WAITING_INPUT --> CANCELLING
     RUNNING --> SUCCEEDED
     RUNNING --> FAILED
-    PREPARING --> FAILED
-    QUEUED --> CANCELLED
     RUNNING --> CANCELLING
     CANCELLING --> CANCELLED
-    WAITING_INPUT --> CANCELLED
+    PREPARING --> INTERRUPTED
+    RUNNING --> INTERRUPTED
+    LOADING_MODEL --> INTERRUPTED
+    WAITING_INPUT --> INTERRUPTED
+    INTERRUPTED --> QUEUED: owner retry
+    FAILED --> QUEUED: owner retry
 ```
 
-The run record is durable; an attempt maps to a container. `WAITING_INPUT` means the SDK has registered an outstanding question and continues heartbeating while it waits. If its container exits or the platform restarts, the attempt becomes `INTERRUPTED`; the owner may retry the run. Input answers remain stored and keyed, so a retry can receive the existing answer when the agent asks the same stable key. Developers must guard side effects with `ctx.idempotency.once`.
+The run record is durable; an attempt maps to a container. `LOADING_MODEL` means the run holds a model lease and is waiting for that model to become ready; it returns to `RUNNING` when the model is ready. `WAITING_INPUT` means the SDK has registered an outstanding question and continues heartbeating while it waits. Every non-terminal state can be cancelled; cancellation goes through `CANCELLING` so the container is stopped before the run is marked `CANCELLED`. If the container exits unexpectedly or the platform restarts, the run becomes `INTERRUPTED`. `SUCCEEDED` and `CANCELLED` are final. From `INTERRUPTED` or a retryable `FAILED`, the owner may retry: the run returns to `QUEUED` and the next start creates a new `run_attempts` row with an incremented attempt number. Input answers remain stored and keyed, so a retry can receive the existing answer when the agent asks the same stable key. Developers must guard side effects with `ctx.idempotency.once`.
 
 ### 7.3 User-input contract
 
@@ -340,6 +365,13 @@ The run record is durable; an attempt maps to a container. `WAITING_INPUT` means
 }
 ```
 
+Runs have two independent time limits declared in the manifest `resources` block:
+
+- `activeTimeoutSeconds` — maximum time spent working (`PREPARING`, `LOADING_MODEL`, `RUNNING`). The clock pauses while the run is `WAITING_INPUT`.
+- `maxInputWaitSeconds` — maximum total time spent waiting for answers (default 86,400; platform cap 86,400). A single `ctx.input.ask` `timeoutSeconds` may not exceed the remaining wait budget.
+
+The runtime daemon enforces both; exceeding either fails the run with `ACTIVE_TIMEOUT` or `INPUT_TIMEOUT`.
+
 The broker verifies `userInput` permission and the run token, creates or returns the idempotent request, emits a run event, and allows the SDK to long-poll with heartbeat. UI answers validate against the saved JSON Schema. Secret answers are not included in v1; users configure secrets through Connections instead.
 
 ## 8. Model subsystem specification
@@ -351,6 +383,13 @@ The initial catalog contains two or three tested profiles rather than a free-for
 - `local.general.small`: fast, non-gated, instruct/tool-capable model used for tests and most agent tasks;
 - `local.general.quality`: larger quantized model validated on the target GB10;
 - `local.embedding.small`: CPU embedding model with fixed vector dimension.
+
+Profile resolution rule: a profile name has a **family** (`local.general`, `local.embedding`) and an optional **variant** (`.small`, `.quality`). A manifest may request either a family or an exact variant.
+
+- Requesting a family (for example `local.general`) permits any installed variant in that family. The installation binds to the family default (`local.general.small`) unless the owner selects another variant on the install or configuration screen.
+- Requesting an exact variant (for example `local.general.quality`) permits only that variant.
+- Agent configuration such as `modelProfile` must resolve to a variant permitted by the approved manifest profiles; the control API rejects anything else.
+- The capability token carries the resolved variant, so the gateway checks one exact name at request time.
 
 Do not finalize the exact model/version from memory. On the target device, select a current entry from NVIDIA's DGX Spark vLLM recipe catalog, pin the NGC image digest, Hugging Face revision, tokenizer revision, dtype/quantization, chat template, and launch flags, then record benchmark results. Prefer a non-gated model for the default demo to avoid an additional Hugging Face license/login failure path.
 
@@ -367,9 +406,23 @@ stateDiagram-v2
     LOADING --> LOAD_ERROR
     READY --> DRAINING
     DRAINING --> INSTALLED
+    DRAINING --> READY: new lease during drain
+    READY --> RUNTIME_ERROR: container crash or failed health check
+    RUNTIME_ERROR --> LOADING: retry
+    RUNTIME_ERROR --> INSTALLED: cleaned up
     DOWNLOAD_ERROR --> DOWNLOADING
+    DOWNLOAD_ERROR --> NOT_INSTALLED: clear partial download
     LOAD_ERROR --> LOADING
+    LOAD_ERROR --> INSTALLED: give up
+    INSTALLED --> DELETING: owner deletes files
+    DELETING --> NOT_INSTALLED
 ```
+
+State rules:
+
+- A new lease that arrives while a model is `DRAINING` for idle unload cancels the drain and returns it to `READY`. A manual **Unload** blocks new leases, so it never returns to `READY`.
+- If a `READY` model's container crashes or fails health checks, it moves to `RUNTIME_ERROR`. Active leases receive `MODEL_UNAVAILABLE`, their runs go to `FAILED` or back to `LOADING_MODEL` according to retry policy, and the reservation is released.
+- An owner can delete an installed model only when it is not resident and has no active leases. `DELETING` removes files and returns the model to `NOT_INSTALLED`; the catalog entry remains.
 
 Downloads use a staging directory, validate available disk first, pin revisions, compute/record checksums, and atomically rename only on success. A partial download is resumable or explicitly cleared. License acceptance is recorded before download when required.
 
@@ -450,11 +503,12 @@ Uploaded files and emails are untrusted content. Retrieval text is delimited and
 - Cookie is `HttpOnly`, `SameSite=Lax`, `Secure` under HTTPS, scoped to the platform origin.
 - State-changing routes require CSRF validation and origin checks.
 - Login and bootstrap are rate limited and audited.
-- Bind to `127.0.0.1` by default. LAN mode requires an explicit config change and HTTPS guidance.
+- Bind to `127.0.0.1` by default. LAN mode requires an explicit choice and always serves HTTPS.
+- Headless installation (no local display detected, or `--headless`) enables LAN mode at install time: it generates a device-local certificate authority and HTTPS certificate, binds the proxy to the LAN interface on `443`, and prints the URL, certificate fingerprint, and one-time setup code. The browser shows a certificate warning until the operator trusts the device CA; the fingerprint lets them verify it. Session cookies are always `Secure` in LAN mode.
 
 ### 10.2 Secret storage
 
-Generate a 256-bit device master key at install time with mode `0600`, owned by root/service group, outside the Compose volume and backups unless the operator intentionally exports it. Encrypt each secret with an authenticated cipher and a random nonce; include provider/owner identifiers as associated data. Store key version and ciphertext in PostgreSQL. Redact headers, query strings, phone numbers, OAuth codes, tokens, and prompts from logs.
+Generate a 256-bit device master key at install time with mode `0600`, owned by root/service group, outside the Compose volume and backups unless the operator intentionally exports it. Encrypt each secret with an authenticated cipher and a random nonce; include provider/owner identifiers as associated data. Store key version and ciphertext in PostgreSQL. The master key is mounted read-only into exactly two services: the capability broker (Google and Twilio secrets) and the model gateway (OpenAI and Anthropic keys). Each decrypts only its own provider secrets through the shared `secret_store` library, so decrypted credentials never travel between services. Redact headers, query strings, phone numbers, OAuth codes, tokens, and prompts from logs.
 
 Backups without the master key cannot restore connections; backups with it are sensitive. The UI offers “disconnect/delete” and a later “export recovery bundle” can be added outside demo scope.
 
@@ -835,12 +889,13 @@ The UI maps backend states to operator language without losing precision:
 | --- | --- | --- |
 | `QUEUED` | Waiting to start | Neutral badge; queue explanation if delayed |
 | `PREPARING` | Preparing agent | Indeterminate progress with current step |
-| Model lease loading | Loading local model | Model name, downloaded/ready distinction, elapsed time, expandable detail |
+| `LOADING_MODEL` | Loading local model | Model name, downloaded/ready distinction, elapsed time, expandable detail |
 | `RUNNING` | Running | Live step/progress and cancel action |
 | `WAITING_INPUT` | Needs your input | Amber attention card, Activity badge, optional browser notification |
 | `SUCCEEDED` | Completed | Result summary and output actions |
 | `FAILED` | Failed | Human-readable reason, retry eligibility, diagnostic code, Advanced logs |
 | `CANCELLED` | Cancelled | Neutral terminal state; whether external actions already occurred |
+| `INTERRUPTED` | Interrupted | Explains restart/container loss, whether external actions already occurred, and offers **Retry run** |
 
 Run detail anatomy:
 
@@ -1213,7 +1268,7 @@ Release artifacts:
 
 The `.deb` package hook must remain short and non-interactive. It may create users/directories, install units, and start the bootstrap stack; it must not ask for passwords/API keys, run OAuth, download a large model, or open a root-owned GUI. It installs `/usr/share/applications/crewquarters.desktop`, whose unprivileged launcher opens the local `/setup` UI described in section 13.4. Privileged setup actions pass through the restricted runtime daemon rather than executing browser-provided shell commands.
 
-The setup UI displays platform-image/model download or offline-import progress as durable jobs. Closing the browser does not cancel them. Reopening the launcher returns to the current step. A headless installation prints a trusted-LAN URL and one-time setup code so the same wizard can run from another computer.
+The setup UI displays platform-image/model download or offline-import progress as durable jobs. Closing the browser does not cancel them. Reopening the launcher returns to the current step. A headless installation enables HTTPS LAN mode (section 10.1) and prints the LAN URL, certificate fingerprint, and one-time setup code so the same wizard can run from another computer.
 
 Uninstall stops services and removes binaries/config, but preserves `/var/lib/crewquarters` unless the operator supplies an explicit purge flag. Upgrade backs up the database, applies reversible checks, pulls pinned images, migrates, and health-checks. The demo must document a rollback to the previous Compose/image version; database downgrade migrations are not assumed.
 
@@ -1221,8 +1276,10 @@ Uninstall stops services and removes binaries/config, but preserves `/var/lib/cr
 
 OAuth and Twilio are the only reasons to expose an inbound callback path. For a demo, provision one fixed HTTPS hostname through an approved tunnel and route only:
 
-- Google callback path;
-- Twilio voice/TwiML, gather, and status callback paths.
+- Google callback path (`/api/v1/connections/google/callback`);
+- Twilio voice/TwiML, gather, and status callback paths (`/api/v1/callbacks/twilio/*`).
+
+The proxy forwards these paths to the capability broker, which owns OAuth token exchange and Twilio callback handling. No other path reaches the broker from the edge.
 
 All normal UI use remains local or authenticated. The proxy applies body limits and rate limits. Twilio signatures are mandatory. OAuth callbacks still require state/session correlation. Stop the tunnel after the demonstration.
 
@@ -1383,9 +1440,9 @@ PLAN.md first. Treat packages/contracts/openapi.yaml, agent-manifest.schema.json
 and events/*.json as canonical. Do not give the API direct Docker access.
 
 Implement, in this order:
-1. PostgreSQL models and Alembic migrations for users/sessions, catalog and
-   installations, runs/attempts/events/inputs, schedules/jobs, models/leases,
-   knowledge metadata, provider profiles, and audit records.
+1. PostgreSQL models and Alembic migrations for the tables you own (section 6.1
+   ownership table), and review/merge every other owner's migration so Alembic
+   keeps one linear history.
 2. One-time bootstrap, Argon2id login, opaque hashed sessions, cookie/CSRF and
    origin enforcement, and audit logging.
 3. Catalog, install/configure, run/cancel/retry, pending-input, schedule, model
@@ -1418,15 +1475,16 @@ networks, or vLLM flags.
 Implement, in this order:
 1. Host capability probe and typed internal client/server contract.
 2. Hardened per-run containers: non-root, read-only root, tmpfs, caps dropped,
-   no-new-privileges, PID/CPU/memory/time limits, no Docker/host mounts, and a
+   no-new-privileges, PID/CPU/memory limits, active-time limit that pauses
+   during WAITING_INPUT plus a separate input-wait limit, no Docker/host mounts, and a
    broker-only network. Pull by immutable digest and report bounded logs/status.
 3. Pinned model download/install verification and the model state machine.
 4. PostgreSQL-backed model leases, capacity reservations, load dedupe, readiness,
    drain/idle unload, crash reconciliation, and verified memory release.
 5. vLLM OpenAI-compatible adapter through an NVIDIA-tested GB10 container; mock
    local adapter for laptops; normalized streaming and structured-output errors.
-6. Explicit OpenAI/Anthropic gateway adapters using broker-provided decrypted
-   credentials, with permission/profile/budget checks and no automatic fallback.
+6. Explicit OpenAI/Anthropic gateway adapters that decrypt provider keys
+   in-process through the shared secret_store library, with permission/profile/budget checks and no automatic fallback.
 7. Idempotent arm64 .deb installer, systemd socket/service, upgrade/uninstall
    preservation, GPU preflight, and DGX runbook.
 
@@ -1446,8 +1504,8 @@ agent cannot reach Docker, DB, vLLM directly, host gateway, or public internet.
 
 ```text
 You own services/knowledge and services/capability_broker. Read README.md and
-PLAN.md. The broker is the only place that handles Google refresh/access tokens,
-Twilio credentials, and provider keys. Agent containers receive capability
+PLAN.md. The broker is the only place that handles Google refresh/access tokens and
+Twilio credentials; the model gateway alone decrypts OpenAI/Anthropic keys. Agent containers receive capability
 tokens and narrow operations, never raw secrets or a generic outbound proxy.
 
 Implement, in this order:
@@ -1460,8 +1518,9 @@ Implement, in this order:
    token storage. Expose narrow Gmail list/get and Sheets read/append/update APIs.
 4. Twilio outbound-call broker, fixed TwiML generation, signature validation,
    status/speech callback dedupe, E.164 validation/redaction, and result polling.
-5. OpenAI/Anthropic credential retrieval for the model gateway without returning
-   plaintext to callers.
+5. The shared secret_store library (encrypt/decrypt, key versioning, AAD
+   binding) that the model gateway uses to decrypt OpenAI/Anthropic keys
+   in-process. No service returns plaintext secrets to another service.
 6. Document upload, safe extraction for txt/md/text-PDF/docx/csv, normalization,
    token chunking, pinned local CPU embeddings, pgvector insertion/search, source
    locators, deletion/re-index, and prompt-injection-safe context formatting.
@@ -1617,88 +1676,90 @@ Do not set a tokens-per-second acceptance number before measuring the pinned mod
 
 ## 23. Final deliverable checklist
 
+Each item is tagged **Must** or **Should**. A failed **Must** item blocks the demonstration (section 26). A failed **Should** item is recorded in the known-limitations report with an owner and does not block.
+
 ### 23.1 Repository and contracts
 
-- [ ] Monorepo layout matches or updates the documented boundaries through an ADR.
-- [ ] README and operator/developer/security runbooks are current.
-- [ ] OpenAPI, event schemas, manifest schema, generated clients, and examples are versioned.
-- [ ] Architecture decision records cover all fixed decisions in section 1.
-- [ ] License inventory and notices exist for bundled models/code.
+- [ ] **Must** — Monorepo layout matches or updates the documented boundaries through an ADR.
+- [ ] **Should** — README and operator/developer/security runbooks are current.
+- [ ] **Must** — OpenAPI, event schemas, manifest schema, generated clients, and examples are versioned.
+- [ ] **Should** — Architecture decision records cover all fixed decisions in section 1.
+- [ ] **Must** — License inventory and notices exist for bundled models/code.
 
 ### 23.2 Core product
 
-- [ ] Owner bootstrap/login/logout/session expiry/CSRF work.
-- [ ] Marketplace list/install/config/update permission reapproval/uninstall work.
-- [ ] Manual and scheduled runs, cancel/retry, events, results, and audit work.
-- [ ] Exact-10:00 test passes for at least three IANA timezones.
-- [ ] Agent web-input request and answer flow works and handles timeout/restart honestly.
-- [ ] One PostgreSQL database persists and restores all intended state.
+- [ ] **Must** — Owner bootstrap/login/logout/session expiry/CSRF work.
+- [ ] **Must** — Marketplace list/install/config/update permission reapproval/uninstall work.
+- [ ] **Must** — Manual and scheduled runs, cancel/retry, events, results, and audit work.
+- [ ] **Must** — Exact-10:00 test passes for at least three IANA timezones.
+- [ ] **Must** — Agent web-input request and answer flow works and handles timeout/restart honestly.
+- [ ] **Must** — One PostgreSQL database persists and restores all intended state.
 
 ### 23.3 Models and chat
 
-- [ ] At least one non-gated local model is pinned and validated on GB10/vLLM.
-- [ ] Download progress, checksum, disk-space failure, load progress, ready/error states work.
-- [ ] Concurrent lease requests start only one instance.
-- [ ] Admission controller rejects unsafe concurrent loads without destabilizing the device.
-- [ ] Chat is opt-in, RAG citations resolve, disable releases its lease.
-- [ ] Unused model unloads and observed memory returns within the expected envelope.
-- [ ] OpenAI and Anthropic work only with explicit profiles/permissions and are audited.
+- [ ] **Must** — At least one non-gated local model is pinned and validated on GB10/vLLM.
+- [ ] **Must** — Download progress, checksum, disk-space failure, load progress, ready/error states work.
+- [ ] **Must** — Concurrent lease requests start only one instance.
+- [ ] **Must** — Admission controller rejects unsafe concurrent loads without destabilizing the device.
+- [ ] **Must** — Chat is opt-in, RAG citations resolve, disable releases its lease.
+- [ ] **Must** — Unused model unloads and observed memory returns within the expected envelope.
+- [ ] **Must** — OpenAI and Anthropic work only with explicit profiles/permissions and are audited.
 
 ### 23.4 Knowledge and connections
 
-- [ ] Supported document formats index; unsupported scans fail clearly.
-- [ ] Retrieval is scoped to the selected knowledge base.
-- [ ] Prompt-injection fixtures cannot obtain or invoke capabilities.
-- [ ] Google OAuth state/refresh/reconnect/disconnect works; seven-day test expiry is documented.
-- [ ] OAuth/provider secrets are encrypted and absent from API reads/logs/agent environments.
-- [ ] Twilio webhook signatures are verified and duplicates are harmless.
+- [ ] **Must** — Supported document formats index; unsupported scans fail clearly.
+- [ ] **Must** — Retrieval is scoped to the selected knowledge base.
+- [ ] **Must** — Prompt-injection fixtures cannot obtain or invoke capabilities.
+- [ ] **Must** — Google OAuth state/refresh/reconnect/disconnect works; seven-day test expiry is documented.
+- [ ] **Must** — OAuth/provider secrets are encrypted and absent from API reads/logs/agent environments.
+- [ ] **Must** — Twilio webhook signatures are verified and duplicates are harmless.
 
 ### 23.5 Demo agents
 
-- [ ] Gmail digest selects exactly the previous local calendar day and handles pagination/MIME.
-- [ ] Digest groups items with reasons/actions and traceable message references.
-- [ ] Caller reads Sheets, enforces consent/E.164/cap, and asks for operator approval.
-- [ ] Caller completes fixed-script speech gather on verified test numbers.
-- [ ] Results write to the configured tab and retry without duplicate calls.
-- [ ] Both agent images run on `linux/amd64` and `linux/arm64`.
+- [ ] **Must** — Gmail digest selects exactly the previous local calendar day and handles pagination/MIME.
+- [ ] **Must** — Digest groups items with reasons/actions and traceable message references.
+- [ ] **Must** — Caller reads Sheets, enforces consent/E.164/cap, and asks for operator approval.
+- [ ] **Must** — Caller completes fixed-script speech gather on verified test numbers.
+- [ ] **Must** — Results write to the configured tab and retry without duplicate calls.
+- [ ] **Must** — Both agent images run on `linux/amd64` and `linux/arm64`.
 
 ### 23.6 Deployment and security
 
-- [ ] Laptop Compose profile passes full fake E2E.
-- [ ] Fresh GB10 installer and uninstall-with-data-preservation are rehearsed.
-- [ ] Runtime daemon is Unix-socket only; internal services are not externally published.
-- [ ] Agent cannot access Docker, DB, vLLM directly, host paths/gateway, or general internet.
-- [ ] Core/agent images are non-root, pinned by digest, scanned, and have SBOMs.
-- [ ] Backup/restore and reboot tests pass.
-- [ ] Fixed callback tunnel exposes only callback routes and can be disabled after demo.
-- [ ] Diagnostics bundle is secret-redacted.
+- [ ] **Must** — Laptop Compose profile passes full fake E2E.
+- [ ] **Must** — Fresh GB10 installer and uninstall-with-data-preservation are rehearsed.
+- [ ] **Must** — Runtime daemon is Unix-socket only; internal services are not externally published.
+- [ ] **Must** — Agent cannot access Docker, DB, vLLM directly, host paths/gateway, or general internet.
+- [ ] **Must** — Core/agent images are non-root, pinned by digest, scanned, and have SBOMs.
+- [ ] **Must** — Backup/restore and reboot tests pass.
+- [ ] **Must** — Fixed callback tunnel exposes only callback routes and can be disabled after demo.
+- [ ] **Must** — Diagnostics bundle is secret-redacted.
 
 ### 23.7 UI and operator experience
 
-- [ ] The `.deb` desktop launcher opens a resumable first-run setup wizard.
-- [ ] A first-time operator completes setup without shell access after package installation.
-- [ ] Dashboard prioritizes blocking attention, active work, resources, recent results, and schedules.
-- [ ] Marketplace installation includes compatibility, permission, configuration, schedule, and review steps.
-- [ ] Model pages separately display disk installation and memory residency.
-- [ ] Model download/cold-start progress survives navigation and refresh.
-- [ ] Pending input appears on Overview, Activity, and run detail and cannot be double-answered.
-- [ ] Caller approval previews masked recipients, consent state, script, and exact call count.
-- [ ] Gmail and caller results use the specified safe structured renderers.
-- [ ] Knowledge ingestion reports per-file status and chat citations open an authorized source drawer.
-- [ ] Local/cloud treatment is consistent before, during, and after every model request.
-- [ ] Every route has initial-loading, empty, ready, degraded, and error states.
-- [ ] Keyboard-only and screen-reader checks pass for setup, install, run, approval, chat, and reconnect.
-- [ ] Responsive reviews pass at 1440, 1024, 768, and 390 CSS pixels.
-- [ ] No raw agent HTML, provider secret, OAuth token, or unsanitized log content renders.
+- [ ] **Must** — The `.deb` desktop launcher opens a resumable first-run setup wizard.
+- [ ] **Must** — A first-time operator completes setup without shell access after package installation.
+- [ ] **Should** — Dashboard prioritizes blocking attention, active work, resources, recent results, and schedules.
+- [ ] **Must** — Marketplace installation includes compatibility, permission, configuration, schedule, and review steps.
+- [ ] **Must** — Model pages separately display disk installation and memory residency.
+- [ ] **Must** — Model download/cold-start progress survives navigation and refresh.
+- [ ] **Must** — Pending input appears on Overview, Activity, and run detail and cannot be double-answered.
+- [ ] **Must** — Caller approval previews masked recipients, consent state, script, and exact call count.
+- [ ] **Must** — Gmail and caller results use the specified safe structured renderers.
+- [ ] **Must** — Knowledge ingestion reports per-file status and chat citations open an authorized source drawer.
+- [ ] **Must** — Local/cloud treatment is consistent before, during, and after every model request.
+- [ ] **Should** — Every route has initial-loading, empty, ready, degraded, and error states.
+- [ ] **Should** — Keyboard-only and screen-reader checks pass for setup, install, run, approval, chat, and reconnect.
+- [ ] **Should** — Responsive reviews pass at 1440, 1024, 768, and 390 CSS pixels.
+- [ ] **Must** — No raw agent HTML, provider secret, OAuth token, or unsanitized log content renders.
 
 ### 23.8 Evidence package
 
-- [ ] Test report with commit/image/model digests.
-- [ ] GB10 hardware/software inventory and benchmark report.
-- [ ] Screenshots or recording of the complete demo flow.
-- [ ] Failure-injection results and known limitations.
-- [ ] Security checklist and unresolved-risk signoff.
-- [ ] Step-by-step reset and rehearsal instructions used successfully by a non-author.
+- [ ] **Must** — Test report with commit/image/model digests.
+- [ ] **Must** — GB10 hardware/software inventory and benchmark report.
+- [ ] **Should** — Screenshots or recording of the complete demo flow.
+- [ ] **Must** — Failure-injection results and known limitations.
+- [ ] **Must** — Security checklist and unresolved-risk signoff.
+- [ ] **Must** — Step-by-step reset and rehearsal instructions used successfully by a non-author.
 
 ## 24. End-to-end demonstration script
 
@@ -1742,7 +1803,7 @@ Use a reset script to remove demo run/chat/call rows and reseed fixture sheets w
 
 Go for the demonstration only when:
 
-- all final checklist items marked must-have are evidenced;
+- every **Must** item in section 23 is evidenced, and every failed **Should** item is listed in the known-limitations report;
 - two clean GB10 rehearsals pass from the written runbook;
 - all live calls target verified consenting team numbers;
 - no Sev-1/Sev-2 defect is open;

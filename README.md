@@ -75,9 +75,9 @@ Only the reverse proxy is exposed to the browser. The runtime daemon is a host s
 | Control API | Local login, catalog, installations, runs, schedules, policies, public API | Direct Docker access or model processes |
 | Scheduler/worker | PostgreSQL-backed jobs, retries, leases, cron evaluation, run dispatch | UI, OAuth, inference implementation |
 | Runtime daemon | Pull/start/stop/inspect agent and vLLM containers; enforce resource profiles | User auth, business records, raw provider credentials |
-| Model gateway | Stable LLM API, model leases, local/cloud routing, budgets, streaming | Agent lifecycle or direct web access |
+| Model gateway | Stable LLM API, model leases, local/cloud routing, budgets, streaming; decrypts OpenAI/Anthropic keys itself | Agent lifecycle or direct web access |
 | Knowledge service | Parse, chunk, embed, index, retrieve, and cite local documents | General file storage UI or model installation |
-| Capability/connector broker | Validate per-run permissions; Google, Twilio, and cloud-secret access | Scheduling or arbitrary internet proxying |
+| Capability/connector broker | Validate per-run permissions; Google and Twilio credentials and calls | Scheduling, cloud LLM keys, or arbitrary internet proxying |
 | Python SDK | Typed developer interface for LLMs, knowledge, inputs, events, and connectors | Storing long-lived secrets or managing Docker |
 | PostgreSQL | Single transactional system of record and vector store | Large model weights and uploaded file bytes |
 
@@ -112,13 +112,14 @@ Installing the `arm64` `.deb` creates a desktop launcher and starts the bootstra
 
 ```mermaid
 flowchart TB
-    A["System checks"] --> B["Owner account"]
-    B --> C["Storage and network"]
-    C --> D["Platform services"]
-    D --> E["Local model"]
-    E --> F["Connections"]
-    F --> G["Demo agents"]
-    G --> H["Validation and dashboard"]
+    A["Welcome"] --> B["System preflight"]
+    B --> C["Owner account"]
+    C --> D["Storage and network"]
+    D --> E["Platform services"]
+    E --> F["Local model"]
+    F --> G["Connections"]
+    G --> H["Demo agents"]
+    H --> I["Validation and finish"]
 ```
 
 Long operations such as image pulls, model downloads, model cold starts, document indexing, and agent runs create durable jobs. The UI shows real stages/progress, survives refresh, and reconnects without starting the operation again.
@@ -173,7 +174,7 @@ An installed agent is a versioned manifest plus a digest-pinned OCI image. A run
 
 - a new non-root container;
 - a read-only root filesystem and temporary `/tmp`;
-- CPU, memory, PID, and wall-time limits;
+- CPU, memory, and PID limits, plus two time limits: an active-time limit that pauses while the agent waits for an answer, and a separate input-wait limit;
 - all Linux capabilities dropped and `no-new-privileges` enabled;
 - no Docker socket and no host mounts except an optional per-run scratch directory;
 - no general outbound network access for the demo use cases;
@@ -207,7 +208,8 @@ spec:
   resources:
     cpu: 2
     memoryMb: 2048
-    timeoutSeconds: 1800
+    activeTimeoutSeconds: 1800
+    maxInputWaitSeconds: 86400
   configurationSchema:
     type: object
     required: [timezone]
@@ -267,7 +269,7 @@ Initial SDK modules:
 - `ctx.telephony.call(...)` — fixed-script Twilio call request for the demo.
 - `ctx.idempotency.once(...)` — platform idempotency key helper for external actions.
 
-For v1, a waiting agent container remains alive with a low CPU limit while `ctx.input.ask` waits. Its request and answer are durable, but a platform restart marks the attempt interrupted and lets the operator retry. Durable suspend/resume of arbitrary Python is deferred to a workflow-engine phase.
+For v1, a waiting agent container remains alive with a low CPU limit while `ctx.input.ask` waits. The active-time clock (`activeTimeoutSeconds`) pauses during the wait; the wait itself is bounded by `maxInputWaitSeconds` (default 24 hours). Its request and answer are durable, but a platform restart marks the attempt interrupted and lets the operator retry. Durable suspend/resume of arbitrary Python is deferred to a workflow-engine phase.
 
 ## Scheduling semantics
 
@@ -287,7 +289,7 @@ Chat is disabled by default. Enabling it creates a model lease for the selected 
 
 ## Authentication and secrets
 
-Local platform login uses a first-run owner account, Argon2id password hashing, HTTP-only secure session cookies, CSRF protection, and rate limiting. It binds to localhost by default; LAN exposure is an explicit deployment option and should use HTTPS.
+Local platform login uses a first-run owner account, Argon2id password hashing, HTTP-only secure session cookies, CSRF protection, and rate limiting. It binds to localhost by default. LAN exposure is an explicit option that always uses HTTPS; a headless install turns it on automatically with a device-generated certificate and a one-time setup code.
 
 Google uses the OAuth 2.0 web-server flow with offline access, exact redirect URI validation, `state`, and PKCE where supported. The demo requests only:
 
@@ -296,7 +298,7 @@ Google uses the OAuth 2.0 web-server flow with offline access, exact redirect UR
 
 Google classifies `gmail.readonly` as restricted and the broad Sheets scope as sensitive. A test-mode OAuth app is acceptable for a controlled demo, but its test-user authorization and refresh token expire after seven days. A real product must complete the applicable verification/security work or use an internal Workspace app.
 
-OAuth refresh tokens and provider API keys are encrypted in PostgreSQL using a master key stored in a root-readable file outside the database and source tree. Agents receive neither refresh tokens nor provider keys.
+OAuth refresh tokens and provider API keys are encrypted in PostgreSQL using a master key stored in a root-readable file outside the database and source tree. Only two services can read that key: the capability broker decrypts Google and Twilio secrets, and the model gateway decrypts OpenAI and Anthropic keys, so decrypted credentials never pass between services. Agents receive neither refresh tokens nor provider keys.
 
 ## Demo agents
 
