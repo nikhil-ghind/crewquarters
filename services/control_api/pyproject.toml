@@ -1,0 +1,27 @@
+[project]
+name = "crewquarters-control-api"
+version = "0.1.0"
+description = "Crewquarters control API"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "crewquarters-shared",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "argon2-cffi>=23.1",
+    "alembic>=1.14",
+    "python-multipart>=0.0.17",
+]
+
+[project.scripts]
+cq-api = "crewquarters_api.main:run"
+cq-admin = "crewquarters_api.admin:main"
+
+[tool.uv.sources]
+crewquarters-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/crewquarters_api"]

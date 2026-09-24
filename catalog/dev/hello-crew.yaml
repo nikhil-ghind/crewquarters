@@ -1,0 +1,43 @@
+# Development-only agent used with the fake runtime (CQ_RUNTIME_ADAPTER=fake).
+# The image digest is a placeholder: the fake runtime never pulls it.
+apiVersion: crewquarters/v1alpha1
+kind: Agent
+metadata:
+  id: hello-crew
+  name: Hello Crew
+  version: 0.1.0
+  summary: Walking-skeleton agent that reports progress, can ask one question, and finishes.
+  publisher: Crewquarters (dev)
+spec:
+  image: ghcr.io/crewquarters/hello-crew@sha256:0000000000000000000000000000000000000000000000000000000000000001
+  entrypoint: ["python", "-m", "agent"]
+  architectures: ["linux/amd64", "linux/arm64"]
+  triggers: ["manual", "schedule"]
+  permissions:
+    llmProfiles: ["local.general"]
+    knowledge: []
+    connectors: {}
+    cloudProviders: []
+    userInput: true
+  resources:
+    cpu: 0.5
+    memoryMb: 256
+    activeTimeoutSeconds: 600
+    maxInputWaitSeconds: 3600
+  configurationSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      fakeScenario:
+        type: string
+        enum: [succeed, ask, fail, hang, crash, slow, model]
+        default: succeed
+        description: Fake-runtime behavior (development only).
+      fakeStepSeconds:
+        type: number
+        minimum: 0
+        maximum: 10
+        default: 0.2
+      modelProfile:
+        type: string
+        default: local.general.small

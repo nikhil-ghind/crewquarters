@@ -278,12 +278,14 @@ One database is used. Alembic owns migrations. The `vector` extension is enabled
 | `provider_profiles` | owner_id, provider, display name, encrypted_secret_id, allowed models, budgets, enabled |
 | `telephony_calls` | run_id, idempotency key, provider SID, destination hash/last4, state, transcript, timestamps; never log full number |
 | `audit_events` | actor, action, target, request_id, security metadata, created_at; append-only application policy |
+| `idempotency_records` | user_id, Idempotency-Key, method/path, request hash, stored response; unique user+key; replays mutating HTTP requests |
+| `idempotency_actions` | run_id, action key, state (`claimed`/`completed`), attempt, result; unique run+key; backs `ctx.idempotency` |
 
 Table ownership (the owner designs the table and its access module; Nikhil Hiro Ghind reviews and merges every migration so Alembic has one linear history):
 
 | Owner | Tables |
 | --- | --- |
-| Nikhil Hiro Ghind (Person 1) | `users`, `sessions`, `settings`, `agent_catalog_entries`, `agent_versions`, `agent_installations`, `agent_runs`, `run_attempts`, `run_events`, `input_requests`, `schedules`, `jobs`, `audit_events` |
+| Nikhil Hiro Ghind (Person 1) | `users`, `sessions`, `settings`, `agent_catalog_entries`, `agent_versions`, `agent_installations`, `agent_runs`, `run_attempts`, `run_events`, `input_requests`, `idempotency_actions`, `schedules`, `jobs`, `idempotency_records`, `audit_events` |
 | Akshay Sunil Navani (Person 2) | `model_catalog`, `model_installations`, `model_instances`, `model_leases` |
 | Nikhil Sajan Khaneja (Person 3) | `encrypted_secrets`, `oauth_connections`, `provider_profiles`, `telephony_calls`, `knowledge_bases`, `documents`, `document_chunks` |
 | Srija Taduri (Person 4) | none (UI only) |

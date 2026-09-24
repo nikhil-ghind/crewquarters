@@ -1,0 +1,3933 @@
+# GENERATED from services/control_api by `make contracts`. Do not edit by hand.
+# Canonical HTTP contract for the Crewquarters control API (packages/contracts).
+openapi: 3.1.0
+info:
+  title: Crewquarters Control API
+  description: 'Control plane for Crewquarters. JSON is camelCase. Errors use `{error: {code, message,
+    requestId, details}}`. State-changing requests need the session cookie, an allowed Origin, and the
+    `X-CSRF-Token` header. Mutating requests accept an `Idempotency-Key` header.'
+  version: 0.1.0
+paths:
+  /api/v1/bootstrap:
+    post:
+      tags:
+      - auth
+      summary: Create the device owner with the one-time bootstrap token
+      operationId: bootstrap_api_v1_bootstrap_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BootstrapIn'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionOut'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions:
+    post:
+      tags:
+      - auth
+      summary: Sign in
+      operationId: login_api_v1_sessions_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginIn'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionOut'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/current:
+    delete:
+      tags:
+      - auth
+      summary: Sign out
+      operationId: logout_api_v1_sessions_current_delete
+      responses:
+        '204':
+          description: Successful Response
+  /api/v1/me:
+    get:
+      tags:
+      - auth
+      summary: Current user and CSRF token
+      operationId: me_api_v1_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionOut'
+  /api/v1/catalog/agents:
+    get:
+      tags:
+      - agents
+      summary: List catalog agents (ordered by agent id)
+      operationId: list_catalog_api_v1_catalog_agents_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_CatalogAgentOut_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/catalog/agents/{agent_id}:
+    get:
+      tags:
+      - agents
+      summary: Get a catalog agent
+      operationId: get_catalog_agent_api_v1_catalog_agents__agent_id__get
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogAgentOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/catalog/agents/{agent_id}/versions/{version}:
+    get:
+      tags:
+      - agents
+      summary: Get one immutable agent version
+      operationId: get_catalog_version_api_v1_catalog_agents__agent_id__versions__version__get
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentVersionOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/catalog/agents/import:
+    post:
+      tags:
+      - agents
+      summary: Import a locally built agent (crewctl publish --target local)
+      operationId: import_agent_api_v1_catalog_agents_import_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogImportIn'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogAgentOut'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/agent-installations:
+    get:
+      tags:
+      - agents
+      summary: List installed agents
+      operationId: list_installations_api_v1_agent_installations_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_InstallationOut_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - agents
+      summary: Install an agent, approving its exact permissions
+      operationId: create_installation_api_v1_agent_installations_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstallationCreateIn'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstallationOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/agent-installations/{installation_id}:
+    get:
+      tags:
+      - agents
+      summary: Get an installed agent with readiness
+      operationId: get_installation_api_v1_agent_installations__installation_id__get
+      parameters:
+      - name: installation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Installation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstallationOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+    patch:
+      tags:
+      - agents
+      summary: Update configuration, enablement, version, or permission approval
+      operationId: update_installation_api_v1_agent_installations__installation_id__patch
+      parameters:
+      - name: installation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Installation Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstallationPatchIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstallationOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+    delete:
+      tags:
+      - agents
+      summary: Uninstall an agent (soft delete; blocked while runs are active)
+      operationId: delete_installation_api_v1_agent_installations__installation_id__delete
+      parameters:
+      - name: installation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Installation Id
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/runs:
+    post:
+      tags:
+      - runs
+      summary: Start a manual run
+      operationId: create_run_api_v1_runs_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunCreateIn'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+    get:
+      tags:
+      - runs
+      summary: List runs, newest first
+      operationId: list_runs_api_v1_runs_get
+      parameters:
+      - name: installationId
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Installationid
+      - name: state
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              enum:
+              - QUEUED
+              - PREPARING
+              - LOADING_MODEL
+              - RUNNING
+              - WAITING_INPUT
+              - CANCELLING
+              - SUCCEEDED
+              - FAILED
+              - CANCELLED
+              - INTERRUPTED
+              type: string
+          - type: 'null'
+          title: State
+      - name: trigger
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            pattern: ^(manual|schedule)$
+          - type: 'null'
+          title: Trigger
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_RunOut_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runs/{run_id}:
+    get:
+      tags:
+      - runs
+      summary: Get a run
+      operationId: get_run_api_v1_runs__run_id__get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/runs/{run_id}/cancel:
+    post:
+      tags:
+      - runs
+      summary: Cancel a run
+      operationId: cancel_run_api_v1_runs__run_id__cancel_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/runs/{run_id}/retry:
+    post:
+      tags:
+      - runs
+      summary: Retry an interrupted or retryable failed run as a new attempt
+      operationId: retry_run_api_v1_runs__run_id__retry_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/runs/{run_id}/events/history:
+    get:
+      tags:
+      - runs
+      summary: Run events as JSON (polling fallback for SSE)
+      operationId: run_events_history_api_v1_runs__run_id__events_history_get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Return events with sequence greater than this.
+          default: 0
+          title: After
+        description: Return events with sequence greater than this.
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 200
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RunEventOut'
+                title: Response Run Events History Api V1 Runs  Run Id  Events History Get
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/runs/{run_id}/events:
+    get:
+      tags:
+      - runs
+      summary: Stream run events (SSE)
+      operationId: stream_run_events_api_v1_runs__run_id__events_get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      - name: after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+          description: Resume after this sequence (alternative to Last-Event-ID).
+          title: After
+        description: Resume after this sequence (alternative to Last-Event-ID).
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last-Event-Id
+      responses:
+        '200':
+          description: Server-sent events. Each event has id=sequence, event=<type>, data=RunEvent JSON.
+            The stream ends with an 'end' event when the run reaches a terminal state. Reconnect with
+            Last-Event-ID to resume without duplicates.
+          content:
+            application/json:
+              schema: {}
+            text/event-stream:
+              schema:
+                type: string
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/input-requests:
+    get:
+      tags:
+      - runs
+      - inputs
+      summary: List Crew Requests (pending by default)
+      operationId: list_input_requests_api_v1_input_requests_get
+      parameters:
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(pending|answered|cancelled|expired|all)$
+          default: pending
+          title: State
+      - name: runId
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Runid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_InputRequestOut_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runs/{run_id}/acknowledge:
+    post:
+      tags:
+      - runs
+      summary: Acknowledge a failed or interrupted run so it leaves the attention list
+      operationId: acknowledge_run_api_v1_runs__run_id__acknowledge_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/attention:
+    get:
+      tags:
+      - runs
+      - inputs
+      summary: 'Items that need the owner: questions, unacknowledged failures, blocked schedules, and
+        models needing action'
+      operationId: attention_api_v1_attention_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttentionOut'
+  /api/v1/input-requests/{input_request_id}/answer:
+    post:
+      tags:
+      - runs
+      - inputs
+      summary: Answer a Crew Request (rejects stale versions and double answers)
+      operationId: answer_input_request_api_v1_input_requests__input_request_id__answer_post
+      parameters:
+      - name: input_request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Input Request Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InputAnswerIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InputRequestOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/schedules/preview:
+    post:
+      tags:
+      - schedules
+      summary: Preview the next occurrences of a cron expression in a timezone
+      operationId: preview_schedule_api_v1_schedules_preview_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchedulePreviewIn'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulePreviewOut'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/schedules:
+    post:
+      tags:
+      - schedules
+      summary: Create a schedule
+      operationId: create_schedule_api_v1_schedules_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleCreateIn'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+    get:
+      tags:
+      - schedules
+      summary: List schedules, newest first (sort by nextRunAt client-side for 'upcoming')
+      operationId: list_schedules_api_v1_schedules_get
+      parameters:
+      - name: installationId
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Installationid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_ScheduleOut_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/schedules/{schedule_id}:
+    get:
+      tags:
+      - schedules
+      summary: Get a schedule
+      operationId: get_schedule_api_v1_schedules__schedule_id__get
+      parameters:
+      - name: schedule_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Schedule Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+    patch:
+      tags:
+      - schedules
+      summary: Update a schedule
+      operationId: update_schedule_api_v1_schedules__schedule_id__patch
+      parameters:
+      - name: schedule_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Schedule Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchedulePatchIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+    delete:
+      tags:
+      - schedules
+      summary: Delete a schedule
+      operationId: delete_schedule_api_v1_schedules__schedule_id__delete
+      parameters:
+      - name: schedule_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Schedule Id
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/models:
+    get:
+      tags:
+      - models
+      summary: List model profiles (ordered by id)
+      operationId: list_models_api_v1_models_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_ModelOut_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/models/{model_id}:
+    get:
+      tags:
+      - models
+      summary: Get a model profile
+      operationId: get_model_api_v1_models__model_id__get
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Model Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/models/{model_id}/install:
+    post:
+      tags:
+      - models
+      summary: Download a model to disk
+      operationId: install_model_api_v1_models__model_id__install_post
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Model Id
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/models/{model_id}/load:
+    post:
+      tags:
+      - models
+      summary: Load a model into memory (admission control applies)
+      operationId: load_model_api_v1_models__model_id__load_post
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Model Id
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/models/{model_id}/unload:
+    post:
+      tags:
+      - models
+      summary: Unload a model from memory
+      operationId: unload_model_api_v1_models__model_id__unload_post
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Model Id
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/connections:
+    get:
+      tags:
+      - connections
+      summary: Connection status, ordered by provider (secrets are never returned)
+      operationId: list_connections_api_v1_connections_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_ConnectionOut_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/settings:
+    get:
+      tags:
+      - settings
+      summary: Platform settings
+      operationId: get_settings_route_api_v1_settings_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsOut'
+    patch:
+      tags:
+      - settings
+      summary: Update platform settings
+      operationId: patch_settings_api_v1_settings_patch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingsPatchIn'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsOut'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/health/live:
+    get:
+      tags:
+      - system
+      summary: Process liveness
+      operationId: live_api_v1_health_live_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthOut'
+  /api/v1/health/ready:
+    get:
+      tags:
+      - system
+      summary: 'Readiness: database reachable and migrated'
+      operationId: ready_api_v1_health_ready_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthOut'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthOut'
+  /api/v1/system/status:
+    get:
+      tags:
+      - system
+      summary: Device, runtime, storage, and database checks
+      operationId: system_status_api_v1_system_status_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatusOut'
+  /api/v1/audit-events:
+    get:
+      tags:
+      - audit
+      summary: Audit history (owner only)
+      operationId: list_audit_events_api_v1_audit_events_get
+      parameters:
+      - name: action
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Exact action or prefix ending in '*', e.g. auth.*
+          title: Action
+        description: Exact action or prefix ending in '*', e.g. auth.*
+      - name: actorId
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Actorid
+      - name: targetId
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Targetid
+      - name: outcome
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            pattern: ^(success|denied|failure)$
+          - type: 'null'
+          title: Outcome
+      - name: since
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Since
+      - name: until
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Until
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_AuditEventOut_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/v1/runs/{run_id}:
+    get:
+      tags:
+      - internal
+      summary: Run status for capability checks
+      operationId: internal_run_internal_v1_runs__run_id__get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalRunOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /internal/v1/runs/{run_id}/handshake:
+    post:
+      tags:
+      - internal
+      summary: 'SDK handshake: PREPARING -> RUNNING'
+      operationId: handshake_internal_v1_runs__run_id__handshake_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttemptIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /internal/v1/runs/{run_id}/heartbeat:
+    post:
+      tags:
+      - internal
+      summary: Extend the attempt heartbeat lease
+      operationId: heartbeat_internal_v1_runs__run_id__heartbeat_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttemptIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /internal/v1/runs/{run_id}/events:
+    post:
+      tags:
+      - internal
+      summary: Append a log/progress/metric/artifact event
+      operationId: agent_event_internal_v1_runs__run_id__events_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentEventIn'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunEventOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /internal/v1/runs/{run_id}/model-state:
+    post:
+      tags:
+      - internal
+      summary: 'Model gateway: RUNNING <-> LOADING_MODEL'
+      operationId: model_state_internal_v1_runs__run_id__model_state_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelStateIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /internal/v1/runs/{run_id}/result:
+    post:
+      tags:
+      - internal
+      summary: Post the final result (first result wins)
+      operationId: run_result_internal_v1_runs__run_id__result_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunResultIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /internal/v1/runs/{run_id}/input-requests:
+    post:
+      tags:
+      - internal
+      summary: 'ctx.input.ask: create or return the request for a stable key'
+      operationId: ask_internal_v1_runs__run_id__input_requests_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InputRequestOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /internal/v1/input-requests/{input_request_id}:
+    get:
+      tags:
+      - internal
+      summary: Long-poll an input request until it is closed or the wait elapses
+      operationId: poll_input_internal_v1_input_requests__input_request_id__get
+      parameters:
+      - name: input_request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Input Request Id
+      - name: wait
+        in: query
+        required: false
+        schema:
+          type: number
+          maximum: 30
+          minimum: 0
+          description: Seconds to wait for the request to close.
+          default: 0
+          title: Wait
+        description: Seconds to wait for the request to close.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InputRequestOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /internal/v1/runs/{run_id}/actions/{key}/claim:
+    post:
+      tags:
+      - internal
+      summary: 'ctx.idempotency: claim an external action key'
+      operationId: claim_action_internal_v1_runs__run_id__actions__key__claim_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttemptIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /internal/v1/runs/{run_id}/actions/{key}/complete:
+    post:
+      tags:
+      - internal
+      summary: 'ctx.idempotency: record an action''s result'
+      operationId: complete_action_internal_v1_runs__run_id__actions__key__complete_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionCompleteIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /internal/v1/metrics:
+    get:
+      tags:
+      - internal
+      summary: 'Prometheus metrics: HTTP latency/errors, job depth/age, runs, pending inputs'
+      operationId: metrics_internal_v1_metrics_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            text/plain:
+              schema:
+                type: string
+components:
+  schemas:
+    ActionCompleteIn:
+      properties:
+        attempt:
+          type: integer
+          minimum: 1.0
+          title: Attempt
+        result:
+          title: Result
+      type: object
+      required:
+      - attempt
+      title: ActionCompleteIn
+    ActionOut:
+      properties:
+        key:
+          type: string
+          title: Key
+        status:
+          type: string
+          enum:
+          - claimed
+          - completed
+          - in_doubt
+          title: Status
+        result:
+          title: Result
+      type: object
+      required:
+      - key
+      - status
+      title: ActionOut
+    AgentEventIn:
+      properties:
+        attempt:
+          type: integer
+          minimum: 1.0
+          title: Attempt
+        type:
+          type: string
+          enum:
+          - run.log
+          - run.progress
+          - run.metric
+          - run.artifact
+          title: Type
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+      type: object
+      required:
+      - attempt
+      - type
+      - payload
+      title: AgentEventIn
+    AgentVersionOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        version:
+          type: string
+          title: Version
+        image:
+          type: string
+          title: Image
+        imageDigest:
+          type: string
+          title: Imagedigest
+        sdkProtocol:
+          type: string
+          title: Sdkprotocol
+        architectures:
+          items:
+            type: string
+          type: array
+          title: Architectures
+        triggers:
+          items:
+            type: string
+          type: array
+          title: Triggers
+        permissions:
+          additionalProperties: true
+          type: object
+          title: Permissions
+        resources:
+          additionalProperties: true
+          type: object
+          title: Resources
+        configurationSchema:
+          additionalProperties: true
+          type: object
+          title: Configurationschema
+        resultSchema:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Resultschema
+        compatible:
+          type: boolean
+          title: Compatible
+        compatibilityIssues:
+          items:
+            type: string
+          type: array
+          title: Compatibilityissues
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+      type: object
+      required:
+      - id
+      - version
+      - image
+      - imageDigest
+      - sdkProtocol
+      - architectures
+      - triggers
+      - permissions
+      - resources
+      - configurationSchema
+      - resultSchema
+      - compatible
+      - compatibilityIssues
+      - createdAt
+      title: AgentVersionOut
+    AskIn:
+      properties:
+        attempt:
+          type: integer
+          minimum: 1.0
+          title: Attempt
+        key:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9_.:-]+$
+          title: Key
+        title:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Title
+        prompt:
+          type: string
+          maxLength: 4000
+          minLength: 1
+          title: Prompt
+        schema:
+          additionalProperties: true
+          type: object
+          title: Schema
+        timeoutSeconds:
+          type: integer
+          maximum: 86400.0
+          minimum: 1.0
+          title: Timeoutseconds
+        preview:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Preview
+      type: object
+      required:
+      - attempt
+      - key
+      - title
+      - prompt
+      - schema
+      - timeoutSeconds
+      title: AskIn
+    AttemptIn:
+      properties:
+        attempt:
+          type: integer
+          minimum: 1.0
+          title: Attempt
+      type: object
+      required:
+      - attempt
+      title: AttemptIn
+    AttentionItem:
+      properties:
+        kind:
+          type: string
+          enum:
+          - input_request
+          - failed_run
+          - schedule_blocked
+          - model_action
+          title: Kind
+        title:
+          type: string
+          title: Title
+        detail:
+          type: string
+          title: Detail
+        runId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Runid
+        inputRequestId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Inputrequestid
+        scheduleId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Scheduleid
+        modelId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Modelid
+        createdAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Createdat
+      type: object
+      required:
+      - kind
+      - title
+      - detail
+      title: AttentionItem
+    AttentionOut:
+      properties:
+        count:
+          type: integer
+          title: Count
+          description: 'Activity badge value: items that need the owner.'
+        items:
+          items:
+            $ref: '#/components/schemas/AttentionItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - count
+      - items
+      title: AttentionOut
+    AuditEventOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        actorType:
+          type: string
+          title: Actortype
+        actorId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Actorid
+        action:
+          type: string
+          title: Action
+        targetType:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Targettype
+        targetId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Targetid
+        outcome:
+          type: string
+          title: Outcome
+        requestId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestid
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+      type: object
+      required:
+      - id
+      - actorType
+      - actorId
+      - action
+      - targetType
+      - targetId
+      - outcome
+      - requestId
+      - metadata
+      - createdAt
+      title: AuditEventOut
+    BootstrapIn:
+      properties:
+        token:
+          type: string
+          maxLength: 256
+          minLength: 16
+          title: Token
+          description: One-time bootstrap token.
+        username:
+          type: string
+          maxLength: 64
+          minLength: 3
+          pattern: ^[A-Za-z0-9_.@-]+$
+          title: Username
+        password:
+          type: string
+          maxLength: 1024
+          minLength: 12
+          title: Password
+        email:
+          anyOf:
+          - type: string
+            maxLength: 254
+          - type: 'null'
+          title: Email
+      type: object
+      required:
+      - token
+      - username
+      - password
+      title: BootstrapIn
+    CatalogAgentOut:
+      properties:
+        agentId:
+          type: string
+          title: Agentid
+        name:
+          type: string
+          title: Name
+        summary:
+          type: string
+          title: Summary
+        publisher:
+          type: string
+          title: Publisher
+        source:
+          type: string
+          enum:
+          - bundled
+          - imported
+          title: Source
+        trustStatus:
+          type: string
+          enum:
+          - curated
+          - imported_unreviewed
+          title: Truststatus
+        currentVersion:
+          type: string
+          title: Currentversion
+        versions:
+          items:
+            type: string
+          type: array
+          title: Versions
+        latest:
+          $ref: '#/components/schemas/AgentVersionOut'
+        installed:
+          type: boolean
+          title: Installed
+      type: object
+      required:
+      - agentId
+      - name
+      - summary
+      - publisher
+      - source
+      - trustStatus
+      - currentVersion
+      - versions
+      - latest
+      - installed
+      title: CatalogAgentOut
+    CatalogImportIn:
+      properties:
+        manifest:
+          additionalProperties: true
+          type: object
+          title: Manifest
+          description: Agent manifest (crewquarters/v1alpha1).
+      type: object
+      required:
+      - manifest
+      title: CatalogImportIn
+    ConnectionOut:
+      properties:
+        provider:
+          type: string
+          enum:
+          - google
+          - twilio
+          - openai
+          - anthropic
+          title: Provider
+        displayName:
+          type: string
+          title: Displayname
+        status:
+          type: string
+          enum:
+          - NOT_CONNECTED
+          - CONNECTED
+          - NEEDS_ATTENTION
+          - DISABLED
+          title: Status
+        grantedCapabilities:
+          items:
+            type: string
+          type: array
+          title: Grantedcapabilities
+        lastCheckedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Lastcheckedat
+      type: object
+      required:
+      - provider
+      - displayName
+      - status
+      - grantedCapabilities
+      - lastCheckedAt
+      title: ConnectionOut
+    ErrorDetail:
+      properties:
+        code:
+          type: string
+          title: Code
+          examples:
+          - MODEL_CAPACITY_EXCEEDED
+        message:
+          type: string
+          title: Message
+        requestId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requestid
+        details:
+          additionalProperties: true
+          type: object
+          title: Details
+      type: object
+      required:
+      - code
+      - message
+      title: ErrorDetail
+    ErrorResponse:
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      type: object
+      required:
+      - error
+      title: ErrorResponse
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthOut:
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - unavailable
+          title: Status
+        checks:
+          additionalProperties:
+            type: string
+          type: object
+          title: Checks
+      type: object
+      required:
+      - status
+      title: HealthOut
+    HeartbeatOut:
+      properties:
+        state:
+          type: string
+          enum:
+          - QUEUED
+          - PREPARING
+          - LOADING_MODEL
+          - RUNNING
+          - WAITING_INPUT
+          - CANCELLING
+          - SUCCEEDED
+          - FAILED
+          - CANCELLED
+          - INTERRUPTED
+          title: State
+        cancelRequested:
+          type: boolean
+          title: Cancelrequested
+      type: object
+      required:
+      - state
+      - cancelRequested
+      title: HeartbeatOut
+    InputAnswerIn:
+      properties:
+        version:
+          type: integer
+          title: Version
+          description: Version of the request the answer is for.
+        value:
+          title: Value
+          description: Answer; validated against the request's JSON Schema.
+      type: object
+      required:
+      - version
+      - value
+      title: InputAnswerIn
+    InputRequestOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        runId:
+          type: string
+          format: uuid
+          title: Runid
+        agentName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agentname
+        key:
+          type: string
+          title: Key
+        title:
+          type: string
+          title: Title
+        prompt:
+          type: string
+          title: Prompt
+        schema:
+          additionalProperties: true
+          type: object
+          title: Schema
+        preview:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Preview
+        state:
+          type: string
+          enum:
+          - pending
+          - answered
+          - cancelled
+          - expired
+          title: State
+        answer:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Answer
+        deadline:
+          type: string
+          format: date-time
+          title: Deadline
+        version:
+          type: integer
+          title: Version
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        answeredAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Answeredat
+      type: object
+      required:
+      - id
+      - runId
+      - key
+      - title
+      - prompt
+      - schema
+      - preview
+      - state
+      - deadline
+      - version
+      - createdAt
+      - answeredAt
+      title: InputRequestOut
+    InstallationCreateIn:
+      properties:
+        agentId:
+          type: string
+          title: Agentid
+        version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Version
+          description: Defaults to the catalog's current version.
+        config:
+          additionalProperties: true
+          type: object
+          title: Config
+        approvedPermissions:
+          additionalProperties: true
+          type: object
+          title: Approvedpermissions
+          description: Must equal the version's requested permissions exactly.
+        modelBindings:
+          additionalProperties:
+            type: string
+          type: object
+          title: Modelbindings
+          description: Owner choice of variant per requested profile family.
+          examples:
+          - local.general: local.general.quality
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+      type: object
+      required:
+      - agentId
+      - approvedPermissions
+      title: InstallationCreateIn
+    InstallationOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        agentId:
+          type: string
+          title: Agentid
+        agentName:
+          type: string
+          title: Agentname
+        agentVersion:
+          type: string
+          title: Agentversion
+        agentVersionId:
+          type: string
+          format: uuid
+          title: Agentversionid
+        config:
+          additionalProperties: true
+          type: object
+          title: Config
+        requestedPermissions:
+          additionalProperties: true
+          type: object
+          title: Requestedpermissions
+        approvedPermissions:
+          additionalProperties: true
+          type: object
+          title: Approvedpermissions
+        capabilities:
+          items:
+            type: string
+          type: array
+          title: Capabilities
+        modelBindings:
+          additionalProperties:
+            type: string
+          type: object
+          title: Modelbindings
+        needsReapproval:
+          type: boolean
+          title: Needsreapproval
+        enabled:
+          type: boolean
+          title: Enabled
+        version:
+          type: integer
+          title: Version
+        readiness:
+          $ref: '#/components/schemas/Readiness'
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        updatedAt:
+          type: string
+          format: date-time
+          title: Updatedat
+      type: object
+      required:
+      - id
+      - agentId
+      - agentName
+      - agentVersion
+      - agentVersionId
+      - config
+      - requestedPermissions
+      - approvedPermissions
+      - capabilities
+      - modelBindings
+      - needsReapproval
+      - enabled
+      - version
+      - readiness
+      - createdAt
+      - updatedAt
+      title: InstallationOut
+    InstallationPatchIn:
+      properties:
+        version:
+          type: integer
+          title: Version
+          description: Current installation version (optimistic concurrency).
+        agentVersion:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agentversion
+          description: Upgrade/downgrade to this agent version.
+        config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Config
+        approvedPermissions:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Approvedpermissions
+        modelBindings:
+          anyOf:
+          - additionalProperties:
+              type: string
+            type: object
+          - type: 'null'
+          title: Modelbindings
+        enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Enabled
+      type: object
+      required:
+      - version
+      title: InstallationPatchIn
+    InternalRunOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        state:
+          type: string
+          enum:
+          - QUEUED
+          - PREPARING
+          - LOADING_MODEL
+          - RUNNING
+          - WAITING_INPUT
+          - CANCELLING
+          - SUCCEEDED
+          - FAILED
+          - CANCELLED
+          - INTERRUPTED
+          title: State
+        currentAttempt:
+          type: integer
+          title: Currentattempt
+        installationId:
+          type: string
+          format: uuid
+          title: Installationid
+        cancelRequested:
+          type: boolean
+          title: Cancelrequested
+        capabilityTokenId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Capabilitytokenid
+          description: jti of the current attempt's capability token; reject any other.
+        permissions:
+          additionalProperties: true
+          type: object
+          title: Permissions
+        modelBindings:
+          additionalProperties:
+            type: string
+          type: object
+          title: Modelbindings
+        config:
+          additionalProperties: true
+          type: object
+          title: Config
+      type: object
+      required:
+      - id
+      - state
+      - currentAttempt
+      - installationId
+      - cancelRequested
+      - capabilityTokenId
+      - permissions
+      - modelBindings
+      - config
+      title: InternalRunOut
+    LoginIn:
+      properties:
+        username:
+          type: string
+          maxLength: 254
+          minLength: 1
+          title: Username
+        password:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Password
+      type: object
+      required:
+      - username
+      - password
+      title: LoginIn
+    ModelOut:
+      properties:
+        id:
+          type: string
+          title: Id
+        displayName:
+          type: string
+          title: Displayname
+        family:
+          type: string
+          title: Family
+        downloadState:
+          type: string
+          title: Downloadstate
+        memoryState:
+          type: string
+          title: Memorystate
+        diskBytes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Diskbytes
+        expectedMemoryBytes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Expectedmemorybytes
+        contextLimit:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Contextlimit
+        capabilities:
+          items:
+            type: string
+          type: array
+          title: Capabilities
+        validation:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Validation
+        license:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: License
+        activeLeases:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Activeleases
+      type: object
+      required:
+      - id
+      - displayName
+      - family
+      - downloadState
+      - memoryState
+      title: ModelOut
+    ModelStateIn:
+      properties:
+        attempt:
+          type: integer
+          minimum: 1.0
+          title: Attempt
+        loading:
+          type: boolean
+          title: Loading
+        model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model
+      type: object
+      required:
+      - attempt
+      - loading
+      title: ModelStateIn
+    OccurrenceOut:
+      properties:
+        at:
+          type: string
+          format: date-time
+          title: At
+          description: Occurrence instant in UTC.
+        local:
+          type: string
+          title: Local
+          description: Local wall-clock time with UTC offset, ISO 8601.
+        zoneAbbreviation:
+          type: string
+          title: Zoneabbreviation
+      type: object
+      required:
+      - at
+      - local
+      - zoneAbbreviation
+      title: OccurrenceOut
+    Page_AuditEventOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AuditEventOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[AuditEventOut]
+    Page_CatalogAgentOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CatalogAgentOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[CatalogAgentOut]
+    Page_ConnectionOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ConnectionOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[ConnectionOut]
+    Page_InputRequestOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/InputRequestOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[InputRequestOut]
+    Page_InstallationOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/InstallationOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[InstallationOut]
+    Page_ModelOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ModelOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[ModelOut]
+    Page_RunOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RunOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[RunOut]
+    Page_ScheduleOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ScheduleOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[ScheduleOut]
+    Readiness:
+      properties:
+        ready:
+          type: boolean
+          title: Ready
+        checks:
+          items:
+            $ref: '#/components/schemas/ReadinessCheck'
+          type: array
+          title: Checks
+      type: object
+      required:
+      - ready
+      - checks
+      title: Readiness
+    ReadinessCheck:
+      properties:
+        name:
+          type: string
+          enum:
+          - enabled
+          - permissions
+          - configuration
+          - architecture
+          - connection
+          - model
+          title: Name
+        status:
+          type: string
+          enum:
+          - ok
+          - missing
+          - needs_attention
+          title: Status
+        detail:
+          type: string
+          title: Detail
+        resource:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resource
+      type: object
+      required:
+      - name
+      - status
+      - detail
+      title: ReadinessCheck
+    RunCreateIn:
+      properties:
+        installationId:
+          type: string
+          format: uuid
+          title: Installationid
+      type: object
+      required:
+      - installationId
+      title: RunCreateIn
+    RunEventOut:
+      properties:
+        runId:
+          type: string
+          format: uuid
+          title: Runid
+        sequence:
+          type: integer
+          title: Sequence
+        attempt:
+          type: integer
+          title: Attempt
+        type:
+          type: string
+          title: Type
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+      type: object
+      required:
+      - runId
+      - sequence
+      - attempt
+      - type
+      - payload
+      - createdAt
+      title: RunEventOut
+    RunOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        installationId:
+          type: string
+          format: uuid
+          title: Installationid
+        agentId:
+          type: string
+          title: Agentid
+        agentName:
+          type: string
+          title: Agentname
+        agentVersion:
+          type: string
+          title: Agentversion
+        trigger:
+          type: string
+          enum:
+          - manual
+          - schedule
+          title: Trigger
+        scheduleId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Scheduleid
+        scheduledFor:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Scheduledfor
+        state:
+          type: string
+          enum:
+          - QUEUED
+          - PREPARING
+          - LOADING_MODEL
+          - RUNNING
+          - WAITING_INPUT
+          - CANCELLING
+          - SUCCEEDED
+          - FAILED
+          - CANCELLED
+          - INTERRUPTED
+          title: State
+        currentAttempt:
+          type: integer
+          title: Currentattempt
+        result:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Result
+        error:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Error
+        retryable:
+          type: boolean
+          title: Retryable
+        cancelRequested:
+          type: boolean
+          title: Cancelrequested
+        acknowledgedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Acknowledgedat
+        activeSecondsUsed:
+          type: number
+          title: Activesecondsused
+        inputWaitSecondsUsed:
+          type: number
+          title: Inputwaitsecondsused
+        activeTimeoutSeconds:
+          type: integer
+          title: Activetimeoutseconds
+        maxInputWaitSeconds:
+          type: integer
+          title: Maxinputwaitseconds
+        usesCloud:
+          type: boolean
+          title: Usescloud
+        pendingInputCount:
+          type: integer
+          title: Pendinginputcount
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        startedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Startedat
+        finishedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Finishedat
+        updatedAt:
+          type: string
+          format: date-time
+          title: Updatedat
+      type: object
+      required:
+      - id
+      - installationId
+      - agentId
+      - agentName
+      - agentVersion
+      - trigger
+      - scheduleId
+      - scheduledFor
+      - state
+      - currentAttempt
+      - result
+      - error
+      - retryable
+      - cancelRequested
+      - acknowledgedAt
+      - activeSecondsUsed
+      - inputWaitSecondsUsed
+      - activeTimeoutSeconds
+      - maxInputWaitSeconds
+      - usesCloud
+      - pendingInputCount
+      - createdAt
+      - startedAt
+      - finishedAt
+      - updatedAt
+      title: RunOut
+    RunResultIn:
+      properties:
+        attempt:
+          type: integer
+          minimum: 1.0
+          title: Attempt
+        status:
+          type: string
+          enum:
+          - succeeded
+          - failed
+          title: Status
+        result:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Result
+        error:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - attempt
+      - status
+      title: RunResultIn
+    ScheduleCreateIn:
+      properties:
+        installationId:
+          type: string
+          format: uuid
+          title: Installationid
+        cron:
+          type: string
+          title: Cron
+          examples:
+          - 0 10 * * *
+        timezone:
+          type: string
+          title: Timezone
+          description: IANA timezone name.
+          examples:
+          - Asia/Kolkata
+        misfirePolicy:
+          type: string
+          enum:
+          - fire_once
+          - skip
+          title: Misfirepolicy
+          default: fire_once
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+      type: object
+      required:
+      - installationId
+      - cron
+      - timezone
+      title: ScheduleCreateIn
+    ScheduleOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        installationId:
+          type: string
+          format: uuid
+          title: Installationid
+        agentName:
+          type: string
+          title: Agentname
+        ready:
+          type: boolean
+          title: Ready
+          description: Whether the agent's model, connections, and config are ready now.
+        blockers:
+          items:
+            $ref: '#/components/schemas/ReadinessCheck'
+          type: array
+          title: Blockers
+          description: Readiness checks that are not ok.
+        cron:
+          type: string
+          title: Cron
+        timezone:
+          type: string
+          title: Timezone
+        misfirePolicy:
+          type: string
+          enum:
+          - fire_once
+          - skip
+          title: Misfirepolicy
+        enabled:
+          type: boolean
+          title: Enabled
+        nextRunAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Nextrunat
+        nextOccurrences:
+          items:
+            $ref: '#/components/schemas/OccurrenceOut'
+          type: array
+          title: Nextoccurrences
+        lastFiredAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Lastfiredat
+        lastRunId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Lastrunid
+        version:
+          type: integer
+          title: Version
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        updatedAt:
+          type: string
+          format: date-time
+          title: Updatedat
+      type: object
+      required:
+      - id
+      - installationId
+      - agentName
+      - ready
+      - blockers
+      - cron
+      - timezone
+      - misfirePolicy
+      - enabled
+      - nextRunAt
+      - nextOccurrences
+      - lastFiredAt
+      - lastRunId
+      - version
+      - createdAt
+      - updatedAt
+      title: ScheduleOut
+    SchedulePatchIn:
+      properties:
+        version:
+          type: integer
+          title: Version
+        cron:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cron
+        timezone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timezone
+        misfirePolicy:
+          anyOf:
+          - type: string
+            enum:
+            - fire_once
+            - skip
+          - type: 'null'
+          title: Misfirepolicy
+        enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Enabled
+      type: object
+      required:
+      - version
+      title: SchedulePatchIn
+    SchedulePreviewIn:
+      properties:
+        cron:
+          type: string
+          title: Cron
+        timezone:
+          type: string
+          title: Timezone
+        count:
+          type: integer
+          maximum: 10.0
+          minimum: 1.0
+          title: Count
+          default: 3
+      type: object
+      required:
+      - cron
+      - timezone
+      title: SchedulePreviewIn
+    SchedulePreviewOut:
+      properties:
+        cron:
+          type: string
+          title: Cron
+        timezone:
+          type: string
+          title: Timezone
+        occurrences:
+          items:
+            $ref: '#/components/schemas/OccurrenceOut'
+          type: array
+          title: Occurrences
+      type: object
+      required:
+      - cron
+      - timezone
+      - occurrences
+      title: SchedulePreviewOut
+    SessionOut:
+      properties:
+        user:
+          $ref: '#/components/schemas/UserOut'
+        csrfToken:
+          type: string
+          title: Csrftoken
+          description: Send as the X-CSRF-Token header on state-changing requests.
+        expiresAt:
+          type: string
+          format: date-time
+          title: Expiresat
+        idleExpiresAt:
+          type: string
+          format: date-time
+          title: Idleexpiresat
+      type: object
+      required:
+      - user
+      - csrfToken
+      - expiresAt
+      - idleExpiresAt
+      title: SessionOut
+    SettingsOut:
+      properties:
+        timezone:
+          type: string
+          title: Timezone
+        idleUnloadSeconds:
+          type: integer
+          title: Idleunloadseconds
+        callbackBaseUrl:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Callbackbaseurl
+        setupCompleted:
+          type: boolean
+          title: Setupcompleted
+        setupState:
+          additionalProperties: true
+          type: object
+          title: Setupstate
+          description: Server-side first-run wizard progress (resumes after refresh/OAuth).
+        versions:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Versions
+          description: Per-setting version for optimistic updates.
+      type: object
+      required:
+      - timezone
+      - idleUnloadSeconds
+      - callbackBaseUrl
+      - setupCompleted
+      - setupState
+      - versions
+      title: SettingsOut
+    SettingsPatchIn:
+      properties:
+        timezone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timezone
+        idleUnloadSeconds:
+          anyOf:
+          - type: integer
+            maximum: 86400.0
+            minimum: 60.0
+          - type: 'null'
+          title: Idleunloadseconds
+        callbackBaseUrl:
+          anyOf:
+          - type: string
+            pattern: ^https://[^\s/$.?#].[^\s]*$
+          - type: 'null'
+          title: Callbackbaseurl
+        setupCompleted:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Setupcompleted
+        setupState:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Setupstate
+        versions:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Versions
+          description: Expected versions; mismatches return 409.
+      type: object
+      title: SettingsPatchIn
+    StatusCheck:
+      properties:
+        group:
+          type: string
+          enum:
+          - device
+          - runtime
+          - storage
+          - database
+          - network
+          - models
+          title: Group
+        name:
+          type: string
+          title: Name
+        status:
+          type: string
+          enum:
+          - passed
+          - warning
+          - failed
+          title: Status
+        detail:
+          type: string
+          title: Detail
+        checkedAt:
+          type: string
+          format: date-time
+          title: Checkedat
+      type: object
+      required:
+      - group
+      - name
+      - status
+      - detail
+      - checkedAt
+      title: StatusCheck
+    SystemStatusOut:
+      properties:
+        status:
+          type: string
+          enum:
+          - healthy
+          - degraded
+          - offline
+          title: Status
+        profile:
+          type: string
+          title: Profile
+        version:
+          type: string
+          title: Version
+        architecture:
+          type: string
+          title: Architecture
+        checks:
+          items:
+            $ref: '#/components/schemas/StatusCheck'
+          type: array
+          title: Checks
+        runtime:
+          additionalProperties: true
+          type: object
+          title: Runtime
+      type: object
+      required:
+      - status
+      - profile
+      - version
+      - architecture
+      - checks
+      - runtime
+      title: SystemStatusOut
+    UserOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        username:
+          type: string
+          title: Username
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+        role:
+          type: string
+          enum:
+          - owner
+          - member
+          title: Role
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+      type: object
+      required:
+      - id
+      - username
+      - email
+      - role
+      - createdAt
+      title: UserOut
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: cq_session
+    csrf:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+    service:
+      type: http
+      scheme: bearer
+      description: Internal service credential
+servers:
+- url: /
+  description: Same origin as the web UI

@@ -1,0 +1,49 @@
+# Capability vocabulary (v1alpha1).
+# Owner: Nikhil Sajan Khaneja (Person 3) — capability strings and provider adapters.
+# Drafted by Nikhil Hiro Ghind (Person 1) with the manifest schema; changes need Person 3 review.
+#
+# Capabilities are derived from an installation's *approved* permission snapshot and
+# carried in the run capability token (claim "cap"). The broker and model gateway
+# accept a call only if the token holds the matching capability AND the run is active.
+version: v1alpha1
+capabilities:
+  - pattern: "llm.profile:<variant>"
+    from: permissions.llmProfiles (resolved to the bound variant)
+    enforcedBy: model_gateway
+    ui: "Use the {variant} model"
+  - pattern: "knowledge.search:config"
+    from: permissions.knowledge
+    enforcedBy: knowledge
+    ui: "Search the knowledge base you select"
+  - pattern: "google.gmail.readonly"
+    from: permissions.connectors.google
+    enforcedBy: capability_broker
+    ui: "Read your Gmail messages"
+  - pattern: "google.spreadsheets"
+    from: permissions.connectors.google
+    enforcedBy: capability_broker
+    ui: "Read and write Google Sheets you configure"
+  - pattern: "twilio.call.fixed_script"
+    from: permissions.connectors.twilio
+    enforcedBy: capability_broker
+    ui: "Place phone calls with a fixed script"
+  - pattern: "cloud.openai"
+    from: permissions.cloudProviders
+    enforcedBy: model_gateway
+    ui: "Send data to OpenAI"
+  - pattern: "cloud.anthropic"
+    from: permissions.cloudProviders
+    enforcedBy: model_gateway
+    ui: "Send data to Anthropic"
+  - pattern: "user_input"
+    from: permissions.userInput
+    enforcedBy: capability_broker
+    ui: "Ask you questions and wait for answers"
+  - pattern: "events.write"
+    from: always granted
+    enforcedBy: capability_broker
+    ui: null
+  - pattern: "idempotency"
+    from: always granted
+    enforcedBy: capability_broker
+    ui: null

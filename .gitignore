@@ -24,6 +24,7 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.json
 .coverage.*
 htmlcov/
 .tox/
@@ -39,15 +40,15 @@ pnpm-debug.log*
 coverage/
 
 # --- Local data, models & knowledge files ---
-data/
-var/
-models/
+/data/
+/var/
+/models/
 *.safetensors
 *.gguf
 *.bin
 *.pt
 *.onnx
-uploads/
+/uploads/
 
 # --- Packaging artifacts (.deb / offline bundles / OCI archives) ---
 *.deb
@@ -65,8 +66,8 @@ compose.override.yml
 
 # --- Logs & temp ---
 *.log
-logs/
-tmp/
+/logs/
+/tmp/
 *.tmp
 
 # --- Editors & OS ---

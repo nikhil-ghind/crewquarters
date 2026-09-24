@@ -232,6 +232,7 @@ from crewquarters import Agent, RunContext
 
 agent = Agent(id="example-agent")
 
+
 @agent.run
 async def run(ctx: RunContext) -> dict:
     answer = await ctx.input.ask(
@@ -255,6 +256,7 @@ async def run(ctx: RunContext) -> dict:
     )
     await ctx.events.progress(percent=100, message="Complete")
     return {"answer": result.text}
+
 
 agent.serve()
 ```
@@ -370,6 +372,21 @@ tests/
   e2e/
 docs/
 ```
+
+## Development
+
+The control plane (contracts, database, auth, API, job queue, scheduler, and run lifecycle) is implemented; see [docs/control-plane.md](./docs/control-plane.md). With `uv`, Docker, and Node installed:
+
+```bash
+make sync            # install the Python workspace
+make dev-up          # PostgreSQL + control API + scheduler (fake runtime) on http://127.0.0.1:8080
+make dev-bootstrap   # print a one-time owner setup code
+make test-platform   # unit, integration, and contract tests
+make lint            # ruff + mypy (strict)
+make contracts       # regenerate packages/contracts/openapi.yaml and clients
+```
+
+Architecture decisions are recorded in [docs/adr](./docs/adr) and every `CQ_*` setting is listed in [docs/configuration.md](./docs/configuration.md).
 
 ## Demo definition of done
 

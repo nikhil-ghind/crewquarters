@@ -1,0 +1,68 @@
+[project]
+name = "crewquarters-workspace"
+version = "0.1.0"
+description = "Crewquarters monorepo workspace"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "crewquarters-shared",
+    "crewquarters-control-api",
+    "crewquarters-scheduler",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/shared_python", "services/control_api", "services/scheduler"]
+
+[tool.uv.sources]
+crewquarters-shared = { workspace = true }
+crewquarters-control-api = { workspace = true }
+crewquarters-scheduler = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "httpx>=0.27",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-pyyaml",
+    "types-jsonschema",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["packages/contracts/clients", "services/control_api/migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "SIM", "RUF"]
+ignore = ["S101", "B008", "RUF012", "UP046"]  # UP046: keep Generic[T] for pydantic models
+
+[tool.ruff.lint.isort]
+known-first-party = ["crewquarters_shared", "crewquarters_api", "crewquarters_scheduler", "conftest"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S105", "S106", "S311"]
+"**/migrations/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+exclude = ["migrations/", "tests/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = ["no_db: test does not need the database"]
+testpaths = ["packages/shared_python/tests", "services/control_api/tests", "services/scheduler/tests", "tests/contract"]
+
+[tool.coverage.run]
+concurrency = ["greenlet", "thread"]
+source = ["crewquarters_shared", "crewquarters_api", "crewquarters_scheduler"]
+omit = ["*/crewquarters_api/admin.py", "*/crewquarters_scheduler/main.py", "*/crewquarters_api/main.py"]

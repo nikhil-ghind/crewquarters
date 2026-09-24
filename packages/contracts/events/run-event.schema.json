@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crewquarters.local/contracts/events/run-event/v1alpha1",
+  "title": "Run event",
+  "description": "One entry in a run's ordered event stream. Delivered over SSE from GET /api/v1/runs/{id}/events with the SSE id equal to 'sequence'. Clients reconnect with Last-Event-ID and must ignore sequences they have already seen.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["runId", "sequence", "attempt", "type", "payload", "createdAt"],
+  "properties": {
+    "runId": {"type": "string", "format": "uuid"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "attempt": {"type": "integer", "minimum": 0},
+    "type": {
+      "type": "string",
+      "enum": [
+        "run.state_changed",
+        "run.log",
+        "run.progress",
+        "run.metric",
+        "run.artifact",
+        "run.input_requested",
+        "run.input_answered",
+        "run.input_closed",
+        "run.result",
+        "run.error"
+      ]
+    },
+    "payload": {"type": "object"},
+    "createdAt": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {"if": {"properties": {"type": {"const": "run.state_changed"}}},
+     "then": {"properties": {"payload": {"$ref": "#/$defs/stateChanged"}}}},
+    {"if": {"properties": {"type": {"const": "run.log"}}},
+     "then": {"properties": {"payload": {"$ref": "#/$defs/log"}}}},
+    {"if": {"properties": {"type": {"const": "run.progress"}}},
+     "then": {"properties": {"payload": {"$ref": "#/$defs/progress"}}}},
+    {"if": {"properties": {"type": {"const": "run.metric"}}},
+     "then": {"properties": {"payload": {"$ref": "#/$defs/metric"}}}},
+    {"if": {"properties": {"type": {"const": "run.artifact"}}},
+     "then": {"properties": {"payload": {"$ref": "#/$defs/artifact"}}}},
+    {"if": {"properties": {"type": {"enum": ["run.input_requested", "run.input_answered", "run.input_closed"]}}},
+     "then": {"properties": {"payload": {"$ref": "#/$defs/input"}}}},
+    {"if": {"properties": {"type": {"const": "run.result"}}},
+     "then": {"properties": {"payload": {"$ref": "#/$defs/result"}}}},
+    {"if": {"properties": {"type": {"const": "run.error"}}},
+     "then": {"properties": {"payload": {"$ref": "#/$defs/error"}}}}
+  ],
+  "$defs": {
+    "runState": {
+      "type": "string",
+      "enum": ["QUEUED", "PREPARING", "LOADING_MODEL", "RUNNING", "WAITING_INPUT", "CANCELLING",
+               "SUCCEEDED", "FAILED", "CANCELLED", "INTERRUPTED"]
+    },
+    "stateChanged": {
+      "type": "object",
+      "required": ["from", "to"],
+      "properties": {
+        "from": {"oneOf": [{"$ref": "#/$defs/runState"}, {"type": "null"}]},
+        "to": {"$ref": "#/$defs/runState"},
+        "reason": {"type": "string"},
+        "errorCode": {"type": "string"}
+      }
+    },
+    "log": {
+      "type": "object",
+      "required": ["level", "message"],
+      "properties": {
+        "level": {"type": "string", "enum": ["debug", "info", "warning", "error"]},
+        "message": {"type": "string", "maxLength": 4000},
+        "fields": {"type": "object"}
+      }
+    },
+    "progress": {
+      "type": "object",
+      "required": ["message"],
+      "properties": {
+        "percent": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "step": {"type": "string", "maxLength": 120},
+        "message": {"type": "string", "maxLength": 500}
+      }
+    },
+    "metric": {
+      "type": "object",
+      "required": ["name", "value"],
+      "properties": {
+        "name": {"type": "string", "maxLength": 120},
+        "value": {"type": "number"},
+        "unit": {"type": "string", "maxLength": 32}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "maxLength": 200},
+        "mediaType": {"type": "string", "maxLength": 100},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "input": {
+      "type": "object",
+      "required": ["inputRequestId", "key"],
+      "properties": {
+        "inputRequestId": {"type": "string", "format": "uuid"},
+        "key": {"type": "string"},
+        "title": {"type": "string"},
+        "state": {"type": "string", "enum": ["pending", "answered", "cancelled", "expired"]}
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {"type": "string", "enum": ["succeeded", "failed"]},
+        "summary": {"type": "string", "maxLength": 500}
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {"type": "string"},
+        "message": {"type": "string"},
+        "retryable": {"type": "boolean"}
+      }
+    }
+  }
+}
