@@ -8,8 +8,12 @@ from typing import Any
 
 from crewquarters._transport import BrokerClient
 from crewquarters.events import EventsClient
+from crewquarters.google import GoogleClients
 from crewquarters.idempotency import IdempotencyClient
 from crewquarters.input import InputClient
+from crewquarters.knowledge import KnowledgeClient
+from crewquarters.llm import LLMClient
+from crewquarters.telephony import TelephonyClient
 
 
 def parse_time(value: object) -> datetime | None:
@@ -103,3 +107,7 @@ class RunContext[ConfigT]:
         self.events = events
         self.input = InputClient(transport, limits)
         self.idempotency = IdempotencyClient(transport)
+        self.llm = LLMClient(transport, grants.llm_profiles)
+        self.knowledge = KnowledgeClient(transport)
+        self.google = GoogleClients(transport)
+        self.telephony = TelephonyClient(transport)
