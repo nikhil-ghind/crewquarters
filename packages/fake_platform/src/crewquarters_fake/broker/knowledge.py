@@ -46,7 +46,8 @@ async def search(body: SearchIn, request: Request, auth: RunAuth = Depends(run_a
             body.knowledgeBaseId, body.query, body.topK, body.filters.documentIds or None
         )
         if body.maxContextTokens:
-            budget, kept = body.maxContextTokens, []
+            budget = body.maxContextTokens
+            kept: list[dict[str, Any]] = []
             for passage in passages:
                 cost = len(passage["text"].split())
                 if kept and cost > budget:

@@ -35,6 +35,7 @@ wheels = [
 [manifest]
 members = [
     "crewquarters-contracts",
+    "crewquarters-crewctl",
     "crewquarters-fake",
     "crewquarters-sdk",
     "crewquarters-workspace",
@@ -341,6 +342,27 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "jsonschema", specifier = ">=4.23" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
+name = "crewquarters-crewctl"
+version = "0.1.0"
+source = { editable = "packages/crewctl" }
+dependencies = [
+    { name = "click" },
+    { name = "crewquarters-contracts" },
+    { name = "crewquarters-fake" },
+    { name = "httpx" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1" },
+    { name = "crewquarters-contracts", editable = "packages/contracts" },
+    { name = "crewquarters-fake", editable = "packages/fake_platform" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 
