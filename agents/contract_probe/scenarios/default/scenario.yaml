@@ -1,0 +1,16 @@
+name: contract-probe-default
+timezone: UTC
+knowledge:
+  kb-probe: knowledge
+llm:
+  rules:
+    - name: structured-probe
+      match: {schemaTitle: ProbeAnswer}
+      respond: {json: {answer: pong}}
+    - name: pong
+      match: {contains: [pong]}
+      respond: {text: pong}
+inputs:
+  autoAnswers:
+    - keyPattern: "probe-input-*"
+      data: {choice: ok}

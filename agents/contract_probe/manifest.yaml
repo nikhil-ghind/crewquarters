@@ -1,0 +1,61 @@
+apiVersion: crewquarters/v1alpha1
+kind: Agent
+metadata:
+  id: contract-probe
+  name: Contract Probe
+  version: 0.1.0
+  description: Exercises every broker capability the SDK exposes and reports pass/fail per check.
+  publisher: Crewquarters (Person 5)
+spec:
+  # `crewctl build --push` pins this to the pushed digest.
+  image: localhost:5001/crewquarters/contract-probe@sha256:REQUIRED_DIGEST
+  entrypoint: ["python", "-m", "contract_probe"]
+  architectures: ["linux/amd64", "linux/arm64"]
+  triggers: ["manual", "schedule"]
+  permissions:
+    llmProfiles: ["local.general"]
+    knowledge: ["search"]
+    userInput: true
+  resources:
+    cpu: 0.5
+    memoryMb: 256
+    activeTimeoutSeconds: 600
+    maxInputWaitSeconds: 3600
+  configurationSchema:
+    type: object
+    properties:
+      checks:
+        type: array
+        uniqueItems: true
+        items:
+          enum: [handshake, events, input, llm, structured, knowledge, idempotency, permissions, isolation, cancellation]
+        default: [handshake, events, input, llm, structured, knowledge, idempotency, permissions, isolation]
+      knowledgeBaseId:
+        type: string
+        x-crewquarters-widget: knowledgeBase
+        default: kb-probe
+      expectIsolation:
+        type: boolean
+        default: true
+        description: Set false when the agent runs as a local process instead of the hardened container.
+      cancelWaitSeconds:
+        type: integer
+        minimum: 1
+        maximum: 600
+        default: 60
+  result:
+    renderer: crewquarters.contract-probe/v1
+    schema:
+      type: object
+      required: [checks]
+      properties:
+        checks:
+          type: array
+          items:
+            type: object
+            required: [name, status, detail, durationMs]
+            properties:
+              name: {type: string}
+              status: {enum: [passed, failed, skipped]}
+              detail: {type: string}
+              durationMs: {type: integer}
