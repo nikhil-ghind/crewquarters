@@ -32,6 +32,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/3e/30/e900b21425a860e195f32e37657aa1f7c7f2b1bfb26f03ca209b90933c06/annotated_doc-0.0.5-py3-none-any.whl", hash = "sha256:117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101", size = 5302 },
 ]
 
+[manifest]
+members = [
+    "crewquarters-contracts",
+    "crewquarters-workspace",
+]
+
 [[package]]
 name = "annotated-types"
 version = "0.8.0"
@@ -279,6 +285,21 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36" },
     { name = "tzdata", specifier = ">=2024.2" },
+]
+
+[[package]]
+name = "crewquarters-contracts"
+version = "0.1.0a1"
+source = { editable = "packages/contracts" }
+dependencies = [
+    { name = "jsonschema" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jsonschema", specifier = ">=4.23" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]

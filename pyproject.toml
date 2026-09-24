@@ -48,6 +48,17 @@ known-first-party = ["crewquarters_shared", "crewquarters_api", "crewquarters_sc
 "**/tests/**" = ["S105", "S106", "S311"]
 "**/migrations/**" = ["E501"]
 
+[tool.ruff.lint.isort]
+known-first-party = [
+    "crewquarters_contracts",
+    "crewquarters",
+    "crewctl",
+    "crewquarters_fake",
+    "contract_probe",
+    "gmail_digest",
+    "caller_agent",
+]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
