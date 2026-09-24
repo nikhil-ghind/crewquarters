@@ -1,0 +1,16 @@
+# Gitleaks configuration: the default rules plus narrow, reviewed allowlists.
+#  - Idempotency keys (HTTP header values and SDK examples) are request identifiers.
+#  - dev-insecure-* values are documented development defaults (docs/configuration.md);
+#    installers generate real secrets.
+title = "crewquarters"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Idempotency-key identifiers and documented insecure development defaults"
+regexTarget = "line"
+regexes = [
+  '''(?i)idempotency[_-]key["']?\s*[:=]\s*["'][a-z0-9-]{4,40}["']''',
+  '''dev-insecure-[a-z-]+-change-me-0+''',
+]
