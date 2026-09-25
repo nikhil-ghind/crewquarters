@@ -25,8 +25,10 @@ from crewquarters_shared.logs import configure_logging
 from crewquarters_shared.metrics import CONTENT_TYPE
 
 PROVIDER_TIMEOUT_SECONDS = 20.0
-# A local model may cold-start before its first token (PLAN.md section 8).
-GATEWAY_TIMEOUT_SECONDS = 660.0
+# A local model may cold-start before its first token (PLAN.md section 8). Longer than the
+# gateway's worst case (CQ_GATEWAY_WAIT_READY_SECONDS 900 + CQ_GATEWAY_REQUEST_TIMEOUT_SECONDS
+# 300) and shorter than the SDK's LLM_TIMEOUT_SECONDS (docs/model-gateway.md, "Timeouts").
+GATEWAY_TIMEOUT_SECONDS = 1260.0
 
 
 def create_app(

@@ -16,6 +16,8 @@ usage() {
 Usage: crewquarters <command>
   preflight [--gpu-test]   check architecture, Docker, NVIDIA runtime, memory, disk
   up | down | restart      start or stop the platform stack
+  tunnel up|down|status    callback tunnel (profile callbacks; needs CQ_TUNNEL_TOKEN);
+                           exposes only the OAuth/Twilio callback paths. Stop it after demos.
   status                   service health and runtime checks
   logs [service]           follow logs
   bootstrap-token          print a one-time owner setup code
@@ -31,13 +33,26 @@ cmd="${1:-help}"
 case "$cmd" in
     preflight) exec python3 -m crewquarters_runtime.cli preflight --appliance "$@" ;;
     up)
-        if ! docker network inspect cq-models >/dev/null 2>&1; then
+        # The daemon creates cq-models (gateway <-> model servers) and cq-agents
+        # (agents -> broker) at startup; the stack joins both as external networks.
+        if ! docker network inspect cq-models >/dev/null 2>&1 \
+                || ! docker network inspect cq-agents >/dev/null 2>&1; then
             echo "Waiting for the runtime daemon to create its networks..."
             curl -s --unix-socket /run/crewquarters/runtime.sock http://runtime/ >/dev/null 2>&1 || true
             sleep 2
         fi
         compose up -d --wait ;;
-    down) compose down ;;
+    down) compose --profile callbacks down ;;
+    tunnel)
+        case "${1:-status}" in
+            up)
+                grep -q '^CQ_TUNNEL_TOKEN=.' "$ETC/secrets.env" \
+                    || { echo "Set CQ_TUNNEL_TOKEN in $ETC/secrets.env first." >&2; exit 2; }
+                compose --profile callbacks up -d --wait tunnel ;;
+            down) compose --profile callbacks rm -sf tunnel ;;
+            status) compose --profile callbacks ps tunnel ;;
+            *) usage; exit 2 ;;
+        esac ;;
     restart) compose down && compose up -d --wait ;;
     status)
         compose ps
@@ -49,7 +64,15 @@ case "$cmd" in
         tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
         tar --zstd -xf "$file" -C "$tmp"
         (cd "$tmp" && sha256sum -c SHA256SUMS)
-        docker load -i "$tmp/images.tar" ;;
+        docker load -i "$tmp/images.tar"
+        if [ -d "$tmp/embedding-models" ]; then
+            # Pre-populates the knowledge service's model directory; the knowledge-model
+            # init service then verifies the checksums instead of downloading.
+            cp -a "$tmp/embedding-models/." /var/lib/crewquarters/embedding-models/
+            chown -R root:crewquarters /var/lib/crewquarters/embedding-models
+            chmod -R g+rwX /var/lib/crewquarters/embedding-models
+            echo "Embedding model imported."
+        fi ;;
     wait-runtime)
         i=0
         while [ ! -S /run/crewquarters/runtime.sock ] && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done

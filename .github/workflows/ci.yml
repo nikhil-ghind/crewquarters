@@ -86,10 +86,23 @@ jobs:
         run: systemd-analyze verify --man=no infra/systemd/*.service infra/systemd/*.socket || true
       - name: Validate Compose files
         run: |
+          docker compose -f infra/compose/compose.yaml config -q
           docker compose -f infra/compose/compose.yaml -f infra/compose/compose.runtime.yaml config -q
-          CQ_VERSION=0 CQ_SOCKET_GID=1 POSTGRES_PASSWORD=x CQ_SECRET_KEY=x \
-            CQ_CAPABILITY_SIGNING_KEY=x CQ_INTERNAL_SERVICE_TOKEN=x CQ_CHAT_CLIENT_TOKEN=x \
-            docker compose -f infra/compose/compose.appliance.yaml config -q
+          docker compose -f infra/compose/compose.yaml --profile callbacks --profile fake config -q
+          export CQ_VERSION=0 CQ_SOCKET_GID=1 POSTGRES_PASSWORD=x CQ_SECRET_KEY=x \
+            CQ_CAPABILITY_SIGNING_KEY=x CQ_INTERNAL_SERVICE_TOKEN=x CQ_CHAT_CLIENT_TOKEN=x
+          docker compose -f infra/compose/compose.appliance.yaml config -q
+          docker compose -f infra/compose/compose.appliance.yaml --profile callbacks config -q
+          # Only the proxy publishes a port, and only two services get the master key.
+          test "$(docker compose -f infra/compose/compose.appliance.yaml config --format json \
+            | jq -r '[.services | to_entries[] | select(.value.ports) | .key] | join(",")')" = proxy
+          test "$(docker compose -f infra/compose/compose.appliance.yaml config --format json \
+            | jq -r '[.services | to_entries[] | select(any(.value.volumes[]?; .source == "/etc/crewquarters/master.key")) | .key] | sort | join(",")')" \
+            = capability-broker,model-gateway
+      - name: Proxy config and routing
+        run: |
+          docker build -f infra/docker/proxy.Dockerfile -t crewquarters/proxy:ci .
+          docker run --rm crewquarters/proxy:ci nginx -t
       - uses: actions/upload-artifact@v4
         with:
           name: crewquarters-deb

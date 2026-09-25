@@ -7,9 +7,13 @@
 #
 # Model files are written by the daemon and bind-mounted into model containers by the
 # host's Docker engine, so CQ_DATA_DIR must be the same path inside and outside.
+#
+# The daemon creates two internal networks at startup (`make integration-up` starts it
+# first): cq-models (model gateway <-> model servers) and cq-agents (agent containers ->
+# capability broker). Agents get PLATFORM_BROKER_URL=http://capability-broker:8000.
 services:
   runtime-daemon:
-    image: crewquarters/platform:dev
+    image: ${CQ_PLATFORM_IMAGE:-crewquarters/platform:dev}
     command: ["crewquarters-runtime", "serve"]
     user: "0:0"
     environment:
@@ -64,10 +68,24 @@ services:
       runtime-daemon:
         condition: service_healthy
 
+  # Agents reach the broker, and nothing else, on the daemon's internal agent network.
+  capability-broker:
+    networks:
+      default: {}
+      run-agents:
+        aliases: [capability-broker]
+    depends_on:
+      runtime-daemon:
+        condition: service_healthy
+
 networks:
   models:
     # Created by the runtime daemon (internal + isolated gateway mode) and shared.
     name: cq-models
+    external: true
+  run-agents:
+    # Created by the runtime daemon (CQ_RUNTIME_AGENT_NETWORK, internal + isolated).
+    name: cq-agents
     external: true
 
 volumes:

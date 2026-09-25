@@ -14,6 +14,15 @@ id crewquarters-runtime
 echo "== perms"; stat -c '%a %U:%G %n' /etc/crewquarters /etc/crewquarters/secrets.env /etc/crewquarters/runtime-token /etc/crewquarters/master.key /var/lib/crewquarters/models /var/lib/crewquarters/postgres
 echo "master.key bytes: $(stat -c %s /etc/crewquarters/master.key)"
 grep -Eq '^1:[0-9a-f]{64}$' /etc/crewquarters/master.key || { echo "FAIL: master.key is not a keyring"; exit 1; }
+# Readable by the crewquarters group (broker + gateway containers via group_add), never by others.
+[ "$(stat -c '%a %U:%G' /etc/crewquarters/master.key)" = "640 root:crewquarters" ] || { echo "FAIL: master.key perms"; exit 1; }
+[ "$(sed -n 's/^CQ_SOCKET_GID=//p' /etc/crewquarters/secrets.env)" = "$(stat -c %g /etc/crewquarters/master.key)" ] || { echo "FAIL: CQ_SOCKET_GID is not the master.key group"; exit 1; }
+for d in documents embedding-models; do
+    [ "$(stat -c '%a %U:%G' /var/lib/crewquarters/$d)" = "2770 root:crewquarters" ] || { echo "FAIL: $d perms: $(stat -c '%a %U:%G' /var/lib/crewquarters/$d)"; exit 1; }
+done
+echo "== knowledge dirs: 2770 root:crewquarters"
+test -f /usr/share/crewquarters/compose/compose.appliance.yaml || { echo "FAIL: compose file"; exit 1; }
+grep -q 'crewquarters/proxy' /usr/share/crewquarters/compose/compose.appliance.yaml || { echo "FAIL: proxy service"; exit 1; }
 grep -c '^CQ_' /etc/crewquarters/secrets.env
 grep '^CQ_SOCKET_GID=' /etc/crewquarters/secrets.env
 grep -q '^CQ_CHAT_CLIENT_TOKEN=' /etc/crewquarters/secrets.env || { echo "FAIL: chat token"; exit 1; }

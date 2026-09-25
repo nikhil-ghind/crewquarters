@@ -4,6 +4,14 @@
 #   make integration-up  adds compose.runtime.yaml: the runtime daemon in a container, so
 #                        real hardened agent containers and mock model-server containers run
 # The appliance uses compose.appliance.yaml from the .deb instead (Akshay Sunil Navani).
+#
+# The proxy is the only published HTTP entry (http://127.0.0.1:${CQ_HTTP_PORT:-8080}):
+# UI, /api/* -> control API, the OAuth/Twilio callbacks -> capability broker, /internal/*
+# -> 404. Routing table: docs/runbooks/proxy.md. Optional profile `callbacks` adds a
+# Cloudflare tunnel that reaches only the callback paths (proxy port 8081).
+#
+# Host ports and images are overridable so a second stack can run beside this one, e.g.
+#   CQ_HTTP_PORT=18080 CQ_POSTGRES_PORT=15432 docker compose -p cqc -f ... up -d
 name: crewquarters
 
 x-app-env: &app-env
@@ -15,7 +23,27 @@ x-app-env: &app-env
   CQ_CATALOG_DIR: /app/catalog/dev
   CQ_RUNTIME_ADAPTER: fake
   CQ_MODEL_GATEWAY_URL: http://model-gateway:8090
+  CQ_BROKER_URL: http://capability-broker:8000
+  CQ_KNOWLEDGE_URL: http://knowledge:8000
+  CQ_CONTROL_API_URL: http://control-api:8080
+  CQ_PUBLIC_BASE_URL: ${CQ_PUBLIC_BASE_URL:-http://localhost:8080}
+  # Shared by the control API (upload proxy) and the knowledge service; the proxy allows
+  # 26 MiB on the upload route (infra/proxy/nginx.conf).
+  CQ_MAX_UPLOAD_BYTES: ${CQ_MAX_UPLOAD_BYTES:-26214400}
   CQ_CHAT_CLIENT_TOKEN: ${CQ_CHAT_CLIENT_TOKEN:-dev-insecure-chat-token-change-me-000000000}
+
+# Services that decrypt provider secrets: the device keyring, read-only, readable through
+# a dedicated group (mirrors the appliance: root:crewquarters 0640 + group_add).
+x-master-key: &master-key
+  group_add:
+    - "${CQ_KEY_GID:-10500}"
+  volumes:
+    - master-key:/run/crewquarters-keys:ro
+
+x-embedding-env: &embedding-env
+  CQ_EMBEDDING_MODE: ${CQ_EMBEDDING_MODE:-fake}
+  CQ_EMBEDDING_MODEL_DIR: /var/lib/crewquarters/embedding-models
+  CQ_EMBEDDING_CACHE_DIR: /var/lib/crewquarters/embedding-models
 
 services:
   postgres:
@@ -25,7 +53,7 @@ services:
       POSTGRES_PASSWORD: crewquarters
       POSTGRES_DB: crewquarters
     ports:
-      - "127.0.0.1:55432:5432"
+      - "127.0.0.1:${CQ_POSTGRES_PORT:-55432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -38,21 +66,41 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/python.Dockerfile
-    image: crewquarters/platform:dev
+    image: ${CQ_PLATFORM_IMAGE:-crewquarters/platform:dev}
     command: ["alembic", "-c", "services/control_api/alembic.ini", "upgrade", "head"]
     environment: *app-env
     depends_on:
       postgres:
         condition: service_healthy
 
+  # One-shot: a development keyring (random, generated once per volume) owned
+  # root:${CQ_KEY_GID} mode 0640. Only the broker and the model gateway mount it.
+  master-key:
+    image: ${CQ_PLATFORM_IMAGE:-crewquarters/platform:dev}
+    user: "0:0"
+    environment:
+      CQ_KEY_GID: ${CQ_KEY_GID:-10500}
+    command:
+      - python
+      - -c
+      - |
+        import os, pathlib, secrets
+        key = pathlib.Path("/keys/master.key")
+        if not key.exists():
+            key.write_text(f"1:{secrets.token_hex(32)}\n")
+        os.chown(key, 0, int(os.environ["CQ_KEY_GID"]))
+        os.chmod(key, 0o640)
+        print("master key ready:", oct(key.stat().st_mode & 0o777), key.stat().st_uid, key.stat().st_gid)
+    volumes:
+      - master-key:/keys
+    network_mode: none
+
   control-api:
-    image: crewquarters/platform:dev
+    image: ${CQ_PLATFORM_IMAGE:-crewquarters/platform:dev}
     command: ["cq-api"]
     environment:
       <<: *app-env
       CQ_API_HOST: 0.0.0.0
-    ports:
-      - "127.0.0.1:8080:8080"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -62,9 +110,59 @@ services:
       timeout: 3s
       retries: 20
 
+  capability-broker:
+    image: ${CQ_PLATFORM_IMAGE:-crewquarters/platform:dev}
+    command: ["cq-broker"]
+    <<: *master-key
+    environment:
+      <<: *app-env
+      CQ_MASTER_KEY_FILE: /run/crewquarters-keys/master.key
+      CQ_PROVIDER_MODE: ${CQ_PROVIDER_MODE:-fake}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      master-key:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: downloads and verifies the pinned embedding model when CQ_EMBEDDING_MODE is
+  # `local` (the dev default `fake` needs no model).
+  knowledge-model:
+    image: ${CQ_PLATFORM_IMAGE:-crewquarters/platform:dev}
+    command: ["sh", "-c", "[ \"$${CQ_EMBEDDING_MODE}\" != local ] || exec cq-knowledge fetch-model"]
+    environment:
+      <<: *embedding-env
+    volumes:
+      - embedding-models:/var/lib/crewquarters/embedding-models
+
+  knowledge:
+    image: ${CQ_PLATFORM_IMAGE:-crewquarters/platform:dev}
+    command: ["cq-knowledge"]
+    environment:
+      <<: [*app-env, *embedding-env]
+      CQ_DOCUMENTS_DIR: /var/lib/crewquarters/documents
+    volumes:
+      - documents:/var/lib/crewquarters/documents
+      - embedding-models:/var/lib/crewquarters/embedding-models
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      knowledge-model:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   model-gateway:
-    image: crewquarters/platform:dev
+    image: ${CQ_PLATFORM_IMAGE:-crewquarters/platform:dev}
     command: ["cq-gateway"]
+    <<: *master-key
     environment:
       <<: *app-env
       CQ_GATEWAY_HOST: 0.0.0.0
@@ -73,8 +171,11 @@ services:
       CQ_GATEWAY_SYSTEM_RESERVE_BYTES: "2147483648"
       CQ_GATEWAY_MAX_SERVING_BYTES: "8589934592"
       CQ_GATEWAY_LOAD_SAFETY_MARGIN_BYTES: "1073741824"
+      CQ_MASTER_KEY_FILE: /run/crewquarters-keys/master.key
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      master-key:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8090/internal/v1/health')"]
@@ -83,7 +184,7 @@ services:
       retries: 20
 
   scheduler:
-    image: crewquarters/platform:dev
+    image: ${CQ_PLATFORM_IMAGE:-crewquarters/platform:dev}
     command: ["cq-scheduler"]
     environment:
       <<: *app-env
@@ -96,6 +197,43 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # Edge proxy (nginx, non-root) with the web UI. The only published HTTP port.
+  proxy:
+    build:
+      context: ../..
+      dockerfile: infra/docker/proxy.Dockerfile
+    image: ${CQ_PROXY_IMAGE:-crewquarters/proxy:dev}
+    ports:
+      - "127.0.0.1:${CQ_HTTP_PORT:-8080}:8080"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [default, callbacks]
+    depends_on:
+      control-api:
+        condition: service_healthy
+      capability-broker:
+        condition: service_healthy
+
+  # Profile `callbacks` (PLAN.md section 14.3): a Cloudflare tunnel for controlled demos.
+  # Its only upstream is the proxy's callback site (port 8081), which serves the Google
+  # OAuth and Twilio callback paths and 404 for everything else. Point the tunnel's public
+  # hostname at http://proxy:8081 and set CQ_PUBLIC_BASE_URL to https://<that hostname>.
+  tunnel:
+    profiles: [callbacks]
+    image: cloudflare/cloudflared:2026.9.3@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CQ_TUNNEL_TOKEN:-}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [callbacks]
+    depends_on:
+      proxy:
+        condition: service_healthy
 
   # --- Person 5: SDK/agent development stack (profile `fake`: make fake-up) ---------------
   # The fake platform stands in for the capability broker, model gateway, knowledge service,
@@ -141,6 +279,11 @@ networks:
   agents:
     name: crewq-agents
     internal: true
+  # Proxy <-> tunnel only. The tunnel cannot reach the control API, broker or database.
+  callbacks: {}
 
 volumes:
   pgdata:
+  master-key:
+  documents:
+  embedding-models:

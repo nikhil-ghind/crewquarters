@@ -8,10 +8,11 @@ Owner: Akshay Sunil Navani (Person 2). Applies to DGX OS (Ubuntu 22.04, `aarch64
 | --- | --- | --- |
 | Runtime daemon (only component with Docker access) | `/usr/lib/crewquarters/python`, `crewquarters-runtime.{socket,service}` | `crewquarters-runtime` (in the `docker` group), Unix socket `/run/crewquarters/runtime.sock` (mode 0660, group `crewquarters`) |
 | Host firewall guard | `crewquarters-netguard.service` | root, oneshot: drops host-bound traffic from `cqa-*` / `cqm-*` bridges |
-| Platform stack (Postgres, control API, scheduler, model gateway) | `/usr/share/crewquarters/compose/compose.appliance.yaml`, `crewquarters.service` | containers, non-root (uid 10001) plus the `crewquarters` group for the socket |
+| Platform stack (Postgres, control API, scheduler, model gateway, capability broker, knowledge service) | `/usr/share/crewquarters/compose/compose.appliance.yaml`, `crewquarters.service` | containers, non-root (uid 10001) plus the `crewquarters` group (`CQ_SOCKET_GID`) |
+| Edge proxy and web UI | `crewquarters/proxy:<version>` image, service `proxy` | nginx, uid 101; the **only** published port (`127.0.0.1:8080`). Routing: [proxy.md](proxy.md) |
 | Configuration | `/etc/crewquarters/crewquarters.env` (conffile) | |
-| Secrets (generated once) | `/etc/crewquarters/secrets.env`, `runtime-token`, `master.key` (0640) | |
-| Data | `/var/lib/crewquarters/{postgres,models,runs,documents,backups}` | preserved on remove and purge |
+| Secrets (generated once) | `/etc/crewquarters/secrets.env`, `runtime-token`, `master.key` (0640 `root:crewquarters`) | |
+| Data | `/var/lib/crewquarters/{postgres,models,runs,documents,embedding-models,backups}` | preserved on remove and purge |
 | Model catalog (pinned) | `/usr/share/crewquarters/catalog/models/*.json` | read-only |
 
 ## Install
@@ -26,7 +27,21 @@ sudo crewquarters bootstrap-token      # one-time owner setup code
 xdg-open http://localhost:8080/setup   # or the Crewquarters desktop launcher
 ```
 
-The package scripts are non-interactive. They never ask for passwords or keys, never run OAuth, and never download models.
+The package scripts are non-interactive. They never ask for passwords or keys, never run OAuth, and never download models. On its first start, the stack's one-shot `knowledge-model` service downloads the pinned CPU embedding model (about 120 MB) and verifies it; an offline bundle built with that model pre-populates `/var/lib/crewquarters/embedding-models` instead.
+
+## Services, networks and secrets
+
+| Service | Networks | Host mounts | Notes |
+| --- | --- | --- | --- |
+| `proxy` | default, `callbacks` | none | Publishes `CQ_BIND_ADDRESS:CQ_HTTP_PORT`; `/internal/*` is 404 at the edge |
+| `control-api`, `scheduler`, `migrate` | default | `/run/crewquarters` (runtime socket) | |
+| `model-gateway` | default, `cq-models` | runtime socket, `master.key` (read-only) | Decrypts OpenAI/Anthropic keys |
+| `capability-broker` | default, `cq-agents` (alias `capability-broker`) | `master.key` (read-only) | Agents reach it as `http://capability-broker:8000`; owns the Google/Twilio callbacks |
+| `knowledge-model` (one-shot), `knowledge` | default | `documents`, `embedding-models` (both `2770 root:crewquarters`) | `cq-knowledge fetch-model`, then the service |
+| `tunnel` (profile `callbacks`) | `callbacks` only | none | `crewquarters tunnel up|down`; see [proxy.md](proxy.md) |
+
+- **Master key.** `/etc/crewquarters/master.key` is a keyring (`1:<64 hex>`), `root:crewquarters`, mode 0640. It is bind-mounted read-only into exactly two containers, `capability-broker` and `model-gateway`, as `/run/crewquarters-keys/master.key` (`CQ_MASTER_KEY_FILE`). They run as uid 10001 and read it through `group_add: CQ_SOCKET_GID`, the host `crewquarters` group that postinst records. No other service mounts it. The loader refuses a file that "other" can read.
+- **Agent network.** Both external networks (`cq-models`, `cq-agents`) are created by the runtime daemon. `crewquarters up` waits for them.
 
 ## Preflight
 
@@ -81,4 +96,5 @@ The script records the cold-start time, the first-token latency (warm), output t
 - Daemon logs: `journalctl -u crewquarters-runtime` (JSON)
 - Stack status: `sudo crewquarters status` (Compose status plus preflight)
 - Stack logs: `sudo crewquarters logs model-gateway`
-- Metrics: control API `GET /internal/v1/metrics`, model gateway `GET /internal/v1/metrics`, scheduler `:9101/metrics`
+- Metrics: control API `GET /internal/v1/metrics`, model gateway `GET /internal/v1/metrics`, scheduler `:9101/metrics`. These are not reachable through the proxy; use `sudo crewquarters logs` or `docker compose -p crewquarters exec <service> ...`.
+- Proxy: `sudo crewquarters logs proxy`. The access log is JSON, without query strings.

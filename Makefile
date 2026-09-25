@@ -44,18 +44,20 @@ db-down: ## Stop PostgreSQL (keeps the volume)
 migrate: db-up ## Apply database migrations to the dev database
 	uv run alembic -c services/control_api/alembic.ini upgrade head
 
-dev-up: ## Build and start the core stack (API on http://127.0.0.1:8080)
+dev-up: ## Build and start the core stack (proxy/UI on http://127.0.0.1:8080)
 	$(COMPOSE) up -d --build --wait
-	@echo "Control API: http://127.0.0.1:8080/api/v1/docs"
+	@echo "UI: http://127.0.0.1:8080/   Control API: http://127.0.0.1:8080/api/v1/docs"
 	@echo "Create the owner with: make dev-bootstrap"
 
 integration-up: ## Dev stack plus the runtime daemon in a container (real agent/model containers)
 	mkdir -p $${CQ_DATA_DIR:-/tmp/crewquarters-data}
 	docker build -f infra/docker/python.Dockerfile -t crewquarters/platform:dev .
-	# The daemon creates the internal cq-models network the gateway joins.
+	docker build -f infra/docker/proxy.Dockerfile -t crewquarters/proxy:dev .
+	# The daemon creates the internal cq-models and cq-agents networks the gateway and
+	# broker join.
 	$(COMPOSE) -f infra/compose/compose.runtime.yaml up -d --wait runtime-daemon
 	$(COMPOSE) -f infra/compose/compose.runtime.yaml up -d --wait
-	@echo "Control API: http://127.0.0.1:8080/api/v1/docs (runtime daemon: containerized, dev only)"
+	@echo "UI/API: http://127.0.0.1:8080/ (runtime daemon: containerized, dev only)"
 
 integration-down: ## Stop the integration stack
 	$(COMPOSE) -f infra/compose/compose.runtime.yaml down
@@ -107,8 +109,9 @@ fmt: ## Apply ruff fixes and formatting
 	uv run ruff check --fix .
 	uv run ruff format .
 
-image: ## Build the platform image for this machine
+image: ## Build the platform and proxy images for this machine
 	docker build -f infra/docker/python.Dockerfile -t crewquarters/platform:dev .
+	docker build -f infra/docker/proxy.Dockerfile -t crewquarters/proxy:dev .
 
 image-arm64: ## Build the linux/arm64 platform image (needs buildx + QEMU off-device)
 	docker buildx build --platform linux/arm64 -f infra/docker/python.Dockerfile -t crewquarters/platform:arm64 --load .

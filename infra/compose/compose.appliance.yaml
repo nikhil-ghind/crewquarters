@@ -7,30 +7,57 @@
 # The runtime daemon runs on the host (systemd, Unix socket); these services reach it
 # through the bind-mounted socket and the crewquarters group. Model-serving and agent
 # containers are started by the daemon, not by Compose.
+#
+# Edge: the proxy is the only published port. It serves the UI, sends /api/* to the
+# control API and the OAuth/Twilio callbacks to the capability broker, and answers 404 for
+# /internal/* (docs/runbooks/proxy.md). Profile `callbacks` adds a Cloudflare tunnel that
+# can reach only the callback paths.
+#
+# Secrets: /etc/crewquarters/master.key (root:crewquarters 0640) is bind-mounted read-only
+# into exactly two services, the capability broker and the model gateway (PLAN.md 10.2);
+# they read it through the crewquarters group (CQ_SOCKET_GID, recorded by postinst).
 name: crewquarters
 
-x-platform: &platform
+x-image: &image
   image: ${CQ_PLATFORM_IMAGE:-crewquarters/platform}:${CQ_VERSION:?set in crewquarters.env}
   pull_policy: missing
   restart: unless-stopped
+
+x-platform-env: &platform-env
+  CQ_PROFILE: dgx
+  CQ_DATABASE_URL: postgresql+psycopg://crewquarters:${POSTGRES_PASSWORD}@postgres:5432/crewquarters
+  CQ_SECRET_KEY: ${CQ_SECRET_KEY:?}
+  CQ_CAPABILITY_SIGNING_KEY: ${CQ_CAPABILITY_SIGNING_KEY:?}
+  CQ_INTERNAL_SERVICE_TOKEN: ${CQ_INTERNAL_SERVICE_TOKEN:?}
+  CQ_PUBLIC_ORIGINS: ${CQ_PUBLIC_ORIGINS:-["http://localhost:8080","http://127.0.0.1:8080"]}
+  CQ_COOKIE_SECURE: ${CQ_COOKIE_SECURE:-false}
+  CQ_CATALOG_DIR: /app/catalog/dev
+  CQ_RUNTIME_ADAPTER: daemon
+  CQ_RUNTIME_SOCKET: /run/crewquarters/runtime.sock
+  CQ_MODEL_GATEWAY_URL: http://model-gateway:8090
+  CQ_BROKER_URL: http://capability-broker:8000
+  CQ_KNOWLEDGE_URL: http://knowledge:8000
+  CQ_CONTROL_API_URL: http://control-api:8080
+  CQ_PUBLIC_BASE_URL: ${CQ_PUBLIC_BASE_URL:-http://localhost:8080}
+  # Shared by the control API (upload proxy) and the knowledge service; the proxy allows
+  # 26 MiB on the upload route (infra/proxy/nginx.conf).
+  CQ_MAX_UPLOAD_BYTES: ${CQ_MAX_UPLOAD_BYTES:-26214400}
+  CQ_CHAT_CLIENT_TOKEN: ${CQ_CHAT_CLIENT_TOKEN:?}
+
+# Services that need the runtime daemon socket.
+x-platform: &platform
+  <<: *image
   group_add:
     - "${CQ_SOCKET_GID:?set by the installer}"
   volumes:
     - /run/crewquarters:/run/crewquarters
     - /usr/share/crewquarters/catalog:/usr/share/crewquarters/catalog:ro
-  environment: &platform-env
-    CQ_PROFILE: dgx
-    CQ_DATABASE_URL: postgresql+psycopg://crewquarters:${POSTGRES_PASSWORD}@postgres:5432/crewquarters
-    CQ_SECRET_KEY: ${CQ_SECRET_KEY:?}
-    CQ_CAPABILITY_SIGNING_KEY: ${CQ_CAPABILITY_SIGNING_KEY:?}
-    CQ_INTERNAL_SERVICE_TOKEN: ${CQ_INTERNAL_SERVICE_TOKEN:?}
-    CQ_PUBLIC_ORIGINS: ${CQ_PUBLIC_ORIGINS:-["http://localhost:8080","http://127.0.0.1:8080"]}
-    CQ_COOKIE_SECURE: ${CQ_COOKIE_SECURE:-false}
-    CQ_CATALOG_DIR: /app/catalog/dev
-    CQ_RUNTIME_ADAPTER: daemon
-    CQ_RUNTIME_SOCKET: /run/crewquarters/runtime.sock
-    CQ_MODEL_GATEWAY_URL: http://model-gateway:8090
-    CQ_CHAT_CLIENT_TOKEN: ${CQ_CHAT_CLIENT_TOKEN:?}
+  environment: *platform-env
+
+x-embedding-env: &embedding-env
+  CQ_EMBEDDING_MODE: ${CQ_EMBEDDING_MODE:-local}
+  CQ_EMBEDDING_MODEL_DIR: /var/lib/crewquarters/embedding-models
+  CQ_EMBEDDING_CACHE_DIR: /var/lib/crewquarters/embedding-models
 
 services:
   postgres:
@@ -62,8 +89,6 @@ services:
     environment:
       <<: *platform-env
       CQ_API_HOST: 0.0.0.0
-    ports:
-      - "${CQ_BIND_ADDRESS:-127.0.0.1}:8080:8080"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -73,9 +98,75 @@ services:
       timeout: 3s
       retries: 30
 
+  capability-broker:
+    <<: *image
+    command: ["cq-broker"]
+    group_add:
+      - "${CQ_SOCKET_GID:?set by the installer}"
+    volumes:
+      - /etc/crewquarters/master.key:/run/crewquarters-keys/master.key:ro
+    environment:
+      <<: *platform-env
+      CQ_MASTER_KEY_FILE: /run/crewquarters-keys/master.key
+      CQ_PROVIDER_MODE: ${CQ_PROVIDER_MODE:-live}
+      CQ_GOOGLE_CLIENT_ID: ${CQ_GOOGLE_CLIENT_ID:-}
+      CQ_GOOGLE_CLIENT_SECRET: ${CQ_GOOGLE_CLIENT_SECRET:-}
+      CQ_TWILIO_ALLOWED_NUMBERS: ${CQ_TWILIO_ALLOWED_NUMBERS:-[]}
+    networks:
+      default: {}
+      agents:
+        aliases: [capability-broker]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # One-shot: downloads (or re-verifies) the pinned embedding model; an offline bundle
+  # pre-populates the directory (crewquarters load-bundle).
+  knowledge-model:
+    <<: *image
+    restart: "no"
+    command: ["sh", "-c", "[ \"$${CQ_EMBEDDING_MODE}\" != local ] || exec cq-knowledge fetch-model"]
+    group_add:
+      - "${CQ_SOCKET_GID:?set by the installer}"
+    environment:
+      <<: *embedding-env
+    volumes:
+      - /var/lib/crewquarters/embedding-models:/var/lib/crewquarters/embedding-models
+
+  knowledge:
+    <<: *image
+    command: ["cq-knowledge"]
+    group_add:
+      - "${CQ_SOCKET_GID:?set by the installer}"
+    volumes:
+      - /var/lib/crewquarters/documents:/var/lib/crewquarters/documents
+      - /var/lib/crewquarters/embedding-models:/var/lib/crewquarters/embedding-models
+    environment:
+      <<: [*platform-env, *embedding-env]
+      CQ_DOCUMENTS_DIR: /var/lib/crewquarters/documents
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      knowledge-model:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
   model-gateway:
     <<: *platform
     command: ["cq-gateway"]
+    volumes:
+      - /run/crewquarters:/run/crewquarters
+      - /usr/share/crewquarters/catalog:/usr/share/crewquarters/catalog:ro
+      - /etc/crewquarters/master.key:/run/crewquarters-keys/master.key:ro
     environment:
       <<: *platform-env
       CQ_GATEWAY_HOST: 0.0.0.0
@@ -88,6 +179,7 @@ services:
       CQ_GATEWAY_MAX_SERVING_BYTES: ${CQ_GATEWAY_MAX_SERVING_BYTES:-103079215104}
       CQ_GATEWAY_LOAD_SAFETY_MARGIN_BYTES: ${CQ_GATEWAY_LOAD_SAFETY_MARGIN_BYTES:-8589934592}
       CQ_GATEWAY_IDLE_UNLOAD_SECONDS: ${CQ_GATEWAY_IDLE_UNLOAD_SECONDS:-600}
+      CQ_MASTER_KEY_FILE: /run/crewquarters-keys/master.key
     networks:
       - default
       - models
@@ -115,8 +207,48 @@ services:
       timeout: 3s
       retries: 20
 
+  proxy:
+    image: ${CQ_PROXY_IMAGE:-crewquarters/proxy}:${CQ_VERSION:?set in crewquarters.env}
+    pull_policy: missing
+    restart: unless-stopped
+    ports:
+      - "${CQ_BIND_ADDRESS:-127.0.0.1}:${CQ_HTTP_PORT:-8080}:8080"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [default, callbacks]
+    depends_on:
+      control-api:
+        condition: service_healthy
+      capability-broker:
+        condition: service_healthy
+
+  # Profile `callbacks` (PLAN.md section 14.3): only for controlled demos; stop it after.
+  #   crewquarters tunnel up|down   (needs CQ_TUNNEL_TOKEN in /etc/crewquarters/secrets.env)
+  tunnel:
+    profiles: [callbacks]
+    image: cloudflare/cloudflared:2026.9.3@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CQ_TUNNEL_TOKEN:-}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [callbacks]
+    depends_on:
+      proxy:
+        condition: service_healthy
+
 networks:
   models:
     # Created at boot by the host runtime daemon (internal, isolated gateway mode).
     name: cq-models
     external: true
+  agents:
+    # Created at boot by the host runtime daemon: agent containers reach only the broker.
+    name: cq-agents
+    external: true
+  # Proxy <-> tunnel only.
+  callbacks: {}

@@ -6,7 +6,10 @@
 * ``AnthropicAdapter``: Anthropic Messages API through the official ``anthropic`` SDK.
 
 Every adapter returns text, optional structured output, usage, finish reason,
-provider/model, latency and request ID. Features an adapter cannot honor fail with a
+provider/model, latency and request ID. Upstream failures use the broker-SDK contract's
+codes (``packages/contracts/broker-sdk.openapi.yaml``): ``RATE_LIMITED`` (429),
+``PROVIDER_ERROR`` (502, the provider rejected the request) and ``PROVIDER_UNAVAILABLE``
+(503, unreachable or a provider 5xx). Features an adapter cannot honor fail with a
 clear error instead of silently degrading; parameters a model rejects outright
 (``temperature`` on Claude Opus 5) are dropped and reported in ``ignoredParameters``.
 """
@@ -63,18 +66,40 @@ class ChatResult:
     ignored_parameters: list[str] = field(default_factory=list)
 
     def to_wire(self, profile: str) -> dict[str, Any]:
+        """The contract's ChatResponse (plus ``profile`` and ``ignoredParameters``). A
+        missing provider request ID is filled with the gateway request ID by the route."""
         return {
             "profile": profile,
             "provider": self.provider,
             "model": self.model,
+            "locality": "local" if self.provider == "local" else "cloud",
             "text": self.text,
             "structured": self.structured,
-            "finishReason": self.finish_reason,
+            "finishReason": normalize_finish_reason(self.finish_reason),
             "usage": {"inputTokens": self.input_tokens, "outputTokens": self.output_tokens},
-            "latencyMs": self.latency_ms,
+            "latencyMs": max(0, self.latency_ms),
             "requestId": self.request_id,
             "ignoredParameters": self.ignored_parameters,
         }
+
+
+FINISH_REASONS = frozenset({"stop", "length", "content_filter", "error"})
+_FINISH_ALIASES = {
+    "end_turn": "stop",
+    "stop_sequence": "stop",
+    "completed": "stop",
+    "max_tokens": "length",
+    "max_output_tokens": "length",
+    "model_context_window_exceeded": "length",
+    "safety": "content_filter",
+}
+
+
+def normalize_finish_reason(reason: str | None) -> str:
+    """Map provider finish reasons onto the contract enum; unknown values become ``error``."""
+    value = (reason or "stop").lower()
+    value = _FINISH_ALIASES.get(value, value)
+    return value if value in FINISH_REASONS else "error"
 
 
 class Adapter(Protocol):
@@ -120,21 +145,31 @@ def try_structured(text: str, schema: dict[str, Any]) -> tuple[Any, str | None]:
         return None, exc.message
 
 
+def provider_status_error(provider: str, status: int) -> PlatformError:
+    """Never echo the provider's body: it may contain prompt text or key fragments."""
+    details = {"provider": provider, "providerStatus": status}
+    if status == 429:
+        return PlatformError("RATE_LIMITED", f"{provider} rate limited the request.", 429, details)
+    if status >= 500:
+        return PlatformError("PROVIDER_UNAVAILABLE", f"{provider} returned {status}.", 503, details)
+    return PlatformError(
+        "PROVIDER_ERROR", f"{provider} rejected the request ({status}).", 502, details
+    )
+
+
+def provider_unreachable(provider: str, exc: BaseException) -> PlatformError:
+    return PlatformError(
+        "PROVIDER_UNAVAILABLE",
+        f"{provider} unreachable: {type(exc).__name__}",
+        503,
+        {"provider": provider},
+    )
+
+
 def _http_error(provider: str, exc: Exception) -> PlatformError:
     if isinstance(exc, httpx.HTTPStatusError):
-        status = exc.response.status_code
-        if status == 429:
-            return PlatformError(
-                "PROVIDER_RATE_LIMITED", f"{provider} rate limited the request.", 429
-            )
-        if status >= 500:
-            return PlatformError("PROVIDER_UNAVAILABLE", f"{provider} returned {status}.", 502)
-        return PlatformError(
-            "PROVIDER_REJECTED", f"{provider} rejected the request ({status}).", 502
-        )
-    return PlatformError(
-        "PROVIDER_UNAVAILABLE", f"{provider} unreachable: {type(exc).__name__}", 502
-    )
+        return provider_status_error(provider, exc.response.status_code)
+    return provider_unreachable(provider, exc)
 
 
 # --- Local (vLLM / mock server) ---------------------------------------------------------
@@ -378,6 +413,15 @@ class OpenAIAdapter:
             request_id=request_id,
         )
 
+    async def verify(self) -> None:
+        """A minimal authenticated call (list models) for the connection test."""
+        try:
+            async with self._client() as client:
+                response = await client.get("/models")
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise _http_error("OpenAI", exc) from None
+
     async def chat(self, request: ChatRequest) -> ChatResult:
         started = time.perf_counter()
         try:
@@ -418,7 +462,7 @@ class OpenAIAdapter:
                         final = event.get("response", {})
                     elif kind in ("response.failed", "error"):
                         raise PlatformError(
-                            "PROVIDER_REJECTED", "OpenAI reported a failed response.", 502
+                            "PROVIDER_ERROR", "OpenAI reported a failed response.", 502
                         )
         except httpx.HTTPError as exc:
             raise _http_error("OpenAI", exc) from exc
@@ -444,11 +488,12 @@ class AnthropicAdapter:
         *,
         fallbacks: bool = True,
         client: anthropic.AsyncAnthropic | None = None,
+        max_retries: int = 2,
     ) -> None:
         self.model = model
         self.fallbacks = fallbacks
         self.client = client or anthropic.AsyncAnthropic(
-            api_key=api_key, timeout=timeout, max_retries=2
+            api_key=api_key, timeout=timeout, max_retries=max_retries
         )
 
     def _params(self, request: ChatRequest) -> tuple[dict[str, Any], list[str]]:
@@ -505,21 +550,16 @@ class AnthropicAdapter:
 
     @staticmethod
     def _error(exc: Exception) -> PlatformError:
-        if isinstance(exc, anthropic.RateLimitError):
-            return PlatformError(
-                "PROVIDER_RATE_LIMITED", "Anthropic rate limited the request.", 429
-            )
         if isinstance(exc, anthropic.APIStatusError):
-            if exc.status_code >= 500:
-                return PlatformError(
-                    "PROVIDER_UNAVAILABLE", f"Anthropic returned {exc.status_code}.", 502
-                )
-            return PlatformError(
-                "PROVIDER_REJECTED", f"Anthropic rejected the request ({exc.status_code}).", 502
-            )
-        return PlatformError(
-            "PROVIDER_UNAVAILABLE", f"Anthropic unreachable: {type(exc).__name__}", 502
-        )
+            return provider_status_error("Anthropic", exc.status_code)
+        return provider_unreachable("Anthropic", exc)
+
+    async def verify(self) -> None:
+        """A minimal authenticated call (list one model) for the connection test."""
+        try:
+            await self.client.models.list(limit=1)
+        except anthropic.APIError as exc:
+            raise self._error(exc) from None
 
     async def chat(self, request: ChatRequest) -> ChatResult:
         params, ignored = self._params(request)

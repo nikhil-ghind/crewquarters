@@ -14,6 +14,7 @@ import httpx
 import httpx2
 import pytest
 
+from crewquarters_gateway.adapters import AnthropicAdapter, OpenAIAdapter
 from crewquarters_gateway.config import GatewaySettings, GiB
 from crewquarters_gateway.main import Gateway, create_app
 from crewquarters_gateway.runtime import InProcessModelRuntime
@@ -135,12 +136,36 @@ def run_token(
     return token, claims.token_id
 
 
-def anthropic_client(handler: Any) -> anthropic.AsyncAnthropic:
+def anthropic_client(handler: Any, api_key: str = "sk-test") -> anthropic.AsyncAnthropic:
     return anthropic.AsyncAnthropic(
-        api_key="sk-test",
+        api_key=api_key,
         max_retries=0,
         http_client=anthropic.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler)),
     )
+
+
+def mock_cloud(gateway: Gateway, *, anthropic: Any = None, openai: Any = None) -> list[str]:
+    """Route the gateway's cloud adapters to mocked transports. ``anthropic`` takes an
+    ``httpx2`` handler (the SDK's client), ``openai`` an ``httpx`` handler. Returns the
+    API keys the adapters were built with, for assertions."""
+    keys: list[str] = []
+    original = gateway.inference.adapter_for
+
+    def adapter_for(
+        provider: str, key: str, model: str, timeout: float, *, max_retries: int = 2
+    ) -> OpenAIAdapter | AnthropicAdapter:
+        keys.append(key)
+        adapter = original(provider, key, model, timeout, max_retries=max_retries)
+        if isinstance(adapter, AnthropicAdapter):
+            assert anthropic is not None, "unexpected Anthropic call"
+            adapter.client = anthropic_client(anthropic, key)
+        else:
+            assert openai is not None, "unexpected OpenAI call"
+            adapter.transport = httpx.MockTransport(openai)
+        return adapter
+
+    gateway.inference.adapter_for = adapter_for  # type: ignore[method-assign]
+    return keys
 
 
 @pytest.fixture(autouse=True)

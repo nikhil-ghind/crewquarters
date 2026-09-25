@@ -13,10 +13,10 @@ from gateway_helpers import (
     QUALITY,
     SMALL,
     FakeControl,
-    anthropic_client,
     chat_body,
     gateway_settings,
     install,
+    mock_cloud,
     run_token,
 )
 from sqlalchemy import select
@@ -181,14 +181,7 @@ async def test_invalid_structured_output_still_counts_usage(
         )
 
     gateway.inference.credentials = StaticCredentials({"anthropic": "sk-test"})
-    original = gateway.inference._cloud_adapter
-
-    async def patched(provider: str, model: str) -> Any:
-        adapter = await original(provider, model)
-        adapter.client = anthropic_client(handler)  # type: ignore[attr-defined]
-        return adapter
-
-    gateway.inference._cloud_adapter = patched  # type: ignore[method-assign]
+    mock_cloud(gateway, anthropic=handler)
     run_id = str(uuid.uuid4())
     token, _ = run_token(gateway, run_id, caps=["cloud.anthropic", "llm.profile:anthropic.default"])
     response = await gw_client.post(
@@ -231,14 +224,7 @@ async def test_refusal_records_usage_then_fails(
         )
 
     gateway.inference.credentials = StaticCredentials({"anthropic": "sk-test"})
-    original = gateway.inference._cloud_adapter
-
-    async def patched(provider: str, model: str) -> Any:
-        adapter = await original(provider, model)
-        adapter.client = anthropic_client(handler)  # type: ignore[attr-defined]
-        return adapter
-
-    gateway.inference._cloud_adapter = patched  # type: ignore[method-assign]
+    mock_cloud(gateway, anthropic=handler)
     run_id = str(uuid.uuid4())
     token, _ = run_token(gateway, run_id, caps=["cloud.anthropic", "llm.profile:anthropic.default"])
     response = await gw_client.post(

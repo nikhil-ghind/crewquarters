@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 GiB = 1024**3
@@ -41,15 +41,32 @@ class GatewaySettings(BaseSettings):
     run_lease_ttl_seconds: int = 300
     chat_lease_ttl_seconds: int = 12 * 3600
     manual_lease_ttl_seconds: int = 3600
-    wait_ready_seconds: int = 900
+    # Timeout chain (docs/model-gateway.md, "Timeouts"): a request may wait up to
+    # wait_ready_seconds for a cold model and then request_timeout_seconds for the reply.
+    # The broker (crewquarters_broker.main.GATEWAY_TIMEOUT_SECONDS) and the SDK
+    # (crewquarters.llm.LLM_TIMEOUT_SECONDS) each wait longer than the layer inside them.
+    wait_ready_seconds: int = 900  # matches the dgx catalog startupTimeoutSeconds
 
     max_output_tokens: int = 8192
     per_run_token_limit: int = 200_000
     daily_cloud_token_budget: int = 0  # 0 disables the daily budget
     request_timeout_seconds: float = 300.0
+    # Provider-profile connection tests (POST /provider-profiles/{id}/test).
+    provider_test_timeout_seconds: float = 15.0
+
+    # Device keyring shared with the capability broker (same variable name). Unset: cloud
+    # providers are disabled.
+    master_key_file: str | None = Field(
+        None, validation_alias=AliasChoices("CQ_MASTER_KEY_FILE", "CQ_GATEWAY_MASTER_KEY_FILE")
+    )
+    credential_cache_seconds: float = 60.0
+    # Idempotent /llm/chat replays (in-process; see docs/model-gateway.md).
+    idempotency_ttl_seconds: float = 3600.0
+    idempotency_max_entries: int = 2000
 
     anthropic_default_model: str = "claude-opus-5"
-    # openai.<name> -> model id, e.g. {"default": "<model>"}. No default is assumed.
+    # Operator overrides: <provider>.<name> -> model id, e.g. {"default": "<model>"}. The
+    # provider profile's allowedModels are used otherwise (docs/model-gateway.md).
     openai_models: dict[str, str] = Field(default_factory=dict)
     anthropic_models: dict[str, str] = Field(default_factory=dict)
     anthropic_fallbacks: bool = True

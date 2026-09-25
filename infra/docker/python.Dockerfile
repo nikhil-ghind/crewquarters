@@ -41,8 +41,13 @@ COPY services/knowledge services/knowledge
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.12-slim-bookworm
+# The knowledge service's data directories exist in the image, owned by the service user,
+# so a fresh named volume mounted there (laptop Compose) starts out writable. The
+# appliance bind-mounts host directories instead (group crewquarters, setgid).
 RUN groupadd --system --gid 10001 crewquarters \
-    && useradd --system --uid 10001 --gid crewquarters --no-create-home crewquarters
+    && useradd --system --uid 10001 --gid crewquarters --no-create-home crewquarters \
+    && install -d -o 10001 -g 10001 -m 0750 /var/lib/crewquarters/documents \
+        /var/lib/crewquarters/embedding-models
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY packages/contracts packages/contracts

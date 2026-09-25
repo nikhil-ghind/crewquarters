@@ -18,6 +18,7 @@ from gateway_helpers import (
     anthropic_client,
     chat_body,
     install,
+    mock_cloud,
     run_token,
 )
 from sqlalchemy import select, text
@@ -272,18 +273,20 @@ async def test_run_calls_require_active_attempt_and_capability(
         json={**body, "profile": QUALITY},
         headers={"X-Capability-Token": token},
     )
-    assert denied.status_code == 403 and denied.json()["error"]["code"] == "PERMISSION_DENIED"
+    assert denied.status_code == 403 and denied.json()["error"]["code"] == "CAPABILITY_DENIED"
+    assert denied.json()["error"]["details"] == {"capability": f"llm.profile:{QUALITY}"}
 
     control.runs[run_id]["currentAttempt"] = 2  # a retry made this token stale
     stale = await gw_client.post(
         "/internal/v1/llm/chat", json=body, headers={"X-Capability-Token": token}
     )
-    assert stale.status_code == 403 and stale.json()["error"]["code"] == "RUN_NOT_ACTIVE"
+    assert stale.status_code == 409 and stale.json()["error"]["code"] == "RUN_NOT_ACTIVE"
+    assert stale.json()["error"]["requestId"]  # every error envelope carries one
 
     forged = await gw_client.post(
         "/internal/v1/llm/chat", json=body, headers={"X-Capability-Token": token + "x"}
     )
-    assert forged.status_code == 401
+    assert forged.status_code == 401 and forged.json()["error"]["code"] == "UNAUTHENTICATED"
 
     chat_cannot_impersonate = await gw_client.post("/internal/v1/llm/chat", json=body)
     assert chat_cannot_impersonate.status_code == 401
@@ -347,17 +350,14 @@ async def test_cloud_requires_explicit_permission_and_credentials(
     missing = await gw_client.post(
         "/internal/v1/llm/chat", json=body, headers={"X-Capability-Token": cloud}
     )
-    assert (
-        missing.status_code == 409
-        and missing.json()["error"]["code"] == "CLOUD_PROVIDER_NOT_CONFIGURED"
-    )
+    assert missing.status_code == 409 and missing.json()["error"]["code"] == "NEEDS_CONNECTION"
     openai_body = {**body, "profile": "openai.default"}
     openai_run = str(uuid.uuid4())
     oai, _ = run_token(gateway, openai_run, caps=["cloud.openai", "llm.profile:openai.default"])
     unconfigured = await gw_client.post(
         "/internal/v1/llm/chat", json=openai_body, headers={"X-Capability-Token": oai}
     )
-    assert unconfigured.json()["error"]["code"] == "CLOUD_PROFILE_NOT_CONFIGURED"
+    assert unconfigured.json()["error"]["code"] == "NEEDS_CONFIGURATION"
     chat_cloud = await gw_client.post(
         "/internal/v1/llm/chat", json={**body, "holder": {"type": "chat", "id": "c"}}
     )
@@ -452,7 +452,7 @@ async def test_anthropic_errors_are_classified() -> None:
         await adapter.chat(
             ChatRequest(messages=[{"role": "user", "content": "x"}], max_output_tokens=10)
         )
-    assert err.value.code == "PROVIDER_RATE_LIMITED"
+    assert err.value.code == "RATE_LIMITED" and err.value.status_code == 429
 
 
 async def test_anthropic_streaming() -> None:
@@ -589,14 +589,7 @@ async def test_cloud_call_is_audited_and_counted(
         )
 
     gateway.inference.credentials = StaticCredentials({"anthropic": "sk-test"})
-    original = gateway.inference._cloud_adapter
-
-    async def patched(provider: str, model: str) -> Any:
-        adapter = await original(provider, model)
-        adapter.client = anthropic_client(handler)  # type: ignore[attr-defined]
-        return adapter
-
-    gateway.inference._cloud_adapter = patched  # type: ignore[method-assign]
+    mock_cloud(gateway, anthropic=handler)
     run_id = str(uuid.uuid4())
     token, _ = run_token(gateway, run_id, caps=["cloud.anthropic", "llm.profile:anthropic.default"])
     response = await gw_client.post(
