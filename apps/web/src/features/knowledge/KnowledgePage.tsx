@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router';
 import { isApiError, remediation } from '../../api/errors';
 import { useActionGuard } from '../../api/guards';
 import { useIntentKey } from '../../api/mutations';
-import { pendingApi } from '../../api/pending';
+import { endpoints as pendingApi } from '../../api/endpoints';
 import { keys, useKnowledgeBases } from '../../api/queries';
 import { Button } from '../../components/Button';
 import { EmptyState, SkeletonBlock } from '../../components/Feedback';

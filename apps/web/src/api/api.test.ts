@@ -4,7 +4,7 @@ import { errorEnvelope, server } from '../test/server';
 import { api, idempotencyKey, mutate, unwrap, withKey } from './client';
 import { connectivity } from './connectivity';
 import { ApiError } from './errors';
-import { pendingApi } from './pending';
+import { endpoints as pendingApi } from './endpoints';
 import { session } from './session';
 import { mergeEvents } from './streams';
 import { event } from '../test/fixtures';

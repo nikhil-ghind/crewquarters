@@ -43,6 +43,23 @@ export type ChatSessionCreateIn = Schemas['ChatSessionCreateIn'];
 export type ChatMessageOut = Schemas['ChatMessageOut'];
 export type HealthOut = Schemas['HealthOut'];
 export type ErrorResponse = Schemas['ErrorResponse'];
+export type GoogleStartIn = Schemas['GoogleStartIn'];
+export type GoogleCapability = GoogleStartIn['capabilities'][number];
+export type GoogleStartOut = Schemas['GoogleStartOut'];
+export type TwilioCredentialsIn = Schemas['TwilioCredentialsIn'];
+export type TwilioTestCallIn = Schemas['TwilioTestCallIn'];
+export type TwilioTestCallOut = Schemas['TwilioTestCallOut'];
+export type ProviderProfileOut = Schemas['ProviderProfileOut'];
+export type ProviderProfileCreateIn = Schemas['ProviderProfileCreateIn'];
+export type ProviderProfileTestOut = Schemas['ProviderProfileTestOut'];
+export type KnowledgeBaseOut = Schemas['KnowledgeBaseOut'];
+export type KnowledgeBaseCreateIn = Schemas['KnowledgeBaseCreateIn'];
+export type DocumentOut = Schemas['DocumentOut'];
+export type DocumentState = DocumentOut['state'];
+export type KnowledgeQueryIn = Schemas['KnowledgeQueryIn'];
+export type KnowledgeQueryOut = Schemas['KnowledgeQueryOut'];
+export type PassageOut = Schemas['PassageOut'];
+export type CitationOut = Schemas['CitationOut'];
 
 export const RUN_STATES = [
   'QUEUED',

@@ -32,7 +32,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import type { ChatMessageOut, InputRequestOut } from '../src/api/schema.ts';
-import type { StoredCitation } from '../src/api/pending-contracts.ts';
+import type { StoredCitation } from '../src/lib/knowledge.ts';
 import { HTML_SECURITY_HEADERS } from './csp.ts';
 import { KB_PASSAGES } from './fixtures.ts';
 import {

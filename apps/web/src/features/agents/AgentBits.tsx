@@ -1,6 +1,5 @@
 import { ArrowUpRight, ShieldCheck } from 'lucide-react';
-import type { CatalogAgentOut, ConnectionOut as GeneratedConnection, InstallationOut } from '../../api/schema';
-import type { ConnectionOut } from '../../api/pending-contracts';
+import type { CatalogAgentOut, ConnectionOut, InstallationOut } from '../../api/schema';
 import { StatusBadge } from '../../components/StatusBadge';
 import { AGENT_STATUS, CONNECTION_STATUS, PROVIDER_NAMES, READINESS_NAMES, READINESS_STATUS } from '../../lib/status';
 import { usesCloud } from '../../lib/permissions';
@@ -34,7 +33,7 @@ export function RequirementBadges({
   connections,
 }: {
   agent: CatalogAgentOut;
-  connections?: (ConnectionOut | GeneratedConnection)[];
+  connections?: ConnectionOut[];
 }) {
   const required = requiredConnectionsText(agent.latest);
   if (required.length === 0) return <span className="muted">No connections needed</span>;

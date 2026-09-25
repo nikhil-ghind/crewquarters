@@ -15,6 +15,7 @@ import { eventEntry } from './activity/RunDetailPage';
 import LoginPage, { safeNext } from './auth/LoginPage';
 import { InputRequestCard } from './common/InputRequestCard';
 import { cronFor, draftFromCron, formatLocal, newDraft } from './schedules/ScheduleEditor';
+import { profileStatus } from './connections/forms';
 
 describe('Crew Request card', () => {
   it('shows the caller preview, consequence and count, and submits the saved version once', async () => {
@@ -197,5 +198,15 @@ describe('sign-in and session expiry', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByText('Run page')).toBeInTheDocument();
     expect(session.csrfToken()).toBe('csrf-token-1');
+  });
+});
+
+describe('cloud key status', () => {
+  const base = { id: 'p1', provider: 'openai' as const, displayName: 'OpenAI key', allowedModels: [], budgets: {}, enabled: true, lastCheckedAt: null };
+  it('shows a rejected key as needing attention, and untested keys honestly', () => {
+    expect(profileStatus({ ...base, status: 'ERROR' }).label).toBe('Needs attention');
+    expect(profileStatus({ ...base, status: 'CONNECTED' }).label).toBe('Connected');
+    expect(profileStatus({ ...base, status: 'UNTESTED' }).label).toBe('Not tested yet');
+    expect(profileStatus({ ...base, status: 'CONNECTED', enabled: false }).label).toBe('Disabled');
   });
 });

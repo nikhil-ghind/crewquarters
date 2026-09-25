@@ -7,7 +7,7 @@ import { useCallback } from 'react';
 import { isApiError } from '../../api/errors';
 import { usePatchSettings } from '../../api/mutations';
 import { keys } from '../../api/queries';
-import type { SettingsOut } from '../../api/pending-contracts';
+import type { SettingsOut } from '../../api/schema';
 
 export const SETUP_STEPS = [
   { id: 'welcome', label: 'Welcome' },

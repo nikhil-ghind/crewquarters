@@ -5,6 +5,8 @@
  * Do not add labels outside this file.
  */
 import type {
+  ConnectionStatus,
+  DocumentState,
   InputRequestOut,
   ModelOut,
   ReadinessCheck,
@@ -12,7 +14,6 @@ import type {
   StatusCheck,
   SystemStatusOut,
 } from '../api/schema';
-import type { ConnectionStatus, DocumentState } from '../api/pending-contracts';
 
 export type Tone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 
@@ -112,6 +113,9 @@ export const CONNECTION_STATUS: Record<ConnectionStatus, StatusSpec> = {
     hint: 'The connection service is not responding, so the status is unknown.',
   },
 };
+
+/** A saved cloud key that has not been tested yet. */
+export const PROFILE_UNTESTED: StatusSpec = { label: 'Not tested yet', tone: 'neutral', icon: 'minus' };
 
 export const DEVICE_STATUS: Record<SystemStatusOut['status'], StatusSpec> = {
   healthy: { label: 'Healthy', tone: 'success', icon: 'check' },

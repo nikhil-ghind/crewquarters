@@ -16,14 +16,12 @@ import type {
   RunState,
   ScheduleOut,
   UserOut,
-} from '../src/api/schema.ts';
-import type {
   ConnectionOut,
   DocumentOut,
   KnowledgeBaseOut,
   ProviderProfileOut,
-  StoredCitation,
-} from '../src/api/pending-contracts.ts';
+} from '../src/api/schema.ts';
+import type { StoredCitation } from '../src/lib/knowledge.ts';
 import { GiB, MANIFESTS, MODELS, type ManifestFixture } from './fixtures.ts';
 import { ApiErr, type Obj, type Resp } from './http.ts';
 

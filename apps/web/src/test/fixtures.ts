@@ -3,8 +3,9 @@
  * contract types (schema.d.ts), so a contract change breaks these tests at compile
  * time rather than silently drifting.
  */
-import type { ConnectionOut, SettingsOut } from '../api/pending-contracts';
 import type {
+  ConnectionOut,
+  SettingsOut,
   AttentionOut,
   CatalogAgentOut,
   InputRequestOut,
