@@ -47,11 +47,12 @@ The run and attempt always come from the token. JSON is camelCase. Errors use th
 
 ### How the broker applies the contract
 
-- **Handshake.** The broker forwards the handshake to the control API, then builds the `Handshake` response from the control API's run view and the token.
-  - The run view doesn't yet include `trigger`, `scheduledFor`, `agentId`, `agentVersion`, `createdAt`, `activeTimeoutSeconds` or `inputWaitRemainingSeconds`.
-  - Until it does, those fields fall back to `manual`, `null`, the SDK's `agentId`, the token's version and issue time, and the token's remaining lifetime. The token's lifetime always covers a legitimate attempt.
+- **Handshake.** The broker forwards the handshake to the control API, then builds the `Handshake` response from the control API's run view (`GET /internal/v1/runs/{runId}`) and the token.
+  - `trigger`, `scheduledFor`, `agentId`, `agentVersion` (semver), `createdAt`, and the limits (`activeTimeoutSeconds`, remaining active seconds, `maxInputWaitSeconds`, remaining input wait) come from the run view. The token-derived fallbacks (`manual`, the token's lifetime) apply only to an older control API without those fields.
   - A `protocol` other than `v1alpha1` returns `PROTOCOL_UNSUPPORTED`.
-- **Events.** Each event in a batch is forwarded to the control API, and duplicate `clientEventId` values within one batch are dropped. Deduplication across retries needs the control API to store `clientEventId` (requested from Person 1).
+- **Events.** A batch is forwarded whole to `POST /internal/v1/runs/{runId}/event-batches`. The control API validates every event first (type, 16 KiB payload cap, `run-event.schema.json`) and stores none if any fails; the `422` lists each rejected event in `details.rejected[]`. A unique `(run_id, clientEventId)` makes a retried batch a no-op, and `occurredAt` is kept.
+- **Heartbeat and result on a finished run.** They still authenticate against the current attempt, and pass through to the control API, which answers a heartbeat with `cancelRequested: true`. Capability operations on a finished run return `409 RUN_NOT_ACTIVE`.
+- **Action claims.** `X-Claim-Token` is forwarded as `claimToken`; a retry of the same `claim()` call gets `claimed` again instead of `in_doubt` (see the contract's `claimAction`).
 - **Knowledge and Sheets.** The agent sends `knowledgeBaseId` or `spreadsheetId`. The broker accepts it only if it equals the installation config's `knowledgeBaseId` or `spreadsheetId`, and otherwise returns `PERMISSION_DENIED`. Sheets values are written with `valueInputOption=RAW`, so untrusted text is never evaluated as a formula.
 - **Sheets ranges.** A read (`values:get`) must lie inside the config's `inputRange`, and a write (`values:update`, `values:append`) inside its `resultRange`, on the same tab. Ranges are A1 notation and must name their tab (`Contacts!A2:D`, `'My tab'!B3`). Missing bounds are open, so `Results!A:H` allows every row of columns A-H; tab names and column letters ignore case.
   - Outside the configured range: `PERMISSION_DENIED` with `details.key`. Not A1 with a tab: `INVALID_REQUEST`. The config has no such range, or an invalid one: `NEEDS_CONFIGURATION`.

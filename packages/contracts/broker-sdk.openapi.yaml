@@ -22,7 +22,8 @@ info:
 
     Operation extensions:
       x-capability   capability string required, or null for baseline operations
-      x-idempotent   true, false, or "with-idempotency-key" (safe to retry only when the key is present)
+      x-idempotent   true, false, "with-idempotency-key" (safe to retry only when the key is present),
+                     or "with-claim-token" (safe to retry only with the same X-Claim-Token)
       x-fault-target operation id used by the fake platform's fault injection
 
     After a cancel is requested, capability operations return 409 RUN_CANCELLED while handshake,
@@ -356,16 +357,25 @@ paths:
     post:
       operationId: claimAction
       x-capability: null
-      x-idempotent: false
+      x-idempotent: with-claim-token
       x-fault-target: broker.actions.claim
       parameters:
         - {name: key, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+        - name: X-Claim-Token
+          in: header
+          required: false
+          description: |
+            Random per SDK `claim()` call and sent unchanged on its retries. A retry with the same
+            token, from the same attempt, while the key is still claimed, returns `claimed` again,
+            so a lost response does not turn into `in_doubt`. Without it, a repeat claim is `in_doubt`.
+          schema: {type: string, minLength: 16, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$"}
       responses:
         "200":
           description: |
-            `claimed`: this call created the key, so proceed with the side effect. `in_doubt`: the
-            key was claimed before (by this or an earlier attempt) and never completed; the side
-            effect may already have happened. `completed`: the stored result is returned.
+            `claimed`: this call created the key (or is a retry of the call that did, see
+            `X-Claim-Token`), so proceed with the side effect. `in_doubt`: the key was claimed
+            before (by another call or an earlier attempt) and never completed; the side effect may
+            already have happened. `completed`: the stored result is returned.
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ActionRecord"}

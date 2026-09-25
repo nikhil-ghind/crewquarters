@@ -14,7 +14,7 @@ Profiles: **dev** = laptop Compose with fakes; **demo-cpu** = laptop end-to-end;
 | `CQ_SECRET_KEY` | secret string | insecure dev value | **yes** | demo-cpu, dgx | HMAC key for CSRF tokens |
 | `CQ_CAPABILITY_SIGNING_KEY` | secret string | insecure dev value | **yes** | demo-cpu, dgx | HS256 key for run capability tokens; shared with broker and model gateway |
 | `CQ_INTERNAL_SERVICE_TOKEN` | secret string | insecure dev value | **yes** | demo-cpu, dgx | Bearer credential for `/internal/v1` and the runtime daemon socket |
-| `CQ_PUBLIC_ORIGINS` | list[string] | `["http://localhost:8080","http://127.0.0.1:8080"]` | no | dgx (LAN mode) | Origins allowed for state-changing requests |
+| `CQ_PUBLIC_ORIGINS` | list[string] | `["http://localhost:8080","http://127.0.0.1:8080"]` | no | dgx (LAN mode) | Origins allowed for state-changing requests. The origin of `CQ_PUBLIC_BASE_URL` is always allowed as well |
 | `CQ_COOKIE_SECURE` | bool | `false` | no | dgx (LAN/HTTPS) | Adds `Secure` to session and CSRF cookies |
 | `CQ_SESSION_IDLE_SECONDS` | int | `43200` (12 h) | no | — | Sliding idle session timeout |
 | `CQ_SESSION_ABSOLUTE_SECONDS` | int | `604800` (7 d) | no | — | Absolute session lifetime |

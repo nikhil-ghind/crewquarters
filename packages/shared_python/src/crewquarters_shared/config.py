@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     scheduler_metrics_host: str = "127.0.0.1"
     scheduler_metrics_port: int = 9101
 
+    def allowed_origins(self) -> set[str]:
+        """``public_origins`` plus the origin of ``public_base_url``, so the UI works at the
+        address the device advertises (another port, a LAN name, or the tunnel host)."""
+        base = "/".join(self.public_base_url.split("/")[:3])
+        return {o.rstrip("/") for o in [*self.public_origins, base] if o}
+
     def effective_broker_adapter(self) -> str:
         """The connection-status adapter. The fake reports every provider connected, so it
         is refused outside the ``dev`` profile."""

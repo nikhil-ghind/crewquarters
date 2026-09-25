@@ -72,7 +72,7 @@ def check_origin(request: Request, settings: Settings) -> None:
     if origin is None:
         referer = request.headers.get("referer", "")
         origin = "/".join(referer.split("/")[:3]) if referer else None
-    if origin is None or origin.rstrip("/") not in {o.rstrip("/") for o in settings.public_origins}:
+    if origin is None or origin.rstrip("/") not in settings.allowed_origins():
         raise PlatformError("ORIGIN_REJECTED", "Request origin is not allowed.", 403)
 
 

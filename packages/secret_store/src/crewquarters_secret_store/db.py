@@ -29,6 +29,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+import crewquarters_shared.db.models  # noqa: F401 - registers users, the owner_id foreign key target
 from crewquarters_secret_store import Keyring, SecretStoreError
 from crewquarters_shared.db.base import Base
 from crewquarters_shared.ids import uuid7

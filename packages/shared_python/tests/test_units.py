@@ -108,3 +108,16 @@ def test_redaction() -> None:
     assert out["errorCode"] == "KEEP"
     assert out["items"][0]["password"] == "[REDACTED]"
     assert mask_phone("+1 (415) 555-0100") == "***0100"
+
+
+def test_allowed_origins_include_the_public_base_url() -> None:
+    from crewquarters_shared.config import Settings
+
+    settings = Settings(
+        public_origins=["http://localhost:8080/"],
+        public_base_url="https://crew.example.trycloudflare.com/some/path",
+    )
+    assert settings.allowed_origins() == {
+        "http://localhost:8080",
+        "https://crew.example.trycloudflare.com",
+    }
