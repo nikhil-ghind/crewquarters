@@ -4,7 +4,7 @@
  */
 import { keepPreviousData, useQuery, type UseQueryOptions } from '@tanstack/react-query';
 import { api, unwrap } from './client';
-import { pendingApi } from './pending';
+import { endpoints as pendingApi } from './endpoints';
 import {
   isTerminal,
   type AttentionOut,
@@ -12,6 +12,8 @@ import {
   type CatalogAgentOut,
   type ChatSessionDetailOut,
   type ChatSessionOut,
+  type ConnectionOut,
+  type SettingsOut,
   type InputRequestOut,
   type InstallationOut,
   type MemoryOut,
@@ -21,7 +23,6 @@ import {
   type ScheduleOut,
   type SystemStatusOut,
 } from './schema';
-import type { ConnectionOut, SettingsOut } from './pending-contracts';
 
 export const keys = {
   me: ['me'] as const,

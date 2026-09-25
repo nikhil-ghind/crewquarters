@@ -6,7 +6,7 @@
 import { Inbox } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { ApiError } from '../../api/errors';
-import type { StoredCitation } from '../../api/pending-contracts';
+import type { StoredCitation } from '../../lib/knowledge';
 import { Button } from '../../components/Button';
 import { DataTable, type Column } from '../../components/DataTable';
 import { ConfirmDialog } from '../../components/Dialog';

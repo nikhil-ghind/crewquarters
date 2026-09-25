@@ -5,6 +5,8 @@
  * Do not add labels outside this file.
  */
 import type {
+  ConnectionStatus,
+  DocumentState,
   InputRequestOut,
   ModelOut,
   ReadinessCheck,
@@ -12,7 +14,6 @@ import type {
   StatusCheck,
   SystemStatusOut,
 } from '../api/schema';
-import type { ConnectionStatus, DocumentState } from '../api/pending-contracts';
 
 export type Tone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 

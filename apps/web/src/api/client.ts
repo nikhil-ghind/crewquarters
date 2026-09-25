@@ -52,7 +52,7 @@ export function securityHeaders(method: string, headers: Headers): void {
   if (!headers.has('Idempotency-Key')) headers.set('Idempotency-Key', idempotencyKey());
 }
 
-/** Shared response bookkeeping for the typed client and the raw helpers in pending.ts. */
+/** Response bookkeeping shared by the typed client and the chat stream reader. */
 export function observeResponse(response: Response): void {
   const path = new URL(response.url, origin()).pathname;
   const isJson = (response.headers.get('content-type') ?? '').includes('json');

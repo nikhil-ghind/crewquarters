@@ -42,7 +42,6 @@ Run these from `apps/web`. Use Node 24, or Node 22.18 or later: the mock server 
 | Path | Contents |
 | --- | --- |
 | `src/api/` | The data layer. **`client.ts`**: openapi-fetch with CSRF, Idempotency-Key, timeout, session-expiry and connectivity middleware. **`queries.ts` and `mutations.ts`**: TanStack Query hooks and cache keys. **`sse.ts` and `streams.ts`**: resilient SSE, reconnect and polling fallback. **`chat.ts`**: POST SSE for chat. **`guards.ts`**: disabled-action reasons |
-| `src/api/pending-contracts.ts`, `src/api/pending.ts` | The **only** hand-written API types, with thin calls for routes that are not in this branch's `openapi.yaml` yet (see below) |
 | `src/components/` | Component library (section 13.15): StatusBadge, LocalityChip, Button, ResourceMeter, Progress, DataTable, Stepper, Timeline, SchemaForm, PermissionRow, ConfirmDialog/Modal, Toast/announcer, ErrorPanel, EmptyState, Skeleton, LogViewer, SourceDrawer, QueryView |
 | `src/lib/` | `status.ts` (the status vocabulary), `format.ts`, `jsonSchema.ts`, `permissions.ts`, `redact.ts`, `storage.ts`, `breakpoints.ts` |
 | `src/styles/tokens.css` | Semantic design tokens copied from section 13.14 |
@@ -111,45 +110,19 @@ The component gallery uses static fixtures and makes no API calls. It shows ever
   - From 768 to 1279 px the sidebar is icon-only by default.
   - The owner's collapse choice is stored per browser.
 
-## API types awaiting regeneration
+## Contract coverage
 
-This branch's `openapi.yaml` predates the public routes added in commit 142b289, so their types are copied by hand from that commit's regenerated `schema.d.ts`. They all live in `src/api/pending-contracts.ts`, and the calls in `src/api/pending.ts`.
+Every HTTP call goes through the generated client (`src/api/client.ts`, `queries.ts`, `mutations.ts`, `endpoints.ts`), so there are no hand-written API types. Two contract fields are untyped objects in `openapi.yaml`, and `src/lib/knowledge.ts` narrows them at runtime:
 
-| Endpoint | Types |
-| --- | --- |
-| `POST /connections/google/start` | `GoogleStartIn {capabilities}` → `GoogleStartOut {authorizationUrl}`. Also sets the `cq_oauth_binding` cookie |
-| `POST /connections/google/test` | → `ConnectionOut` |
-| `DELETE /connections/google` | → 204 |
-| `PUT /connections/twilio` | `TwilioCredentialsIn {accountSid, authToken, fromNumber}` → `ConnectionOut` |
-| `POST /connections/twilio/test` | → `ConnectionOut` |
-| `POST /connections/twilio/test-call` | `TwilioTestCallIn {to, confirm}` → `TwilioTestCallOut {placed, to, status}`. 429 includes `retryAfterSeconds` |
-| `DELETE /connections/twilio` | → 204 |
-| `GET /provider-profiles` | → `Page<ProviderProfileOut>` |
-| `POST /provider-profiles` | `ProviderProfileCreateIn` → `ProviderProfileOut` |
-| `DELETE /provider-profiles/{id}` | → 204 |
-| `POST /provider-profiles/{id}/test` | → `ProviderProfileTestOut {status, detail, checkedAt}` |
-| `POST /knowledge-bases` | `KnowledgeBaseCreateIn {name}` → `KnowledgeBaseOut` |
-| `GET /knowledge-bases` | → `Page<KnowledgeBaseOut>` |
-| `GET` and `DELETE /knowledge-bases/{id}` | `KnowledgeBaseOut` on GET |
-| `POST /knowledge-bases/{id}/documents` | multipart `file` (up to 25 MiB) → 202 `DocumentOut` |
-| `GET /knowledge-bases/{id}/documents` | → `Page<DocumentOut>` |
-| `GET` and `DELETE /knowledge-bases/{id}/documents/{docId}` | `DocumentOut` on GET |
-| `POST /knowledge-bases/{id}/documents/{docId}/reindex` | → 202 `DocumentOut` |
-| `POST /knowledge-bases/{id}/query` | `KnowledgeQueryIn {query, topK, maxContextTokens, filters}` → `KnowledgeQueryOut {passages: PassageOut[]}` |
-| `GET /chat/sessions/{id}/messages/{mid}/citations/{cid}` | → `CitationOut`, including `documentAvailable` |
+- `ChatMessageOut.citations[]`, which is read as a `CitationOut` without `documentAvailable`;
+- `DocumentOut.extracted` and `error`.
 
-Changed shapes:
+Two POST routes stream server-sent events, which the OpenAPI types don't describe:
 
-- `ConnectionOut.status` adds `UNKNOWN`, shown as "Cannot check", and `account` and `detail` are new.
-- `SettingsOut.callbackUrls` is new, and `callbackBaseUrl` becomes read-only.
-- `RunEventOut.occurredAt` is new.
-- The chat `message` SSE event now carries `citations`.
+- chat messages, read with `fetch` in `src/api/chat.ts`;
+- the run and model event streams, read with `EventSource` in `src/api/sse.ts`.
 
-After `make contracts` regenerates the client with these routes:
-
-1. Replace each type in `pending-contracts.ts` with `Schemas['<same name>']`.
-2. Move the functions in `pending.ts` onto `api.GET/POST/...`.
-3. Delete both files.
+`npm run gen:api:check` fails CI if `schema.d.ts` drifts from `openapi.yaml`.
 
 ## Serving the build (reverse proxy)
 

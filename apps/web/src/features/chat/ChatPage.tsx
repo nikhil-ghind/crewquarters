@@ -6,8 +6,8 @@ import { sendChatMessage } from '../../api/chat';
 import { isApiError, remediation } from '../../api/errors';
 import { useActionGuard } from '../../api/guards';
 import { useCreateChat, useIntentKey, useToggleChat } from '../../api/mutations';
-import { pendingApi } from '../../api/pending';
-import { toCitation, type StoredCitation } from '../../api/pending-contracts';
+import { endpoints as pendingApi } from '../../api/endpoints';
+import { toCitation, type StoredCitation } from '../../lib/knowledge';
 import {
   isModelBusy,
   keys,

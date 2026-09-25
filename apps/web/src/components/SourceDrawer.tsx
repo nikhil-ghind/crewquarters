@@ -1,7 +1,7 @@
 import { FileText, X } from 'lucide-react';
 import { useEffect, useId, useRef } from 'react';
 import { Link } from 'react-router';
-import type { StoredCitation } from '../api/pending-contracts';
+import type { StoredCitation } from '../lib/knowledge';
 import { useLayout } from '../lib/breakpoints';
 import { ErrorPanel, Skeleton } from './Feedback';
 
