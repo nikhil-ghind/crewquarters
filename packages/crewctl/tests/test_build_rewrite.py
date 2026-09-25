@@ -62,3 +62,30 @@ def test_find_repo_root() -> None:
     here = Path(__file__).resolve()
     root = find_repo_root(here.parent)
     assert (root / "packages" / "python_sdk").is_dir()
+
+
+def test_push_build_can_write_the_pinned_manifest_elsewhere(tmp_path: Path) -> None:
+    import json
+
+    from click.testing import CliRunner
+
+    from crewctl.build import build
+    from crewctl.cli import cli
+
+    repo = find_repo_root(Path(__file__).resolve().parent)
+    agent = repo / "tests" / "integration" / "agents" / "hello_agent"
+    source_before = (agent / "manifest.yaml").read_text()
+    commands: list[list[str]] = []
+
+    def runner(command: list[str]) -> None:
+        commands.append(command)
+        metadata = Path(command[command.index("--metadata-file") + 1])
+        metadata.write_text(json.dumps({"containerimage.digest": DIGEST}))
+
+    out = tmp_path / "pinned" / "hello.yaml"
+    result = build(agent, push=True, registry="localhost:5001", runner=runner, output_manifest=out)
+    assert result.pinned_image == f"localhost:5001/crewquarters/hello-agent@{DIGEST}"
+    assert (agent / "manifest.yaml").read_text() == source_before
+    assert f"image: localhost:5001/crewquarters/hello-agent@{DIGEST}" in out.read_text()
+    assert commands[0][-1] == str(repo)
+    assert CliRunner().invoke(cli, ["build", "--help"]).output.count("--output-manifest") == 1

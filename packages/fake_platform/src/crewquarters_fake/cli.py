@@ -1,0 +1,126 @@
+"""crewq-fake: serve the fake platform, seed or reset it, and run an agent against it."""
+
+from __future__ import annotations
+
+import json
+import tempfile
+from pathlib import Path
+from typing import Any
+
+import click
+import uvicorn
+import yaml
+
+from crewquarters_contracts.manifest import load_manifest
+from crewquarters_fake.app import create_app
+from crewquarters_fake.client import FakePlatformClient, FakePlatformError
+from crewquarters_fake.harness import Launcher, run_agent
+from crewquarters_fake.launcher import DockerLauncher, ProcessLauncher
+from crewquarters_fake.timeutil import iso, utcnow
+
+DEFAULT_URL = "http://127.0.0.1:8080"
+
+
+@click.group()
+def cli() -> None:
+    """Crewquarters fake platform (development and tests only)."""
+
+
+@cli.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8080, show_default=True, type=int)
+def serve(host: str, port: int) -> None:
+    """Serve the fake platform (settings come from CREWQ_FAKE_* environment variables)."""
+    uvicorn.run(create_app(), host=host, port=port, log_level="info")
+
+
+@cli.command()
+@click.option("--url", default=DEFAULT_URL, show_default=True)
+def reset(url: str) -> None:
+    """Clear runs, catalog, providers, faults, and auto-answers."""
+    FakePlatformClient(url).reset()
+    click.echo("reset")
+
+
+@cli.command()
+@click.argument("scenario")
+@click.option("--url", default=DEFAULT_URL, show_default=True)
+def seed(scenario: str, url: str) -> None:
+    """Load a scenario directory (a path the fake platform can read)."""
+    try:
+        summary = FakePlatformClient(url).load_scenario(scenario)
+    except FakePlatformError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps(summary, indent=2))
+
+
+def _config(config_file: Path | None, pairs: tuple[str, ...]) -> dict[str, Any]:
+    config: dict[str, Any] = {}
+    if config_file is not None:
+        config.update(yaml.safe_load(config_file.read_text(encoding="utf-8")) or {})
+    for pair in pairs:
+        key, _, value = pair.partition("=")
+        config[key] = yaml.safe_load(value)
+    return config
+
+
+@cli.command()
+@click.argument("agent_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--url", default=DEFAULT_URL, show_default=True)
+@click.option(
+    "--launcher",
+    "launcher_kind",
+    type=click.Choice(["docker", "process"]),
+    default="docker",
+    show_default=True,
+)
+@click.option(
+    "--manifest", "manifest_path", type=click.Path(path_type=Path), help="Pinned manifest (docker mode)."
+)
+@click.option("--config", "config_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--set", "pairs", multiple=True, help="Config override key=value (YAML value).")
+@click.option("--trigger", type=click.Choice(["manual", "schedule"]), default="manual", show_default=True)
+@click.option("--scheduled-for", help="ISO timestamp or 'now' for schedule runs.")
+@click.option("--timeout", default=300.0, show_default=True, type=float)
+@click.option("--log-dir", type=click.Path(path_type=Path))
+def run(
+    agent_dir: Path,
+    url: str,
+    launcher_kind: str,
+    manifest_path: Path | None,
+    config_file: Path | None,
+    pairs: tuple[str, ...],
+    trigger: str,
+    scheduled_for: str | None,
+    timeout: float,
+    log_dir: Path | None,
+) -> None:
+    """Install an agent in the fake platform and run it once."""
+    client = FakePlatformClient(url)
+    manifest = load_manifest(manifest_path or agent_dir / "manifest.yaml")
+    logs = log_dir or Path(tempfile.mkdtemp(prefix="crewq-run-"))
+    launcher: Launcher
+    try:
+        if launcher_kind == "docker":
+            client.import_manifest(manifest)
+            launcher = DockerLauncher(log_dir=logs)
+        else:
+            client.register_manifest(manifest)
+            launcher = ProcessLauncher(manifest["spec"]["entrypoint"], agent_dir=agent_dir, log_dir=logs)
+        installation = client.install(
+            manifest["metadata"]["id"], manifest["metadata"]["version"], _config(config_file, pairs)
+        )
+        when = iso(utcnow()) if scheduled_for == "now" else scheduled_for
+        outcome = run_agent(
+            client, launcher, installation["id"], trigger=trigger, scheduled_for=when, timeout=timeout
+        )
+    except FakePlatformError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Run {outcome.run['id']} {outcome.state} (exit {outcome.exit_code}); logs in {logs}")
+    click.echo(json.dumps(outcome.result if outcome.result is not None else outcome.error, indent=2))
+    if outcome.state != "SUCCEEDED":
+        raise SystemExit(1)
+
+
+def main() -> None:
+    cli()

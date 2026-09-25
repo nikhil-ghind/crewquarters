@@ -75,6 +75,7 @@ def build(
     push: bool = False,
     registry: str = "localhost:5001",
     runner: Runner = _run,
+    output_manifest: Path | None = None,
 ) -> BuildResult:
     agent_dir = agent_dir.resolve()
     manifest_file = agent_dir / "manifest.yaml"
@@ -100,5 +101,7 @@ def build(
             return BuildResult(tag, chosen, None, None)
         digest = str(json.loads(metadata.read_text())["containerimage.digest"])
     pinned = f"{repo}@{digest}"
-    manifest_file.write_text(rewrite_image_line(manifest_file.read_text(), pinned), encoding="utf-8")
+    target = output_manifest or manifest_file
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(rewrite_image_line(manifest_file.read_text(), pinned), encoding="utf-8")
     return BuildResult(tag, chosen, digest, pinned)

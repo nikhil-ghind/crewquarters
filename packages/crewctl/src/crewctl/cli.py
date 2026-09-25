@@ -129,9 +129,16 @@ def test_command(
 @click.option("--platform", "platforms", help="Comma-separated platforms (default: both when pushing).")
 @click.option("--push", is_flag=True, help="Push to the registry and pin the digest in manifest.yaml.")
 @click.option("--registry", default="localhost:5001", show_default=True)
-def build_command(path: Path, platforms: str | None, push: bool, registry: str) -> None:
+@click.option(
+    "--output-manifest",
+    type=click.Path(path_type=Path),
+    help="Write the pinned manifest here instead of updating manifest.yaml (CI and E2E).",
+)
+def build_command(
+    path: Path, platforms: str | None, push: bool, registry: str, output_manifest: Path | None
+) -> None:
     """Build the agent image with docker buildx."""
-    result = build(path, platforms=platforms, push=push, registry=registry)
+    result = build(path, platforms=platforms, push=push, registry=registry, output_manifest=output_manifest)
     if result.pinned_image:
         click.echo(f"Pushed {result.tag} for {result.platforms}")
         click.echo(f"Pinned manifest image to {result.pinned_image}")
