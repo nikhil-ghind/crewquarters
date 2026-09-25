@@ -8,9 +8,10 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from crewquarters_secret_store import Keyring
-from pydantic import SecretStr
+from pydantic import SecretStr, model_validator
 
 from crewquarters_shared.config import Settings
 
@@ -27,6 +28,15 @@ class BrokerSettings(Settings):
     google_client_id: str = ""
     google_client_secret: SecretStr = SecretStr("")
     twilio_allowed_numbers: list[str] = []
+
+    @model_validator(mode="after")
+    def _https_when_live(self) -> BrokerSettings:
+        """Live OAuth and Twilio callbacks need HTTPS; Google allows plain localhost only."""
+        url = urlsplit(self.public_base_url)
+        local = url.hostname in ("localhost", "127.0.0.1")
+        if self.provider_mode == "live" and url.scheme != "https" and not local:
+            raise ValueError("CQ_PUBLIC_BASE_URL must use https in live provider mode.")
+        return self
 
     @property
     def google_redirect_uri(self) -> str:

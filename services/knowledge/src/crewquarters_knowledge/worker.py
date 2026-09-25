@@ -85,7 +85,11 @@ class KnowledgeWorker:
         try:
             outcome = await service.ingest(self.sessions, self.settings, self.embedder, document_id)
         except Exception as exc:  # retried with backoff; the error class is recorded
-            log.exception("ingestion failed", extra={"job_id": job.id})
+            # No traceback: database errors embed SQL parameters, i.e. document text.
+            log.error(
+                "ingestion failed",
+                extra={"job_id": job.id, "error_type": type(exc).__name__},
+            )
             async with self.sessions() as db, db.begin():
                 state = await jobs.fail(
                     db,

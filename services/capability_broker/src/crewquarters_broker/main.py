@@ -18,6 +18,7 @@ from crewquarters_broker.config import BrokerSettings, get_settings
 from crewquarters_broker.deps import BrokerState, internal_auth
 from crewquarters_broker.google import GoogleConnector
 from crewquarters_broker.internal import InternalClient
+from crewquarters_broker.limits import BodySizeLimit
 from crewquarters_broker.metrics import BrokerMetrics, MeteredTransport
 from crewquarters_broker.twilio import TelephonyService
 from crewquarters_shared.db import create_engine, session_factory
@@ -86,6 +87,7 @@ def create_app(
             "callback paths."
         ),
         lifespan=lifespan,
+        openapi_url=None,  # no unauthenticated API map for agents
         docs_url=None,
         redoc_url=None,
     )
@@ -101,6 +103,7 @@ def create_app(
         metrics=metrics,
     )
     errors.install(app)
+    app.add_middleware(BodySizeLimit, limit_for=lambda scope: settings.max_body_bytes)
 
     @app.middleware("http")
     async def request_id(

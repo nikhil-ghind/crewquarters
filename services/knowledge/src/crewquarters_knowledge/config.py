@@ -17,6 +17,7 @@ class KnowledgeSettings(Settings):
     max_upload_bytes: int = 25 * 1024 * 1024
     embedding_mode: Literal["fake", "local"] = "fake"
     embedding_cache_dir: Path | None = None
+    extract_timeout_seconds: float = 300.0
     chunk_tokens: int = 800
     chunk_overlap_tokens: int = 120
     ingest_lease_seconds: int = 60

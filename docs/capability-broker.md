@@ -43,6 +43,8 @@ The run and attempt always come from the token. JSON is camelCase. Errors use th
 | `PROVIDER_ERROR`, `PROVIDER_UNAVAILABLE`, `MODEL_UNAVAILABLE` | 502, 503 | Retry only idempotent operations |
 | `OUTCOME_UNKNOWN` | 503 | Twilio didn't confirm a call; never retried automatically |
 
+**Limits.** Request bodies above `CQ_MAX_BODY_BYTES` (2 MiB) get `413 PAYLOAD_TOO_LARGE` before they are buffered. Action and idempotency keys must start with a letter or digit, and there is no unauthenticated API schema. See [security-review-person3.md](security-review-person3.md).
+
 **Cancellation.** Once the owner cancels, capability operations (LLM, knowledge, Gmail, Sheets, telephony, input requests) return `RUN_CANCELLED`. Handshake, heartbeat, events, result and actions keep working, so the agent can report its outcome.
 
 ### How the broker applies the contract

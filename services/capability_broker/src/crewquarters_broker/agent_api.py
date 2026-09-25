@@ -30,7 +30,9 @@ from crewquarters_shared.errors import PlatformError
 router = APIRouter(prefix="/internal/v1/sdk")
 
 PROTOCOL = "v1alpha1"
-KEY_PATTERN = r"^[A-Za-z0-9_.:-]{1,200}$"
+# Keys become URL path segments on the control API: a leading letter or digit rules out
+# "." and ".." dot segments, which httpx would resolve to a different route.
+KEY_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$"
 Cell = str | int | float | bool | None
 _MAX_NAME = 100
 _NAME = rf"[^\x00-\x1f<>{{}}]{{0,{_MAX_NAME}}}"
@@ -371,6 +373,12 @@ async def knowledge_search(
 ) -> Any:
     grant.require("knowledge.search:config")
     kb_id = grant.configured("knowledgeBaseId", body.knowledge_base_id)
+    try:
+        kb_id = str(uuid.UUID(kb_id))  # it becomes a path segment on the knowledge service
+    except ValueError:
+        raise PlatformError(
+            "NEEDS_CONFIGURATION", "The configured knowledgeBaseId is not valid.", 409
+        ) from None
     query: dict[str, Any] = {"query": body.query, "topK": body.top_k, "filters": body.filters}
     if body.max_context_tokens is not None:
         query["maxContextTokens"] = max(100, min(20_000, body.max_context_tokens))
