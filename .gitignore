@@ -81,3 +81,7 @@ Thumbs.db
 
 # --- Claude Code local settings ---
 .claude/settings.local.json
+
+# --- Person 5 QA evidence output ---
+/evidence/
+/.e2e/

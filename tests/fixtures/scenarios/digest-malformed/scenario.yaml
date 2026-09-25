@@ -1,0 +1,20 @@
+name: digest-malformed
+timezone: UTC
+gmail:
+  mailbox:
+    - {id: mf-multipart, subject: "Multipart with attachment", date: "2026-09-23T08:00:00+00:00",
+       body: {multipart: [{multipart: [{text: "Plain part wins"}, {html: "<p>HTML part</p>"}], mimeType: multipart/alternative},
+                          {attachment: true, filename: report.pdf, mimeType: application/pdf}]}}
+    - {id: mf-html, subject: "HTML only", date: "2026-09-23T09:00:00+00:00",
+       body: {html: "<html><head><style>p{}</style></head><body><p>Please review the draft</p><script>x()</script></body></html>"}}
+    - {id: mf-empty, subject: "Empty body", date: "2026-09-23T10:00:00+00:00", body: {text: ""}}
+    - {id: mf-attach, subject: "Attachment only", date: "2026-09-23T11:00:00+00:00",
+       body: {multipart: [{attachment: true, filename: scan.jpg, mimeType: image/jpeg}]}}
+    - {id: mf-badb64, date: "2026-09-23T12:00:00+00:00",
+       body: {rawPayload: {mimeType: text/plain, headers: [{name: Subject, value: "Broken encoding"}], body: {data: "!!!***"}}}}
+    - {id: mf-weird, date: "2026-09-23T13:00:00+00:00",
+       body: {rawPayload: {mimeType: multipart/mixed, headers: nonsense, parts: ["x", null, {mimeType: text/plain}]}}}
+    - {id: mf-latin1, subject: "Café menu", internalDate: "bogus", date: "2026-09-23T14:00:00+00:00",
+       body: {text: "Café résumé for the meeting", charset: iso-8859-1}}
+llm:
+  rules: ../_shared/digest-llm-rules.yaml

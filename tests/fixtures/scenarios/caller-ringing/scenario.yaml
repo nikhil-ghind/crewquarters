@@ -1,0 +1,16 @@
+name: caller-ringing
+timezone: UTC
+sheets:
+  spreadsheets:
+    status-sheet:
+      Contacts:
+        - [name, phone_e164, consent, status]
+        - [Ringer, "+15555550301", "yes", ""]
+      Results: []
+twilio:
+  outcomes:
+    "+15555550301": {status: completed, ringPolls: 1000}
+inputs:
+  autoAnswers:
+    - keyPattern: "confirm-calls-v1:*"
+      value: {choice: approve}

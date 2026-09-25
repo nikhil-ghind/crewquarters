@@ -9,6 +9,14 @@ COPY pyproject.toml uv.lock ./
 COPY packages/shared_python/pyproject.toml packages/shared_python/
 COPY services/control_api/pyproject.toml services/control_api/
 COPY services/scheduler/pyproject.toml services/scheduler/
+# The other workspace members (SDK, dev tools, agents) are not installed in this image, but uv
+# needs their manifests to read the frozen workspace lock.
+COPY packages/python_sdk/pyproject.toml packages/python_sdk/
+COPY packages/fake_platform/pyproject.toml packages/fake_platform/
+COPY packages/crewctl/pyproject.toml packages/crewctl/
+COPY agents/contract_probe/pyproject.toml agents/contract_probe/
+COPY agents/gmail_digest/pyproject.toml agents/gmail_digest/
+COPY agents/caller/pyproject.toml agents/caller/
 RUN mkdir -p packages/shared_python/src/crewquarters_shared services/control_api/src/crewquarters_api \
         services/scheduler/src/crewquarters_scheduler \
     && touch packages/shared_python/src/crewquarters_shared/__init__.py \

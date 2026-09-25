@@ -1,0 +1,25 @@
+name: caller-statuses
+timezone: UTC
+sheets:
+  spreadsheets:
+    status-sheet:
+      Contacts:
+        - [name, phone_e164, consent, status]
+        - [Speech, "+15555550201", "yes", ""]
+        - [Silent, "+15555550202", "yes", ""]
+        - [Busy, "+15555550203", "yes", ""]
+        - [NoAnswer, "+15555550204", "yes", ""]
+        - [Failed, "+15555550205", "yes", ""]
+        - [Unverified, "+15555550299", "yes", ""]
+      Results: []
+twilio:
+  outcomes:
+    "+15555550201": {status: completed, speech: "Sounds good"}
+    "+15555550202": {status: completed}
+    "+15555550203": {status: busy}
+    "+15555550204": {status: no-answer}
+    "+15555550205": {status: failed, errorCode: "carrier-rejected"}
+inputs:
+  autoAnswers:
+    - keyPattern: "confirm-calls-v1:*"
+      value: {choice: approve}

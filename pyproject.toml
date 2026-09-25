@@ -3,6 +3,8 @@ name = "crewquarters-workspace"
 version = "0.1.0"
 description = "Crewquarters monorepo workspace"
 requires-python = ">=3.12,<3.13"
+# The platform image installs only these (infra/docker/python.Dockerfile). Everything else in
+# the workspace (SDK, crewctl, fake platform, agents) is installed with `uv sync --all-packages`.
 dependencies = [
     "crewquarters-shared",
     "crewquarters-control-api",
@@ -13,7 +15,17 @@ dependencies = [
 package = false
 
 [tool.uv.workspace]
-members = ["packages/shared_python", "services/control_api", "services/scheduler"]
+members = [
+    "packages/shared_python",
+    "services/control_api",
+    "services/scheduler",
+    "packages/python_sdk",
+    "packages/fake_platform",
+    "packages/crewctl",
+    "agents/contract_probe",
+    "agents/gmail_digest",
+    "agents/caller",
+]
 
 [tool.uv.sources]
 crewquarters-shared = { workspace = true }
@@ -30,23 +42,47 @@ dev = [
     "mypy>=1.13",
     "types-pyyaml",
     "types-jsonschema",
+    "openapi-spec-validator>=0.7",
 ]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["packages/contracts/clients", "services/control_api/migrations/versions"]
+extend-exclude = [
+    "packages/contracts/clients",
+    "services/control_api/migrations/versions",
+    ".superpowers",
+    "*.md",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "SIM", "RUF"]
 ignore = ["S101", "B008", "RUF012", "UP046"]  # UP046: keep Generic[T] for pydantic models
 
 [tool.ruff.lint.isort]
-known-first-party = ["crewquarters_shared", "crewquarters_api", "crewquarters_scheduler", "conftest"]
+known-first-party = [
+    "crewquarters_shared",
+    "crewquarters_api",
+    "crewquarters_scheduler",
+    "conftest",
+    "crewquarters",
+    "crewctl",
+    "crewquarters_fake",
+    "contract_probe",
+    "gmail_digest",
+    "caller_agent",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S105", "S106", "S311"]
 "**/migrations/**" = ["E501"]
+# Dev tooling that shells out to docker/python by design (argument lists, never a shell).
+"packages/fake_platform/src/crewquarters_fake/launcher.py" = ["S603", "S607"]
+"packages/crewctl/src/crewctl/build.py" = ["S603", "S607"]
+"infra/scripts/evidence_report.py" = ["S603", "S607"]
+"tests/e2e/**" = ["S603", "S607"]
+# The classification prompt is model input; wrapping it would change what the model sees.
+"agents/gmail_digest/src/gmail_digest/prompts.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -56,11 +92,40 @@ ignore_missing_imports = true
 exclude = ["migrations/", "tests/"]
 
 [tool.pytest.ini_options]
+# importlib mode lets test modules share basenames across packages; pythonpath keeps
+# `from conftest import ...` working for the control-plane tests. "." must stay first so that
+# `conftest` is the root one; the other entries hold test-helper modules (fakebroker,
+# fake_helpers, agent_runs, openapi_check). Never insert test directories into sys.path.
+addopts = "--import-mode=importlib -ra"
+pythonpath = [
+    ".",
+    "packages/python_sdk/tests",
+    "packages/fake_platform/tests",
+    "tests/integration",
+    "tests/contract",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
-markers = ["no_db: test does not need the database"]
-testpaths = ["packages/shared_python/tests", "services/control_api/tests", "services/scheduler/tests", "tests/contract"]
+markers = [
+    "no_db: test does not need the database",
+    "e2e: requires the fake Docker stack (make fake-up) and pushed agent images",
+    "live: requires a real Crewquarters platform and CREWQ_LIVE_* settings",
+]
+testpaths = [
+    "packages/shared_python/tests",
+    "services/control_api/tests",
+    "services/scheduler/tests",
+    "tests/contract",
+    "packages/python_sdk/tests",
+    "packages/fake_platform/tests",
+    "packages/crewctl/tests",
+    "agents",
+    "tests/integration",
+    "tests/e2e",
+    "tests/live",
+]
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
 
 [tool.coverage.run]
 concurrency = ["greenlet", "thread"]

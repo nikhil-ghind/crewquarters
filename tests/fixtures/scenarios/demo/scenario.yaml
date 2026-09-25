@@ -1,0 +1,27 @@
+# Laptop demo scenario (docs/demo/operator-script.md). Emails are dated relative to load time, so a
+# manual digest run always has a full "yesterday" in Asia/Kolkata. All names, addresses, and
+# +1-555-555-01xx numbers are synthetic.
+name: demo
+timezone: Asia/Kolkata
+gmail:
+  mailbox: mailbox.yaml
+sheets:
+  spreadsheets:
+    demo-contacts:
+      Contacts:
+        - [name, phone_e164, consent, status]
+        - [Asha Rao, "+15555550101", "yes", ""]
+        - [Ben Cole, "+15555550102", "yes", ""]
+        - [Chen Li, "+15555550103", "consented", "ready"]
+        - [Dev Patel, "+15555550104", "no", ""]
+        - [Eve Stone, "555-0105", "yes", ""]
+      Results: []
+twilio:
+  outcomes:
+    "+15555550101": {status: completed, speech: "Yes, I'll join the demo on Friday"}
+    "+15555550102": {status: completed}
+    "+15555550103": {status: busy}
+llm:
+  rules: llm-rules.yaml
+knowledge:
+  kb-demo: knowledge
