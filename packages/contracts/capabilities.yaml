@@ -5,6 +5,8 @@
 # Capabilities are derived from an installation's *approved* permission snapshot and
 # carried in the run capability token (claim "cap"). The broker and model gateway
 # accept a call only if the token holds the matching capability AND the run is active.
+# "resource" names the installation-config key that fixes what the capability may touch;
+# the broker reads it from the approved config, never from the agent's request.
 version: v1alpha1
 capabilities:
   - pattern: "llm.profile:<variant>"
@@ -13,7 +15,8 @@ capabilities:
     ui: "Use the {variant} model"
   - pattern: "knowledge.search:config"
     from: permissions.knowledge
-    enforcedBy: knowledge
+    enforcedBy: capability_broker
+    resource: config.knowledgeBaseId
     ui: "Search the knowledge base you select"
   - pattern: "google.gmail.readonly"
     from: permissions.connectors.google
@@ -22,10 +25,12 @@ capabilities:
   - pattern: "google.spreadsheets"
     from: permissions.connectors.google
     enforcedBy: capability_broker
+    resource: config.spreadsheetId
     ui: "Read and write Google Sheets you configure"
   - pattern: "twilio.call.fixed_script"
     from: permissions.connectors.twilio
     enforcedBy: capability_broker
+    resource: config.script (with config.maxCalls and config.responseSeconds)
     ui: "Place phone calls with a fixed script"
   - pattern: "cloud.openai"
     from: permissions.cloudProviders
