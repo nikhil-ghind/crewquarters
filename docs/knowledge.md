@@ -30,6 +30,22 @@ The service indexes uploaded documents on the device and answers retrieval queri
    - Permanent problems mark it `FAILED` with `{code, message}`.
    - Other errors retry with backoff (`PENDING` plus `INGEST_RETRYING`), up to 3 attempts, and then `FAILED`.
 
+**Resource limits (PLAN.md section 16.1).** A small upload can take unbounded time or memory to parse; for example, a 50 KB `.docx` can inflate to megabytes of XML. So steps 3-5 run in a child process (`python -m crewquarters_knowledge.isolation`), and ingestion is bounded:
+
+| Limit | Default | On breach |
+| --- | --- | --- |
+| Wall clock for extraction and chunking; the child is killed | `CQ_EXTRACT_TIMEOUT_SECONDS` = 120 | `EXTRACTION_TIMEOUT` |
+| The child's address space (`RLIMIT_AS`), plus CPU time just above the timeout | `CQ_EXTRACT_MEMORY_BYTES` = 1 GiB | `DOCUMENT_TOO_COMPLEX` |
+| Uncompressed `word/document.xml`, checked before parsing | 4 MiB | `DOCUMENT_TOO_COMPLEX` |
+| docx paragraphs plus table rows | 50,000 | `DOCUMENT_TOO_COMPLEX` |
+| Extracted characters | 5,000,000 | `DOCUMENT_TOO_COMPLEX` |
+| Chunks | 2,500 | `DOCUMENT_TOO_COMPLEX` |
+| Whole ingestion (extract, embed, index) | `CQ_INGEST_MAX_SECONDS` = 900 | `INGEST_TIMEOUT` (not retried) |
+
+All of these fail the document permanently. The job lease is heartbeated only until `CQ_INGEST_MAX_SECONDS`, so a stuck worker cannot hold a job forever. An embedding batch that is already running when that deadline passes still finishes in its thread, but no further batches start. The limits rely on Linux `setrlimit`, which the service's `amd64` and `arm64` containers provide.
+
+**Abandoned documents.** If the knowledge process dies mid-ingestion and the scheduler's reaper marks the job `dead`, nothing else would finish the document. Every `CQ_INGEST_SWEEP_SECONDS`, the worker fails `PENDING` or `PROCESSING` documents that have no available or claimed `knowledge.ingest` job and have not changed for a minute. They get `INGEST_ABANDONED`; re-indexing retries them.
+
 **Deletion (PLAN.md section 6.1).** Deleting a document or knowledge base removes the rows and, in the same transaction, queues a `knowledge.purge` job. The worker then overwrites each file with zeros, flushes it to disk, and removes it. A failure retries with backoff, up to 10 attempts, and a path outside `CQ_DOCUMENTS_DIR` is refused. Overwriting is best effort: SSDs and copy-on-write filesystems can keep old blocks, so the appliance also relies on full-disk encryption. Re-indexing replaces all chunks.
 
 Secrets are not files: they are ciphertext rows in `encrypted_secrets`, removed when a connection is deleted. Backups contain only ciphertext, and the master key is kept out of them.
@@ -38,8 +54,21 @@ Secrets are not files: they are ciphertext rows in `encrypted_secrets`, removed 
 
 | Mode (`CQ_EMBEDDING_MODE`) | Profile | Notes |
 | --- | --- | --- |
-| `local` | `local.embedding.jina-v2-small-en` | Pinned `jinaai/jina-embeddings-v2-small-en` through `fastembed` 0.8 (ONNX Runtime, CPU). 512 dimensions and an 8192-token context, so an 800-token chunk is never truncated. Apache-2.0, about 120 MB, downloaded once into `CQ_EMBEDDING_CACHE_DIR`. Wheels exist for `linux/amd64` and `linux/arm64`. |
+| `local` | `local.embedding.jina-v2-small-en` | `jinaai/jina-embeddings-v2-small-en` through `fastembed` 0.8 (ONNX Runtime, CPU), pinned to one revision (below). 512 dimensions and an 8192-token context, so an 800-token chunk is never truncated. Apache-2.0, about 130 MB. Wheels exist for `linux/amd64` and `linux/arm64`. |
 | `fake` | `fake.hashing-512` | Deterministic feature hashing, 512 dimensions. For tests and the laptop `dev` profile only: it matches words, not meaning. |
+
+### The pinned model (PLAN.md section 16.1)
+
+fastembed runs the ONNX export in the Hugging Face repository `Xenova/jina-embeddings-v2-small-en`. The service pins commit `523cadcb9c2e71c7153fc46016e1fe79acb4f58f`, which was that repository's `main` on 2025-04-24. It uses five files, each with a pinned size and SHA-256 in `crewquarters_knowledge.embeddings.MODEL_FILES`: `config.json`, `tokenizer.json`, `tokenizer_config.json`, `special_tokens_map.json`, and `onnx/model.onnx` (SHA-256 `8daf59ca…1614e05`).
+
+- **Install:** `cq-knowledge fetch-model [--dir PATH]` downloads those files from that commit into `CQ_EMBEDDING_MODEL_DIR/jina-embeddings-v2-small-en@523cadcb9c2e71c7153fc46016e1fe79acb4f58f/`.
+  - It checks each file's size and SHA-256 and moves it into place only if both match.
+  - It is idempotent: files that are already present and intact are not downloaded again, and damaged ones are replaced.
+  - Exit codes: `0` when every file is verified, `1` on a checksum mismatch, and `2` when the download fails.
+  - Deployment runs it once, in a one-shot init container or the installer, with network access. `CQ_EMBEDDING_MODEL_DIR` must be a persistent volume: writable for `fetch-model`, and read-only is enough for the service.
+- **Load:** the service verifies the files again and loads them **at startup** from that directory only, with `HF_HUB_OFFLINE=1` and fastembed's `specific_model_path`. It never downloads anything, and nothing goes to `/tmp`.
+- **Missing or altered model:** the service still starts and `/health/live` passes. `/health/ready` returns `503` with `{"code": "EMBEDDING_MODEL_UNAVAILABLE", "message": "... Run cq-knowledge fetch-model ..."}`, and the reason is logged. Ingestion jobs stay queued, not failed, queries return `503 EMBEDDING_MODEL_UNAVAILABLE`, and the worker looks for the model again every minute.
+- **Profile metadata:** readiness and every knowledge base (`embeddingModel`) report the profile's source and revision. The profile id stands for exactly this revision. The revision is the one `main` served before pinning, so vectors indexed earlier stay valid and existing rows need no change. Moving to another revision needs a new profile id; existing knowledge bases then report `EMBEDDING_PROFILE_MISMATCH` until they are re-indexed.
 
 A knowledge base records its profile and dimension, which never change. Querying a knowledge base under a different profile returns `409 EMBEDDING_PROFILE_MISMATCH`; re-index it first. The vector column is fixed at `vector(512)`, so a profile with another dimension needs a migration. Search is exact cosine distance over one knowledge base's `READY` chunks. PLAN.md defers the HNSW index until the corpus is large enough to need it.
 
@@ -57,7 +86,7 @@ Callers are the control API (UI pages and uploads), the capability broker (agent
 | `POST /knowledge-bases/{id}/query` | Retrieval (below) |
 | `GET /metrics` | Prometheus text: `cq_http_*`, `cq_knowledge_retrieval_duration_seconds` (target p95 < 1 s), `cq_knowledge_ingests_total{outcome}`, `cq_knowledge_ingest_duration_seconds`, `cq_knowledge_purges_total{outcome}`, `cq_knowledge_documents{state}`, `cq_knowledge_chunks`. Labels never carry names, IDs, or query text |
 
-Documents are returned as `{id, knowledgeBaseId, name, mime, bytes, sha256, state, extracted, error, createdAt, updatedAt}`. The filesystem path is never returned.
+Knowledge bases are returned as `{id, name, embeddingProfile, embeddingDimension, embeddingModel, createdAt}`, where `embeddingModel` is the pinned model behind the profile (`{model, source, revision, dimension}`). Documents are returned as `{id, knowledgeBaseId, name, mime, bytes, sha256, state, extracted, error, createdAt, updatedAt}`. The filesystem path is never returned.
 
 ### Query
 
@@ -91,9 +120,12 @@ These are in addition to the shared `CQ_*` settings.
 | `CQ_DOCUMENTS_DIR` | path | `/var/lib/crewquarters/documents` | no (holds personal data) | all | Document bytes; the only read/write mount |
 | `CQ_MAX_UPLOAD_BYTES` | int | 26214400 (25 MiB) | no | all | Per-document limit |
 | `CQ_EMBEDDING_MODE` | `fake` \| `local` | `fake` | no | dev: fake; demo-cpu, dgx: local | Embedding profile |
-| `CQ_EMBEDDING_CACHE_DIR` | path | fastembed default | no | demo-cpu, dgx | Model download cache (pre-populate for offline devices) |
+| `CQ_EMBEDDING_MODEL_DIR` | path | `/var/lib/crewquarters/embedding-models` | no | demo-cpu, dgx | Pinned embedding model, filled by `cq-knowledge fetch-model`. A persistent volume, writable only for `fetch-model`; the service reads it offline |
 | `CQ_CHUNK_TOKENS` / `CQ_CHUNK_OVERLAP_TOKENS` | int | 800 / 120 | no | all | Chunking |
 | `CQ_INGEST_LEASE_SECONDS` / `CQ_INGEST_POLL_SECONDS` | int / float | 60 / 1.0 | no | all | Ingestion job lease and idle poll |
+| `CQ_EXTRACT_TIMEOUT_SECONDS` / `CQ_EXTRACT_MEMORY_BYTES` | float / int | 120 / 1073741824 (1 GiB) | no | all | Wall clock and address space of the extraction child process |
+| `CQ_INGEST_MAX_SECONDS` | float | 900 | no | all | One ingestion gives up after this long; the lease heartbeat stops then |
+| `CQ_INGEST_SWEEP_SECONDS` | float | 60 | no | all | How often documents without a live job are failed |
 | `CQ_KNOWLEDGE_HOST` / `CQ_KNOWLEDGE_PORT` | string / int | `0.0.0.0` / `8000` | no | all | Listen address (container network) |
 
 ## Tests
@@ -105,3 +137,5 @@ Run with `pytest services/knowledge/tests`. Fixture documents are generated in c
 - **Retrieval:** cited results, scoped to one knowledge base, with a token budget.
 - **Injection:** passage text cannot forge evidence tags.
 - **Lifecycle:** deletion and re-index, retry on embedding failure, and profile mismatch.
+- **Limits:** the child process, its timeout and memory limit, the docx, character and chunk caps, the ingestion deadline, and the abandoned-document sweep.
+- **Model:** `fetch-model` against a local HTTP server (checksums, idempotence, exit codes), offline loading, and readiness while the model is missing. No test needs the network or the real model.

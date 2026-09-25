@@ -16,11 +16,19 @@ class KnowledgeSettings(Settings):
     documents_dir: Path = Path("/var/lib/crewquarters/documents")
     max_upload_bytes: int = 25 * 1024 * 1024
     embedding_mode: Literal["fake", "local"] = "fake"
-    embedding_cache_dir: Path | None = None
+    # Filled by ``cq-knowledge fetch-model``; the service only reads it, offline.
+    embedding_model_dir: Path = Path("/var/lib/crewquarters/embedding-models")
     chunk_tokens: int = 800
     chunk_overlap_tokens: int = 120
     ingest_lease_seconds: int = 60
     ingest_poll_seconds: float = 1.0
+    # Extraction runs in a child process with these bounds (see ``isolation``).
+    extract_timeout_seconds: float = 120.0
+    extract_memory_bytes: int = 1024 * 1024 * 1024
+    # A whole ingestion (extract, chunk, embed, index) gives up after this long.
+    ingest_max_seconds: float = 900.0
+    # How often PENDING/PROCESSING documents without a live job are failed.
+    ingest_sweep_seconds: float = 60.0
 
 
 @lru_cache

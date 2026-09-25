@@ -48,10 +48,26 @@ async def google_callback(
     return response
 
 
+def _too_large() -> PlatformError:
+    return PlatformError("PAYLOAD_TOO_LARGE", "Callback body is too large.", 413)
+
+
+async def _bounded_body(request: Request) -> bytes:
+    """The body, refusing more than ``MAX_CALLBACK_BYTES`` before reading it when the
+    length is declared, and while streaming it when it is not."""
+    declared = request.headers.get("content-length")
+    if declared is not None and (not declared.isdigit() or int(declared) > MAX_CALLBACK_BYTES):
+        raise _too_large()
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > MAX_CALLBACK_BYTES:
+            raise _too_large()
+    return bytes(body)
+
+
 async def _twilio_params(request: Request, state: BrokerState) -> dict[str, str]:
-    body = await request.body()
-    if len(body) > MAX_CALLBACK_BYTES:
-        raise PlatformError("PAYLOAD_TOO_LARGE", "Callback body is too large.", 413)
+    body = await _bounded_body(request)
     params = dict(parse_qsl(body.decode("utf-8", errors="replace"), keep_blank_values=True))
     path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
     await state.telephony.verify_callback(path, params, request.headers.get("x-twilio-signature"))

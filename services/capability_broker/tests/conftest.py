@@ -31,6 +31,12 @@ PUBLIC = "https://demo.example.com"
 SPREADSHEET = "sheet-0123456789abcdefghij"
 KB_ID = "0190c0de-0000-7000-8000-000000000001"
 LIVE_ALLOWED_NUMBERS = ["+15555550101", "+15555550102"]
+# The caller's defaults: reads stay within inputRange, writes within resultRange.
+DEFAULT_CONFIG = {
+    "spreadsheetId": SPREADSHEET,
+    "inputRange": "Contacts!A2:D",
+    "resultRange": "Results!A:H",
+}
 
 
 @pytest.fixture(scope="session")
@@ -189,7 +195,7 @@ class Harness:
             "capabilityTokenId": claims.token_id,
             "permissions": permissions if permissions is not None else permissions_for(caps),
             "modelBindings": {},
-            "config": config if config is not None else {"spreadsheetId": SPREADSHEET},
+            "config": config if config is not None else dict(DEFAULT_CONFIG),
         }
         return {"authorization": f"Bearer {token}"}
 

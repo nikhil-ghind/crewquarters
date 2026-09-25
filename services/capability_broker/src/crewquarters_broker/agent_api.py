@@ -9,8 +9,10 @@ send call text, the broker accepts it only if it matches the owner-approved conf
 
 from __future__ import annotations
 
+import itertools
 import json
 import re
+import unicodedata
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -21,11 +23,12 @@ from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import Field
 
+from crewquarters_broker import a1
 from crewquarters_broker.auth import Grant, authorize, bearer
 from crewquarters_broker.deps import ApiModel, BrokerState, agent_grant, broker_state
 from crewquarters_broker.errors import permission_denied
 from crewquarters_broker.twilio import DISCLOSURE
-from crewquarters_shared.errors import PlatformError
+from crewquarters_shared.errors import PlatformError, invalid
 
 router = APIRouter(prefix="/internal/v1/sdk")
 
@@ -34,8 +37,8 @@ KEY_PATTERN = r"^[A-Za-z0-9_.:-]{1,200}$"
 CLAIM_TOKEN_HEADER = "X-Claim-Token"  # noqa: S105 - a header name
 CLAIM_TOKEN_PATTERN = r"[A-Za-z0-9_-]{8,128}"  # noqa: S105 - a pattern
 Cell = str | int | float | bool | None
-_MAX_NAME = 100
-_NAME = rf"[^\x00-\x1f<>{{}}]{{0,{_MAX_NAME}}}"
+MAX_NAME = 40
+_NAME_PUNCTUATION = frozenset(" '\u2019-.")
 
 
 class HandshakeIn(ApiModel):
@@ -435,7 +438,28 @@ async def gmail_get(
     return await state.google.gmail_get(message_id)
 
 
-# --- Sheets (only the spreadsheet named in the installation config) ------------------------
+# --- Sheets (the configured spreadsheet: reads in inputRange, writes in resultRange) -------
+
+
+def _within(grant: Grant, key: str, requested: str) -> None:
+    """The requested A1 range lies inside the range the owner configured under ``key``:
+    reads within ``inputRange``, writes within ``resultRange`` (same tab)."""
+    configured = grant.configured(key)
+    try:
+        allowed = a1.parse(configured)
+    except ValueError:
+        raise PlatformError(
+            "NEEDS_CONFIGURATION",
+            f"The installation config's {key} is not valid.",
+            409,
+            {"key": key},
+        ) from None
+    try:
+        area = a1.parse(requested)
+    except ValueError:
+        raise invalid("INVALID_REQUEST", "The range must be A1 notation with a tab.") from None
+    if not allowed.contains(area):
+        raise permission_denied(f"Only cells within the configured {key} may be used.", key=key)
 
 
 @router.post("/google/sheets/values:get", summary="Read a range of the configured spreadsheet")
@@ -444,6 +468,7 @@ async def sheets_get(
 ) -> Any:
     grant.require("google.spreadsheets")
     sheet = grant.configured("spreadsheetId", body.spreadsheet_id)
+    _within(grant, "inputRange", body.range)
     return await state.google.sheets_read(sheet, body.range)
 
 
@@ -453,6 +478,7 @@ async def sheets_update(
 ) -> Any:
     grant.require("google.spreadsheets")
     sheet = grant.configured("spreadsheetId", body.spreadsheet_id)
+    _within(grant, "resultRange", body.range)
     return await state.google.sheets_update(sheet, body.range, body.values)
 
 
@@ -460,8 +486,11 @@ async def sheets_update(
 async def sheets_append(
     body: ValuesIn, grant: Grant = Depends(agent_grant), state: BrokerState = Depends(broker_state)
 ) -> Any:
+    """Google appends below the table it finds in the range, in the range's columns, so the
+    configured ``resultRange`` should be open-ended downwards (as ``Results!A:H`` is)."""
     grant.require("google.spreadsheets")
     sheet = grant.configured("spreadsheetId", body.spreadsheet_id)
+    _within(grant, "resultRange", body.range)
     return await state.google.sheets_append(sheet, body.range, body.values)
 
 
@@ -475,13 +504,42 @@ def _bounded(config: dict[str, Any], key: str, default: int, low: int, high: int
     return max(low, min(high, value))
 
 
+def plain_name(name: str) -> bool:
+    """A person's name and nothing more, so a spreadsheet cell cannot add sentences to the
+    approved script: 1-40 characters, starting with a letter, made of letters (with their
+    combining marks), spaces, apostrophes, hyphens and periods. No digits or other
+    punctuation, no leading or trailing space, and no two separators in a row except
+    ". ". A period ends the name or follows a one-letter initial ("J. R. Smith", "Jr."),
+    so a name cannot end a sentence and start another.
+
+    The same rule is in ``agents/caller`` (rows it skips) and the fake platform's broker."""
+    if not 1 <= len(name) <= MAX_NAME or not unicodedata.category(name[0]).startswith("L"):
+        return False
+    if name != name.strip():
+        return False
+    if not all(unicodedata.category(c)[0] in "LM" or c in _NAME_PUNCTUATION for c in name):
+        return False
+    if any(
+        a in _NAME_PUNCTUATION and b in _NAME_PUNCTUATION and a + b != ". "
+        for a, b in itertools.pairwise(name)
+    ):
+        return False
+    return all(
+        i == len(name) - 1 or (i == 1 or name[i - 2] in _NAME_PUNCTUATION)
+        for i, c in enumerate(name)
+        if c == "."
+    )
+
+
 def approved_script(template: str, text: str) -> bool:
-    """``text`` is the owner's template with every ``{name}`` replaced by one plain name."""
+    """``text`` is the owner's template with every ``{name}`` replaced by the same plain
+    name (:func:`plain_name`). The template's fixed parts pin down where the name is."""
     parts = [re.escape(p) for p in template.split("{name}")]
     if len(parts) == 1:
         return text == template
-    pattern = parts[0] + f"(?P<name>{_NAME})" + "(?P=name)".join(parts[1:])
-    return re.fullmatch(pattern, text) is not None
+    pattern = parts[0] + "(?P<name>.+?)" + "(?P=name)".join(parts[1:])
+    match = re.fullmatch(pattern, text, re.DOTALL)
+    return match is not None and plain_name(match.group("name"))
 
 
 @router.post("/telephony/calls", summary="Place the approved fixed-script call (idempotent)")

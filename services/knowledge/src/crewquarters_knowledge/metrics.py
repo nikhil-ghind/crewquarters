@@ -36,7 +36,7 @@ class KnowledgeMetrics:
         )
         self.ingests = Counter(
             "cq_knowledge_ingests_total",
-            "Ingestion attempts by outcome: ready, failed, missing, retry, dead.",
+            "Ingestion attempts by outcome: ready, failed, missing, retry, dead, abandoned.",
             ["outcome"],
             registry=self.registry,
         )

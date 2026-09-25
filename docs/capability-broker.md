@@ -53,21 +53,33 @@ The run and attempt always come from the token. JSON is camelCase. Errors use th
   - A `protocol` other than `v1alpha1` returns `PROTOCOL_UNSUPPORTED`.
 - **Events.** Each event in a batch is forwarded to the control API, and duplicate `clientEventId` values within one batch are dropped. Deduplication across retries needs the control API to store `clientEventId` (requested from Person 1).
 - **Knowledge and Sheets.** The agent sends `knowledgeBaseId` or `spreadsheetId`. The broker accepts it only if it equals the installation config's `knowledgeBaseId` or `spreadsheetId`, and otherwise returns `PERMISSION_DENIED`. Sheets values are written with `valueInputOption=RAW`, so untrusted text is never evaluated as a formula.
+- **Sheets ranges.** A read (`values:get`) must lie inside the config's `inputRange`, and a write (`values:update`, `values:append`) inside its `resultRange`, on the same tab. Ranges are A1 notation and must name their tab (`Contacts!A2:D`, `'My tab'!B3`). Missing bounds are open, so `Results!A:H` allows every row of columns A-H; tab names and column letters ignore case.
+  - Outside the configured range: `PERMISSION_DENIED` with `details.key`. Not A1 with a tab: `INVALID_REQUEST`. The config has no such range, or an invalid one: `NEEDS_CONFIGURATION`.
+  - The caller agent reads `inputRange` and writes `resultRange!A1:H1` and `resultRange!A<row>:H<row>`, which fit its defaults. Google appends below the table it finds in the range, so `resultRange` should be open-ended downwards.
+  - The Gmail digest agent does not use Sheets.
 - **Gmail.** `GET /google/gmail/messages` passes `labelIds` and returns `resultSizeEstimate`. `GET /google/gmail/messages/{id}` returns Gmail's `format=full` message unmodified. It's untrusted content, and the SDK parses MIME and reduces HTML to text.
 - **LLM.** `/llm/chat` and `/llm/chat:stream` are forwarded to the model gateway's `POST /internal/v1/llm/chat` with the service token and the agent's token in `X-Capability-Token`. The gateway re-verifies the token and the profile.
   - The broker first requires an `llm.profile:*` capability, plus `cloud.<provider>` for cloud profiles.
   - Stream events are translated to the contract's `delta` / `done` / `error` SSE.
   - Tools are rejected.
 - **Telephony.** The contract's `CallCreate` carries the script and disclosure, but the broker speaks only what the owner approved:
-  - `script.text` must equal `config.script` with every `{name}` replaced by the same name: at most 100 characters, with no `<>{}` or control characters.
+  - `script.text` must equal `config.script` with every `{name}` replaced by the same plain name, so a spreadsheet cell cannot add sentences to the script. A plain name:
+    - is 1-40 characters and starts with a letter;
+    - contains only letters (with their combining marks), spaces, apostrophes (`'` and `’`), hyphens and periods, so no digits or other punctuation;
+    - has no leading or trailing space and no two separators in a row, except `. `;
+    - has a period only at its end or after a one-letter initial (`J. R. Smith`, `Sam Jones Jr.`).
+
+    A 40-character run of letters can still read as a phrase, so the operator's approval preview lists every name. The caller agent skips rows whose name fails the same rule (`skipReason: invalid_name`), and the fake platform's broker enforces the same script, disclosure and name rules.
   - `script.disclosure` must equal `config.disclosure` when one is configured. Otherwise the broker uses its own fixed disclosure.
   - Anything else returns `PERMISSION_DENIED`, and no call is placed.
 
-  The broker builds the TwiML: the disclosure first, then the script inside a speech `<Gather>` with the requested `timeoutSeconds`. `config.maxCalls` (default 3, at most 10) caps calls per run. The same `idempotencyKey` returns the same call and never redials.
+  The broker builds the TwiML: the disclosure first, then the script inside a speech `<Gather>` with the requested `timeoutSeconds`. `config.maxCalls` (default 3, at most 10) caps calls per run. The cap is checked and the call row inserted under a per-run PostgreSQL advisory lock, so concurrent requests with different keys cannot exceed it. The same `idempotencyKey` returns the same call and never redials.
 - **Call view.** A `Call` has `{id, idempotencyKey, toMasked, state, answered, speechCaptured, transcript, durationSeconds, errorCode, createdAt, updatedAt}`, with `state` in Twilio's vocabulary.
   - A call Twilio rejected is `failed` with `errorCode: PROVIDER_REJECTED`.
   - A call whose create response was lost is `failed` with `errorCode: OUTCOME_UNKNOWN`, and creating it again with the same key returns `OUTCOME_UNKNOWN`.
+  - Twilio can call back before the broker has recorded its answer, or after that answer was lost. The callback URL carries the broker's call id, so a signed callback for a call that has no CallSid yet (still creating, or `OUTCOME_UNKNOWN`) adopts Twilio's CallSid, provided `To` (when sent) ends in the call's last four digits. The callee hears the disclosure and script as usual, the call continues to report progress, and creating it again with the same key returns it. Only the first CallSid is adopted.
   - The first transcript wins, and late or duplicate status callbacks never move a call backwards.
+- **Callback hardening.** A body over 64 KiB is refused with `413` before it is read (from `Content-Length`, or while streaming). A request without a well-formed signature is rejected without decrypting anything, and the Twilio credentials used for signature checks are cached for 60 seconds. Every rejection increments `cq_broker_callback_rejections_total`. The audit log gets at most one `callback.twilio.rejected` row per reason (`missing_signature`, `malformed_signature`, `bad_signature`) per minute, whose `count` covers the rejections since the previous row.
 - **Legal compliance:** nothing here makes a call legally compliant. Restrict live tests to consenting, verified team numbers (`CQ_TWILIO_ALLOWED_NUMBERS`).
 
 ## Internal API for the control API (`/internal/v1`)
@@ -77,7 +89,7 @@ The run and attempt always come from the token. JSON is camelCase. Errors use th
 | `GET /connections` | Status for google, twilio, openai, anthropic in the `ConnectionStatusClient` shape: `{provider, displayName, status: NOT_CONNECTED\|CONNECTED\|NEEDS_ATTENTION\|DISABLED, grantedCapabilities, lastCheckedAt, ...}` |
 | `POST /connections/google/start` | `{userId, capabilities: [gmail.readonly, spreadsheets]}` → `{authorizationUrl, browserBinding}` |
 | `POST /connections/google/test` | Refresh now; an expired grant becomes `NEEDS_ATTENTION` |
-| `DELETE /connections/google?userId=` | Revoke at Google, then delete the connection and secret |
+| `DELETE /connections/google?userId=` | Revoke at Google (best effort), then delete the connection and secret. A secret that can no longer be decrypted (for example, its master key version was removed) is deleted without revocation |
 | `PUT /connections/twilio` | `{userId, accountSid, authToken, fromNumber}`: save (or replace), then validate without calling |
 | `POST /connections/twilio/test` / `DELETE /connections/twilio?userId=` | Validate without calling / delete |
 | `POST /connections/twilio/test-call` | `{userId, to, confirm: true}`: a live call that speaks a fixed test message. The UI must ask the owner first. At most one a minute (`429` with `Retry-After`); in live mode only allowed numbers; audited with the number masked; not tied to a run |
@@ -91,7 +103,7 @@ Responses never contain secret values.
 2. It sets `browserBinding` as a cookie: `cq_oauth_binding`, `HttpOnly`, `SameSite=Lax`, `Secure` under HTTPS, `Path=/api/v1/connections/google`, `Max-Age=600`.
 3. It redirects the browser to `authorizationUrl`.
 
-The callback requires that cookie, so an attacker cannot make the owner's browser complete the attacker's authorization. The broker then redirects the browser to `/connections/google?result=connected` or `?result=error&code=OAUTH_STATE_INVALID|OAUTH_DENIED|OAUTH_CODE_INVALID|OAUTH_SCOPE_MISSING|...`.
+The callback requires that cookie, so an attacker cannot make the owner's browser complete the attacker's authorization. The broker then redirects the browser to `/connections/google?result=connected` or `?result=error&code=OAUTH_STATE_INVALID|OAUTH_DENIED|OAUTH_CODE_INVALID|OAUTH_SCOPE_MISSING|OAUTH_TOKEN_INVALID|...` (`OAUTH_TOKEN_INVALID`: Google returned no access token, or refused the new one).
 
 ## Google OAuth details
 
@@ -100,6 +112,7 @@ The callback requires that cookie, so an attacker cannot make the owner's browse
 - **Redirect URI:** exactly `CQ_PUBLIC_BASE_URL` + `/api/v1/connections/google/callback`. Register this exact URI in Google Cloud.
 - **State:** 256 random bits, single use, valid for 10 minutes; only its hash is kept in memory. A broker restart during sign-in means the owner has to click Connect again.
 - **Tokens:** refresh tokens are envelope-encrypted, and access tokens are kept in memory only.
+- **Refreshing:** one refresh at a time per connection; concurrent requests wait for it and reuse the new token. No database connection is held while Google answers (up to 20 seconds). A token Google refuses right after a refresh gives `PROVIDER_ERROR` (`providerStatus: 401`), and a refresh token that cannot be decrypted gives `NEEDS_CONNECTION`.
 - **One Google account per device:** connecting again replaces the previous connection.
 - **Testing mode:**
   - Google caps the test-user list and may show an "unverified app" warning.
@@ -114,6 +127,7 @@ The callback requires that cookie, so an attacker cannot make the owner's browse
 - **Master keyring:** `CQ_MASTER_KEY_FILE` holds lines of `<version>:<64 hex characters>`, and the highest version encrypts new secrets. The loader refuses a file that other users can read or write.
 - **Rotation:** add a new line, then call `db.replace()` to re-encrypt a secret under it.
 - **Who decrypts:** the broker decrypts only Google and Twilio secrets, and the model gateway decrypts only OpenAI and Anthropic keys (`db.load(..., provider=...)`). Plaintext never travels between services.
+- **Undecryptable secrets:** if a secret cannot be decrypted (say, its key version was removed from the keyring), agents get `NEEDS_CONNECTION` and the owner can still delete the connection, then connect again.
 - **Development:** the `dev` profile uses a fixed, insecure development key when no file is set. Every other profile refuses to start without one.
 
 ## Metrics
@@ -126,7 +140,7 @@ The callback requires that cookie, so an attacker cannot make the owner's browse
 | `cq_broker_denials_total{code}` | Refused agent calls: `UNAUTHENTICATED`, `CAPABILITY_DENIED`, `PERMISSION_DENIED`, `RUN_NOT_ACTIVE`, `RUN_CANCELLED` |
 | `cq_broker_provider_requests_total{provider,outcome}`, `cq_broker_provider_request_duration_seconds{provider}` | Google and Twilio usage and latency; `outcome` is `2xx`, `4xx`, `5xx`, or `error` for transport failures |
 | `cq_broker_oauth_refresh_failures_total{provider,reason}` | `invalid_grant` means the owner must reconnect (seven-day test-mode expiry) |
-| `cq_broker_callback_rejections_total{provider}` | Twilio callbacks with a bad signature |
+| `cq_broker_callback_rejections_total{provider}` | Twilio callbacks with a missing, malformed or bad signature (every one; the audit log aggregates them per minute) |
 
 ## Configuration
 
@@ -173,7 +187,10 @@ Run with `pytest services/capability_broker/tests packages/secret_store/tests`. 
 - OAuth state replay, expiry, and binding, plus PKCE;
 - incremental and partial grants, and seven-day expiry handling;
 - Sheets formula safety;
-- Twilio signature checks: the reference vector, forgery, and wrong URL;
+- Twilio signature checks: the reference vector, forgery, and wrong URL; rejection audit aggregation, no decrypt for unsigned requests, and oversized bodies refused before reading;
+- the call cap under concurrent requests; plain-name rules; callbacks that arrive before (or after a lost) create response;
+- Sheets range scoping to `inputRange` and `resultRange`;
+- single-flight Google refresh without a held database connection; disconnecting with an undecryptable secret; unusable OAuth tokens;
 - duplicate and late callbacks;
 - in-doubt calls that are never redialed;
 - secrets and full numbers absent from the database, logs, and API;

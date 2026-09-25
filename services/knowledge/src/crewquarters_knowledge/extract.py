@@ -3,6 +3,9 @@
 Supported: ``.txt``, ``.md``, text-based ``.pdf``, ``.docx``, ``.csv``. Everything is pure
 Python or ships ``arm64`` wheels. Each extracted segment carries a source locator (page,
 section, paragraph, row, or line) so citations can point back to it.
+
+The service never calls :func:`extract` in its own process: see
+:mod:`crewquarters_knowledge.isolation`, which bounds its time and memory.
 """
 
 from __future__ import annotations
@@ -28,6 +31,8 @@ MAX_PDF_PAGES = 2000
 MAX_CSV_ROWS = 100_000
 MAX_DOCX_ENTRIES = 5000
 MAX_DOCX_UNCOMPRESSED = 100 * 1024 * 1024
+MAX_DOCX_DOCUMENT_XML = 4 * 1024 * 1024
+MAX_DOCX_BLOCKS = 50_000  # paragraphs plus table rows
 MIN_PDF_TEXT_CHARS = 20
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
@@ -209,15 +214,30 @@ def _docx(path: Path) -> list[Segment]:
                 raise ExtractionError("TOO_LARGE", "The document expands to an unsafe size.")
             if "word/document.xml" not in archive.namelist():
                 raise ExtractionError("CONTENT_MISMATCH", "This is not a Word document.")
+            # A few kilobytes can inflate to megabytes of markup that python-docx parses
+            # slowly; zipfile never inflates past the size the entry declares.
+            if archive.getinfo("word/document.xml").file_size > MAX_DOCX_DOCUMENT_XML:
+                raise ExtractionError(
+                    "DOCUMENT_TOO_COMPLEX",
+                    "The document's text is too large or complex. Split it into smaller files.",
+                )
         document = docx.Document(str(path))
     except ExtractionError:
         raise
     except Exception:  # zipfile/lxml/python-docx raise many types for malformed files
         raise ExtractionError("EXTRACTION_FAILED", "The document could not be read.") from None
+    paragraphs = document.paragraphs
+    if len(paragraphs) + sum(len(t.rows) for t in document.tables) > MAX_DOCX_BLOCKS:
+        raise ExtractionError(
+            "DOCUMENT_TOO_COMPLEX",
+            "The document has too many paragraphs. Split it into smaller files.",
+        )
+    # Resolve style ids once: python-docx's paragraph.style searches the styles each time.
+    style_names = {s.style_id: s.name or "" for s in document.styles}
     segments: list[Segment] = []
     section: str | None = None
-    for number, paragraph in enumerate(document.paragraphs, start=1):
-        style = paragraph.style.name if paragraph.style is not None else ""
+    for number, paragraph in enumerate(paragraphs, start=1):
+        style = style_names.get(paragraph._p.style or "", "")
         if style.startswith(("Heading", "Title")) and paragraph.text.strip():
             section = paragraph.text.strip()
         locator: dict[str, Any] = {"paragraph": number}
