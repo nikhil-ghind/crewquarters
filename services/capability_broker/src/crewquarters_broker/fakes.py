@@ -134,6 +134,10 @@ class FakeGoogle:
         self.revoked: set[str] = set()
         self.refresh_grants: dict[str, list[str]] = {}
         self.token_requests: list[dict[str, str]] = []
+        # Scopes the (single) fake account has granted and not revoked. The broker always
+        # asks for include_granted_scopes=true, so, as with Google, a new consent's token
+        # carries these too: consenting to Sheets after Gmail keeps Gmail.
+        self.consented: set[str] = set()
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         host, path = request.url.host, request.url.path
@@ -141,6 +145,7 @@ class FakeGoogle:
             return self._token(dict(parse_qsl(request.content.decode())))
         if host == "oauth2.googleapis.com" and path == "/revoke":
             self.revoked.add(dict(parse_qsl(request.content.decode())).get("token", ""))
+            self.consented.clear()  # revoking a token removes the app's whole grant
             return httpx.Response(200)
         if not request.headers.get("authorization", "").startswith("Bearer fake-access-"):
             return httpx.Response(401)
@@ -157,6 +162,8 @@ class FakeGoogle:
             if not code.startswith("fake-code"):
                 return httpx.Response(400, json={"error": "invalid_grant"})
             names = code.partition(":")[2].split(",") if ":" in code else list(SCOPES)
+            self.consented.update(names)
+            names = [n for n in SCOPES if n in self.consented]
             refresh = f"fake-refresh-{secrets.token_hex(8)}"
             self.refresh_grants[refresh] = names
         else:
@@ -182,6 +189,10 @@ class FakeGoogle:
             after = re.search(r"after:(\d+)", q)
             before = re.search(r"before:(\d+)", q)
             labels = set(request.url.params.get_list("labelIds"))
+            # Gmail search operators the agents send: `-category:promotions` excludes a
+            # category, `label:X` requires a label.
+            excluded = {f"CATEGORY_{c.upper()}" for c in re.findall(r"-category:(\w+)", q)}
+            labels |= set(re.findall(r"(?<![-\w])label:(\S+)", q))
             ids = sorted(
                 (
                     m
@@ -189,6 +200,7 @@ class FakeGoogle:
                     if (not after or int(m["internalDate"]) >= int(after.group(1)) * 1000)
                     and (not before or int(m["internalDate"]) < int(before.group(1)) * 1000)
                     and labels <= set(m["labelIds"])
+                    and not excluded & set(m["labelIds"])
                 ),
                 key=lambda m: m["internalDate"],
                 reverse=True,

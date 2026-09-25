@@ -27,7 +27,7 @@ HOST_PLATFORM = $(shell uv run python -c "from crewctl.build import host_platfor
         test test-platform test-contract test-sdk contracts contracts-check lint fmt image image-arm64 \
         fake-up fake-down agent-images e2e-images e2e \
         demo-seed demo-reset demo-run demo-pending demo-approve evidence \
-        integration-up integration-down
+        integration-up integration-down realstack-images realstack-up realstack-test realstack-down
 
 help:
 	@grep -E '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -158,3 +158,33 @@ demo-approve: ## Approve the pending input request on the fake platform
 
 evidence: ## Run every suite and write evidence/<UTC>/report.md
 	CREWQ_FAKE_URL=$(FAKE_URL) infra/scripts/collect-evidence.sh
+
+# --- Real-stack E2E: real agent images through the real platform (docs/testing-realstack.md) ---
+REALSTACK_ENV := infra/compose/realstack.env
+REALSTACK_COMPOSE := docker compose -p cqreal --env-file $(REALSTACK_ENV) -f infra/compose/compose.yaml \
+	-f infra/compose/compose.runtime.yaml -f infra/compose/compose.realstack.yaml
+REALSTACK_DATA := /tmp/cqreal-data
+
+realstack-images: ## Build the platform and proxy images tagged :cqreal
+	docker build --load -f infra/docker/python.Dockerfile -t crewquarters/platform:cqreal .
+	docker build --load -f infra/docker/proxy.Dockerfile -t crewquarters/proxy:cqreal .
+
+realstack-up: realstack-images ## Real stack (project cqreal, http://localhost:18083) with pinned agent images
+	mkdir -p $(REALSTACK_DATA)
+	$(REALSTACK_COMPOSE) up -d --wait realstack-registry
+	uv run python tests/realstack/prepare.py --registry localhost:15001
+	# The daemon creates the cqreal-agents and cqreal-models networks the others join.
+	$(REALSTACK_COMPOSE) up -d --wait runtime-daemon
+	$(REALSTACK_COMPOSE) up -d --wait
+	@echo "UI/API: http://localhost:18083/  (make realstack-test; make realstack-down)"
+
+realstack-test: ## Run the real-stack E2E suite against a running `make realstack-up`
+	uv run pytest -q -p no:cacheprovider -m realstack tests/realstack
+
+realstack-down: ## Remove the cqreal stack: containers, volumes, agent networks, data
+	-$(REALSTACK_COMPOSE) run --rm --no-deps --entrypoint sh runtime-daemon \
+		-c 'rm -rf $(REALSTACK_DATA)/runs $(REALSTACK_DATA)/models'
+	-docker ps -aq --filter network=cqreal-agents | xargs -r docker rm -f
+	$(REALSTACK_COMPOSE) down -v --remove-orphans
+	-docker network rm cqreal-agents cqreal-models
+	-rmdir $(REALSTACK_DATA)

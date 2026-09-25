@@ -134,6 +134,7 @@ markers = [
     "docker: test needs a local Docker engine",
     "e2e: requires the fake Docker stack (make fake-up) and pushed agent images",
     "live: requires a real Crewquarters platform and CREWQ_LIVE_* settings",
+    "realstack: real agent images through the real stack (make realstack-up; tests/realstack)",
 ]
 testpaths = [
     "packages/shared_python/tests",
