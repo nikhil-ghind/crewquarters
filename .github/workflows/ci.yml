@@ -93,6 +93,8 @@ jobs:
             CQ_CAPABILITY_SIGNING_KEY=x CQ_INTERNAL_SERVICE_TOKEN=x CQ_CHAT_CLIENT_TOKEN=x
           docker compose -f infra/compose/compose.appliance.yaml config -q
           docker compose -f infra/compose/compose.appliance.yaml --profile callbacks config -q
+          docker compose -f infra/compose/compose.appliance.yaml -f infra/compose/compose.lan-https.yaml config -q
+          docker compose -f infra/compose/compose.yaml --profile callbacks-quick config -q
           # Only the proxy publishes a port, and only two services get the master key.
           test "$(docker compose -f infra/compose/compose.appliance.yaml config --format json \
             | jq -r '[.services | to_entries[] | select(.value.ports) | .key] | join(",")')" = proxy
@@ -103,6 +105,7 @@ jobs:
         run: |
           docker build -f infra/docker/proxy.Dockerfile -t crewquarters/proxy:ci .
           docker run --rm crewquarters/proxy:ci nginx -t
+          infra/proxy/test-proxy.sh crewquarters/proxy:ci
       - uses: actions/upload-artifact@v4
         with:
           name: crewquarters-deb

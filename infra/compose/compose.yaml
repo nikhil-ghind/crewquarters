@@ -27,6 +27,8 @@ x-app-env: &app-env
   CQ_KNOWLEDGE_URL: http://knowledge:8000
   CQ_CONTROL_API_URL: http://control-api:8080
   CQ_PUBLIC_BASE_URL: ${CQ_PUBLIC_BASE_URL:-http://localhost:8080}
+  # Twilio callbacks and signatures use this origin (the tunnel); Google stays on CQ_PUBLIC_BASE_URL.
+  CQ_TWILIO_CALLBACK_BASE_URL: ${CQ_TWILIO_CALLBACK_BASE_URL:-}
   # Shared by the control API (upload proxy) and the knowledge service; the proxy allows
   # 26 MiB on the upload route (infra/proxy/nginx.conf).
   CQ_MAX_UPLOAD_BYTES: ${CQ_MAX_UPLOAD_BYTES:-26214400}
@@ -227,13 +229,30 @@ services:
   # Profile `callbacks` (PLAN.md section 14.3): a Cloudflare tunnel for controlled demos.
   # Its only upstream is the proxy's callback site (port 8081), which serves the Google
   # OAuth and Twilio callback paths and 404 for everything else. Point the tunnel's public
-  # hostname at http://proxy:8081 and set CQ_PUBLIC_BASE_URL to https://<that hostname>.
+  # hostname at http://proxy:8081 and set CQ_TWILIO_CALLBACK_BASE_URL to https://<that
+  # hostname>. Keep CQ_PUBLIC_BASE_URL at the address the browser uses (Google sign-in).
   tunnel:
     profiles: [callbacks]
     image: cloudflare/cloudflared:2026.9.3@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
       TUNNEL_TOKEN: ${CQ_TUNNEL_TOKEN:-}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [callbacks]
+    depends_on:
+      proxy:
+        condition: service_healthy
+
+  # Profile `callbacks-quick`: the same, without a Cloudflare account. cloudflared prints a
+  # random https://<name>.trycloudflare.com URL (`docker compose logs tunnel-quick`); set
+  # CQ_TWILIO_CALLBACK_BASE_URL to it and recreate the capability broker. The URL changes on
+  # every start, so this is for tests only.
+  tunnel-quick:
+    profiles: [callbacks-quick]
+    image: cloudflare/cloudflared:2026.9.3@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
+    command: ["tunnel", "--no-autoupdate", "--url", "http://proxy:8081"]
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
