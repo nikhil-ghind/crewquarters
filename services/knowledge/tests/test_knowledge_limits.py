@@ -230,7 +230,7 @@ async def missing_model(
     sessions: async_sessionmaker[AsyncSession],
     person3_knowledge_tables: None,
 ) -> AsyncIterator[tuple[Any, MissingModel, httpx.AsyncClient]]:
-    ks = KnowledgeSettings(**settings.model_dump(), documents_dir=tmp_path / "documents")
+    ks = KnowledgeSettings(**{**settings.model_dump(), "documents_dir": tmp_path / "documents"})
     embedder = MissingModel()
     app = create_app(ks, embedder=embedder, run_worker=False)
     client = httpx.AsyncClient(

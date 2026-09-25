@@ -13,7 +13,7 @@ from crewquarters_shared.config import Settings
 
 
 class KnowledgeSettings(Settings):
-    documents_dir: Path = Path("/var/lib/crewquarters/documents")
+    # documents_dir (CQ_DOCUMENTS_DIR) is a shared setting: the control API reads it for backups.
     max_upload_bytes: int = 25 * 1024 * 1024
     embedding_mode: Literal["fake", "local"] = "fake"
     # Filled by ``cq-knowledge fetch-model``; the service only reads it, offline.

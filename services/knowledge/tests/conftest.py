@@ -125,7 +125,7 @@ async def knowledge(
     sessions: async_sessionmaker[AsyncSession],
     person3_knowledge_tables: None,
 ) -> AsyncIterator[KnowledgeHarness]:
-    ks = KnowledgeSettings(**settings.model_dump(), documents_dir=tmp_path / "documents")
+    ks = KnowledgeSettings(**{**settings.model_dump(), "documents_dir": tmp_path / "documents"})
     h = KnowledgeHarness(ks)
     async with h.app.router.lifespan_context(h.app):
         yield h
