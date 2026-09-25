@@ -37,7 +37,7 @@ Copyleft, proprietary, or unclear licenses. Each needs a recorded decision in
 
 | Component | Pinned reference | License | Used by | Notes |
 | --- | --- | --- | --- | --- |
-| Python 3.12 on Debian 12 (python:3.12-slim-bookworm) | `python:3.12-slim-bookworm` | PSF-2.0 (CPython); Debian packages under their own licenses (GPL-2.0/GPL-3.0/LGPL-2.1/BSD/MIT...) | platform image base | OS packages are unmodified Debian binaries (mere aggregation); per-package licenses are in each image's SPDX SBOM and /usr/share/doc/*/copyright. |
+| Python 3.12 on Debian 12 (python:3.12-slim-bookworm) | `python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e` | PSF-2.0 (CPython); Debian packages under their own licenses (GPL-2.0/GPL-3.0/LGPL-2.1/BSD/MIT...) | platform image base | OS packages are unmodified Debian binaries (mere aggregation); per-package licenses are in each image's SPDX SBOM and /usr/share/doc/*/copyright. |
 | Python 3.12 on Debian 12 (python:3.12-slim) | `python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9` | PSF-2.0 (CPython); Debian packages under their own licenses | agent images base | As above. |
 | NGINX (nginxinc/nginx-unprivileged, Alpine) | `nginxinc/nginx-unprivileged:1.28.3-alpine@sha256:6a23acdfca2b9cfbcec61419e3f1426bcbedb91362f2f19306a8567423bb4612` | BSD-2-Clause (nginx); Alpine packages under their own licenses (musl: MIT, busybox: GPL-2.0...) | proxy image base | Unmodified upstream binaries; per-package licenses in the proxy SBOM. |
 | Node.js (node:22 bookworm-slim) | `node:22.18-bookworm-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e` | MIT (Node.js) | build stage only | Builds the UI; not present in any shipped image. |
