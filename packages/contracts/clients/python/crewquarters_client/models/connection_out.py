@@ -9,6 +9,7 @@ from attrs import field as _attrs_field
 
 from ..models.connection_out_provider import ConnectionOutProvider
 from ..models.connection_out_status import ConnectionOutStatus
+from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="ConnectionOut")
 
@@ -19,9 +20,11 @@ class ConnectionOut:
     Attributes:
         provider (ConnectionOutProvider):
         display_name (str):
-        status (ConnectionOutStatus):
+        status (ConnectionOutStatus): UNKNOWN: the capability broker could not be reached; nothing is assumed.
         granted_capabilities (list[str]):
         last_checked_at (datetime.datetime | None):
+        account (None | str | Unset): Masked account label, when connected.
+        detail (None | str | Unset):
     """
 
     provider: ConnectionOutProvider
@@ -29,6 +32,8 @@ class ConnectionOut:
     status: ConnectionOutStatus
     granted_capabilities: list[str]
     last_checked_at: datetime.datetime | None
+    account: str | Unset | None = UNSET
+    detail: str | Unset | None = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -46,6 +51,18 @@ class ConnectionOut:
         else:
             last_checked_at = self.last_checked_at
 
+        account: str | Unset | None
+        if isinstance(self.account, Unset):
+            account = UNSET
+        else:
+            account = self.account
+
+        detail: str | Unset | None
+        if isinstance(self.detail, Unset):
+            detail = UNSET
+        else:
+            detail = self.detail
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -57,6 +74,10 @@ class ConnectionOut:
                 "lastCheckedAt": last_checked_at,
             }
         )
+        if account is not UNSET:
+            field_dict["account"] = account
+        if detail is not UNSET:
+            field_dict["detail"] = detail
 
         return field_dict
 
@@ -86,12 +107,32 @@ class ConnectionOut:
 
         last_checked_at = _parse_last_checked_at(d.pop("lastCheckedAt"))
 
+        def _parse_account(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        account = _parse_account(d.pop("account", UNSET))
+
+        def _parse_detail(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        detail = _parse_detail(d.pop("detail", UNSET))
+
         connection_out = cls(
             provider=provider,
             display_name=display_name,
             status=status,
             granted_capabilities=granted_capabilities,
             last_checked_at=last_checked_at,
+            account=account,
+            detail=detail,
         )
 
         connection_out.additional_properties = d

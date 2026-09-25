@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.run_event_out_payload import RunEventOutPayload
@@ -25,6 +27,7 @@ class RunEventOut:
         type_ (str):
         payload (RunEventOutPayload):
         created_at (datetime.datetime):
+        occurred_at (datetime.datetime | None | Unset): When the agent emitted the event (agent events only).
     """
 
     run_id: UUID
@@ -33,6 +36,7 @@ class RunEventOut:
     type_: str
     payload: RunEventOutPayload
     created_at: datetime.datetime
+    occurred_at: datetime.datetime | Unset | None = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -48,6 +52,14 @@ class RunEventOut:
 
         created_at = self.created_at.isoformat()
 
+        occurred_at: str | Unset | None
+        if isinstance(self.occurred_at, Unset):
+            occurred_at = UNSET
+        elif isinstance(self.occurred_at, datetime.datetime):
+            occurred_at = self.occurred_at.isoformat()
+        else:
+            occurred_at = self.occurred_at
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -60,6 +72,8 @@ class RunEventOut:
                 "createdAt": created_at,
             }
         )
+        if occurred_at is not UNSET:
+            field_dict["occurredAt"] = occurred_at
 
         return field_dict
 
@@ -80,6 +94,23 @@ class RunEventOut:
 
         created_at = datetime.datetime.fromisoformat(d.pop("createdAt"))
 
+        def _parse_occurred_at(data: object) -> datetime.datetime | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                occurred_at_type_0 = datetime.datetime.fromisoformat(data)
+
+                return occurred_at_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(datetime.datetime | None | Unset, data)
+
+        occurred_at = _parse_occurred_at(d.pop("occurredAt", UNSET))
+
         run_event_out = cls(
             run_id=run_id,
             sequence=sequence,
@@ -87,6 +118,7 @@ class RunEventOut:
             type_=type_,
             payload=payload,
             created_at=created_at,
+            occurred_at=occurred_at,
         )
 
         run_event_out.additional_properties = d

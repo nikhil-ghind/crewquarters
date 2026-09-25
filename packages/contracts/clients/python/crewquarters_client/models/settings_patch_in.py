@@ -22,7 +22,8 @@ class SettingsPatchIn:
     Attributes:
         timezone (None | str | Unset):
         idle_unload_seconds (int | None | Unset):
-        callback_base_url (None | str | Unset):
+        callback_base_url (None | str | Unset): Read-only; set CQ_PUBLIC_BASE_URL instead. Sending it returns 422
+            SETTING_READ_ONLY.
         setup_completed (bool | None | Unset):
         setup_state (None | SettingsPatchInSetupStateType0 | Unset):
         versions (SettingsPatchInVersions | Unset): Expected versions; mismatches return 409.

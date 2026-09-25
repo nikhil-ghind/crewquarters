@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 if TYPE_CHECKING:
+    from ..models.settings_out_callbackurls import SettingsOutCallbackurls
     from ..models.settings_out_setupstate import SettingsOutSetupstate
     from ..models.settings_out_versions import SettingsOutVersions
 
@@ -20,7 +21,9 @@ class SettingsOut:
     Attributes:
         timezone (str):
         idle_unload_seconds (int):
-        callback_base_url (None | str):
+        callback_base_url (str): Read-only: set by CQ_PUBLIC_BASE_URL, the single source the capability broker uses for
+            the OAuth redirect and Twilio callbacks.
+        callback_urls (SettingsOutCallbackurls): Exact URLs to register: googleRedirectUri, twilioCallbackBase.
         setup_completed (bool):
         setup_state (SettingsOutSetupstate): Server-side first-run wizard progress (resumes after refresh/OAuth).
         versions (SettingsOutVersions): Per-setting version for optimistic updates.
@@ -28,7 +31,8 @@ class SettingsOut:
 
     timezone: str
     idle_unload_seconds: int
-    callback_base_url: str | None
+    callback_base_url: str
+    callback_urls: SettingsOutCallbackurls
     setup_completed: bool
     setup_state: SettingsOutSetupstate
     versions: SettingsOutVersions
@@ -39,8 +43,9 @@ class SettingsOut:
 
         idle_unload_seconds = self.idle_unload_seconds
 
-        callback_base_url: str | None
         callback_base_url = self.callback_base_url
+
+        callback_urls = self.callback_urls.to_dict()
 
         setup_completed = self.setup_completed
 
@@ -55,6 +60,7 @@ class SettingsOut:
                 "timezone": timezone,
                 "idleUnloadSeconds": idle_unload_seconds,
                 "callbackBaseUrl": callback_base_url,
+                "callbackUrls": callback_urls,
                 "setupCompleted": setup_completed,
                 "setupState": setup_state,
                 "versions": versions,
@@ -65,6 +71,7 @@ class SettingsOut:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.settings_out_callbackurls import SettingsOutCallbackurls
         from ..models.settings_out_setupstate import SettingsOutSetupstate
         from ..models.settings_out_versions import SettingsOutVersions
 
@@ -73,12 +80,9 @@ class SettingsOut:
 
         idle_unload_seconds = d.pop("idleUnloadSeconds")
 
-        def _parse_callback_base_url(data: object) -> str | None:
-            if data is None:
-                return data
-            return cast(None | str, data)
+        callback_base_url = d.pop("callbackBaseUrl")
 
-        callback_base_url = _parse_callback_base_url(d.pop("callbackBaseUrl"))
+        callback_urls = SettingsOutCallbackurls.from_dict(d.pop("callbackUrls"))
 
         setup_completed = d.pop("setupCompleted")
 
@@ -90,6 +94,7 @@ class SettingsOut:
             timezone=timezone,
             idle_unload_seconds=idle_unload_seconds,
             callback_base_url=callback_base_url,
+            callback_urls=callback_urls,
             setup_completed=setup_completed,
             setup_state=setup_state,
             versions=versions,

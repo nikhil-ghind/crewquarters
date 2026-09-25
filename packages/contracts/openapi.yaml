@@ -2019,6 +2019,1161 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: Unprocessable Entity
+  /api/v1/chat/sessions/{session_id}/messages/{message_id}/citations/{citation_id}:
+    get:
+      tags:
+      - chat
+      summary: 'Resolve a citation chip: the cited passage and its document''s current state'
+      description: 'Only citations stored on your own chat messages resolve. ``documentAvailable`` is
+
+        false once the document (or its knowledge base) was deleted.'
+      operationId: resolve_citation_api_v1_chat_sessions__session_id__messages__message_id__citations__citation_id__get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      - name: message_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Message Id
+      - name: citation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Citation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CitationOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/connections/google/start:
+    post:
+      tags:
+      - connections
+      summary: 'Begin Google consent: returns the authorization URL and sets the binding cookie'
+      description: 'Not replayable: every call starts a new single-use consent with a new browser binding,
+
+        so an ``Idempotency-Key`` is ignored here.'
+      operationId: google_start_api_v1_connections_google_start_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleStartIn'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleStartOut'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/connections/google/test:
+    post:
+      tags:
+      - connections
+      summary: Refresh Google access now; an expired grant becomes NEEDS_ATTENTION
+      operationId: google_test_api_v1_connections_google_test_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionOut'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/connections/google:
+    delete:
+      tags:
+      - connections
+      summary: 'Disconnect Google: revoke at Google, then delete the connection and its secret'
+      operationId: google_disconnect_api_v1_connections_google_delete
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/connections/twilio:
+    put:
+      tags:
+      - connections
+      summary: Save (or replace) Twilio credentials, then validate them without calling
+      operationId: twilio_save_api_v1_connections_twilio_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TwilioCredentialsIn'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionOut'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - connections
+      summary: Delete the Twilio credentials
+      operationId: twilio_delete_api_v1_connections_twilio_delete
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/connections/twilio/test:
+    post:
+      tags:
+      - connections
+      summary: Validate Twilio credentials without placing a call
+      operationId: twilio_test_api_v1_connections_twilio_test_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionOut'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/connections/twilio/test-call:
+    post:
+      tags:
+      - connections
+      summary: Place one live test call (the owner must confirm; at most one a minute)
+      description: 'A retry with the same ``Idempotency-Key`` replays the first result and never dials
+
+        twice.'
+      operationId: twilio_test_call_api_v1_connections_twilio_test_call_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TwilioTestCallIn'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TwilioTestCallOut'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/provider-profiles:
+    get:
+      tags:
+      - connections
+      summary: Cloud provider profiles (API keys are never returned)
+      operationId: list_provider_profiles_api_v1_provider_profiles_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_ProviderProfileOut_'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+    post:
+      tags:
+      - connections
+      summary: Store an OpenAI or Anthropic API key (encrypted by the broker)
+      operationId: create_provider_profile_api_v1_provider_profiles_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderProfileCreateIn'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderProfileOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/provider-profiles/{profile_id}:
+    delete:
+      tags:
+      - connections
+      summary: Delete a provider profile and its key
+      operationId: delete_provider_profile_api_v1_provider_profiles__profile_id__delete
+      parameters:
+      - name: profile_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Profile Id
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/provider-profiles/{profile_id}/test:
+    post:
+      tags:
+      - connections
+      summary: Test a provider key with the smallest useful request (content leaves the device)
+      description: 'The model gateway decrypts the key and calls the provider; the control API never
+
+        holds the key.'
+      operationId: test_provider_profile_api_v1_provider_profiles__profile_id__test_post
+      parameters:
+      - name: profile_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Profile Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderProfileTestOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/knowledge-bases:
+    post:
+      tags:
+      - knowledge
+      summary: Create a knowledge base (the embedding profile is fixed at creation)
+      operationId: create_knowledge_base_api_v1_knowledge_bases_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeBaseCreateIn'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeBaseOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+    get:
+      tags:
+      - knowledge
+      summary: Your knowledge bases
+      operationId: list_knowledge_bases_api_v1_knowledge_bases_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_KnowledgeBaseOut_'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/knowledge-bases/{kb_id}:
+    get:
+      tags:
+      - knowledge
+      summary: One knowledge base
+      operationId: get_knowledge_base_api_v1_knowledge_bases__kb_id__get
+      parameters:
+      - name: kb_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Kb Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeBaseOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+    delete:
+      tags:
+      - knowledge
+      summary: Delete a knowledge base; its files are securely purged
+      operationId: delete_knowledge_base_api_v1_knowledge_bases__kb_id__delete
+      parameters:
+      - name: kb_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Kb Id
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/knowledge-bases/{kb_id}/documents:
+    post:
+      tags:
+      - knowledge
+      summary: Upload one document (multipart `file`); indexing is asynchronous
+      description: 'The body limit is ``CQ_MAX_UPLOAD_BYTES`` (25 MiB) rather than the global 2 MiB; the
+
+        knowledge service validates type, name, size, and duplicates. Not replayable: a retry
+
+        of the same bytes returns ``409 DUPLICATE_DOCUMENT`` with the existing document id.'
+      operationId: upload_document_api_v1_knowledge_bases__kb_id__documents_post
+      parameters:
+      - name: kb_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Kb Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_document_api_v1_knowledge_bases__kb_id__documents_post'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+        '413':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Request Entity Too Large
+    get:
+      tags:
+      - knowledge
+      summary: Documents with their per-file ingestion state and errors
+      operationId: list_documents_api_v1_knowledge_bases__kb_id__documents_get
+      parameters:
+      - name: kb_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Kb Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_DocumentOut_'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/knowledge-bases/{kb_id}/documents/{document_id}:
+    get:
+      tags:
+      - knowledge
+      summary: One document
+      operationId: get_document_api_v1_knowledge_bases__kb_id__documents__document_id__get
+      parameters:
+      - name: kb_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Kb Id
+      - name: document_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Document Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+    delete:
+      tags:
+      - knowledge
+      summary: Delete a document; its passages stop appearing in chat and searches
+      operationId: delete_document_api_v1_knowledge_bases__kb_id__documents__document_id__delete
+      parameters:
+      - name: kb_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Kb Id
+      - name: document_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Document Id
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/reindex:
+    post:
+      tags:
+      - knowledge
+      summary: Re-index a document (for example after a failure or a profile change)
+      operationId: reindex_document_api_v1_knowledge_bases__kb_id__documents__document_id__reindex_post
+      parameters:
+      - name: kb_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Kb Id
+      - name: document_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Document Id
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/knowledge-bases/{kb_id}/query:
+    post:
+      tags:
+      - knowledge
+      summary: 'Test retrieval: cited passages from this knowledge base only'
+      description: Read-only, so no idempotency record. Passages are untrusted document text.
+      operationId: query_knowledge_base_api_v1_knowledge_bases__kb_id__query_post
+      parameters:
+      - name: kb_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Kb Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeQueryIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeQueryOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
   /internal/v1/runs/{run_id}:
     get:
       tags:
@@ -2193,6 +3348,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RunEventOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /internal/v1/runs/{run_id}/event-batches:
+    post:
+      tags:
+      - internal
+      summary: Append a batch of agent events atomically, deduplicated by clientEventId
+      description: 'Every event is validated first (type, size, and the run-event schema); if any is
+
+        invalid nothing is stored and ``422 INVALID_EVENT`` lists each rejected event as
+
+        ``details.rejected[] = {index, clientEventId, code, errors}``. Otherwise all new events
+
+        are inserted in one transaction, and a ``clientEventId`` already stored for the run is
+
+        skipped, so a retried batch never duplicates events.'
+      operationId: agent_event_batch_internal_v1_runs__run_id__event_batches_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventBatchIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventBatchOut'
         '401':
           content:
             application/json:
@@ -2431,6 +3646,11 @@ paths:
       tags:
       - internal
       summary: 'ctx.idempotency: claim an external action key'
+      description: 'A repeat with the same ``claimToken`` from the same attempt (a retry after a lost
+
+        response) returns the original ``claimed``; any other repeat of an uncompleted key is
+
+        ``in_doubt``.'
       operationId: claim_action_internal_v1_runs__run_id__actions__key__claim_post
       parameters:
       - name: run_id
@@ -2451,7 +3671,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AttemptIn'
+              $ref: '#/components/schemas/ActionClaimIn'
       responses:
         '200':
           description: Successful Response
@@ -2555,6 +3775,25 @@ paths:
                 type: string
 components:
   schemas:
+    ActionClaimIn:
+      properties:
+        attempt:
+          type: integer
+          minimum: 1.0
+          title: Attempt
+        claimToken:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 8
+          - type: 'null'
+          title: Claimtoken
+          description: Random per claim() call, reused on its retries. A repeat with the same token from
+            the same attempt returns the original result.
+      type: object
+      required:
+      - attempt
+      title: ActionClaimIn
     ActionCompleteIn:
       properties:
         attempt:
@@ -2864,6 +4103,44 @@ components:
       - metadata
       - createdAt
       title: AuditEventOut
+    BatchEvent:
+      properties:
+        clientEventId:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Clienteventid
+        type:
+          type: string
+          title: Type
+          description: run.log, run.progress, run.metric, or run.artifact.
+        occurredAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Occurredat
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+      type: object
+      required:
+      - clientEventId
+      - type
+      - payload
+      title: BatchEvent
+    Body_upload_document_api_v1_knowledge_bases__kb_id__documents_post:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+          description: .txt, .md, .csv, text .pdf, or .docx
+      type: object
+      required:
+      - file
+      title: Body_upload_document_api_v1_knowledge_bases__kb_id__documents_post
     BootstrapIn:
       properties:
         token:
@@ -3049,13 +4326,15 @@ components:
             format: uuid
           - type: 'null'
           title: Knowledgebaseid
-          description: Requires the knowledge service (Nikhil Sajan Khaneja, Person 3).
+          description: One of your knowledge bases; answers cite its passages.
         retrievalMode:
           type: string
           enum:
           - when_relevant
           - only_knowledge
           title: Retrievalmode
+          description: only_knowledge answers only from retrieved passages and says so, without calling
+            the model, when nothing is found.
           default: when_relevant
       type: object
       title: ChatSessionCreateIn
@@ -3191,6 +4470,57 @@ components:
       - updatedAt
       - lastMessageAt
       title: ChatSessionOut
+    CitationOut:
+      properties:
+        index:
+          type: integer
+          title: Index
+        citationId:
+          type: string
+          title: Citationid
+        text:
+          type: string
+          title: Text
+          description: The passage as retrieved; untrusted, render escaped.
+        score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Score
+        document:
+          $ref: '#/components/schemas/PassageDocument'
+        locator:
+          additionalProperties: true
+          type: object
+          title: Locator
+        location:
+          type: string
+          title: Location
+        knowledgeBaseId:
+          type: string
+          format: uuid
+          title: Knowledgebaseid
+        documentAvailable:
+          type: boolean
+          title: Documentavailable
+          description: 'False once the document was deleted: its chunks no longer appear in chat.'
+        documentState:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Documentstate
+      type: object
+      required:
+      - index
+      - citationId
+      - text
+      - document
+      - locator
+      - location
+      - knowledgeBaseId
+      - documentAvailable
+      title: CitationOut
+      description: A citation stored on an assistant message, with the document's current state.
     ConnectionOut:
       properties:
         provider:
@@ -3211,7 +4541,9 @@ components:
           - CONNECTED
           - NEEDS_ATTENTION
           - DISABLED
+          - UNKNOWN
           title: Status
+          description: 'UNKNOWN: the capability broker could not be reached; nothing is assumed.'
         grantedCapabilities:
           items:
             type: string
@@ -3223,6 +4555,17 @@ components:
             format: date-time
           - type: 'null'
           title: Lastcheckedat
+        account:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Account
+          description: Masked account label, when connected.
+        detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detail
       type: object
       required:
       - provider
@@ -3231,6 +4574,70 @@ components:
       - grantedCapabilities
       - lastCheckedAt
       title: ConnectionOut
+    DocumentOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        knowledgeBaseId:
+          type: string
+          format: uuid
+          title: Knowledgebaseid
+        name:
+          type: string
+          title: Name
+        mime:
+          type: string
+          title: Mime
+        bytes:
+          type: integer
+          title: Bytes
+        sha256:
+          type: string
+          title: Sha256
+        state:
+          type: string
+          enum:
+          - PENDING
+          - PROCESSING
+          - READY
+          - FAILED
+          title: State
+        extracted:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Extracted
+          description: Extraction summary.
+        error:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Error
+          description: '{code, message} when FAILED.'
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        updatedAt:
+          type: string
+          format: date-time
+          title: Updatedat
+      type: object
+      required:
+      - id
+      - knowledgeBaseId
+      - name
+      - mime
+      - bytes
+      - sha256
+      - state
+      - createdAt
+      - updatedAt
+      title: DocumentOut
     ErrorDetail:
       properties:
         code:
@@ -3263,6 +4670,70 @@ components:
       required:
       - error
       title: ErrorResponse
+    EventBatchIn:
+      properties:
+        attempt:
+          type: integer
+          minimum: 1.0
+          title: Attempt
+        events:
+          items:
+            $ref: '#/components/schemas/BatchEvent'
+          type: array
+          maxItems: 200
+          title: Events
+      type: object
+      required:
+      - attempt
+      - events
+      title: EventBatchIn
+    EventBatchOut:
+      properties:
+        accepted:
+          type: integer
+          title: Accepted
+          description: Events stored by this call (duplicates excluded).
+        duplicates:
+          type: integer
+          title: Duplicates
+          description: clientEventIds already stored for this run.
+        lastSequence:
+          type: integer
+          title: Lastsequence
+          description: Highest event sequence of the run.
+      type: object
+      required:
+      - accepted
+      - duplicates
+      - lastSequence
+      title: EventBatchOut
+    GoogleStartIn:
+      properties:
+        capabilities:
+          items:
+            type: string
+            enum:
+            - gmail.readonly
+            - spreadsheets
+          type: array
+          minItems: 1
+          title: Capabilities
+          description: Consent is requested separately per capability.
+      type: object
+      required:
+      - capabilities
+      title: GoogleStartIn
+    GoogleStartOut:
+      properties:
+        authorizationUrl:
+          type: string
+          title: Authorizationurl
+          description: Navigate the browser here. The response also sets the HttpOnly `cq_oauth_binding`
+            cookie that the callback requires.
+      type: object
+      required:
+      - authorizationUrl
+      title: GoogleStartOut
     HTTPValidationError:
       properties:
         detail:
@@ -3589,6 +5060,48 @@ components:
           type: string
           format: uuid
           title: Installationid
+        trigger:
+          type: string
+          enum:
+          - manual
+          - schedule
+          title: Trigger
+        scheduledFor:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Scheduledfor
+        agentId:
+          type: string
+          title: Agentid
+          description: Manifest agent id.
+        agentVersion:
+          type: string
+          title: Agentversion
+          description: Manifest version (semver).
+        agentVersionId:
+          type: string
+          format: uuid
+          title: Agentversionid
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        activeTimeoutSeconds:
+          type: integer
+          title: Activetimeoutseconds
+          description: Active-time limit per attempt.
+        activeSecondsRemaining:
+          type: number
+          title: Activesecondsremaining
+        maxInputWaitSeconds:
+          type: integer
+          title: Maxinputwaitseconds
+        inputWaitRemainingSeconds:
+          type: number
+          title: Inputwaitremainingseconds
+          description: Remaining input-wait budget.
         cancelRequested:
           type: boolean
           title: Cancelrequested
@@ -3617,12 +5130,112 @@ components:
       - state
       - currentAttempt
       - installationId
+      - trigger
+      - scheduledFor
+      - agentId
+      - agentVersion
+      - agentVersionId
+      - createdAt
+      - activeTimeoutSeconds
+      - activeSecondsRemaining
+      - maxInputWaitSeconds
+      - inputWaitRemainingSeconds
       - cancelRequested
       - capabilityTokenId
       - permissions
       - modelBindings
       - config
       title: InternalRunOut
+    KnowledgeBaseCreateIn:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+      type: object
+      required:
+      - name
+      title: KnowledgeBaseCreateIn
+    KnowledgeBaseOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        name:
+          type: string
+          title: Name
+        embeddingProfile:
+          type: string
+          title: Embeddingprofile
+        embeddingDimension:
+          type: integer
+          title: Embeddingdimension
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+      type: object
+      required:
+      - id
+      - name
+      - embeddingProfile
+      - embeddingDimension
+      - createdAt
+      title: KnowledgeBaseOut
+    KnowledgeFilters:
+      properties:
+        documentIds:
+          items:
+            type: string
+            format: uuid
+          type: array
+          maxItems: 100
+          title: Documentids
+      type: object
+      title: KnowledgeFilters
+    KnowledgeQueryIn:
+      properties:
+        query:
+          type: string
+          maxLength: 2000
+          minLength: 1
+          title: Query
+        topK:
+          type: integer
+          maximum: 50.0
+          minimum: 1.0
+          title: Topk
+          default: 8
+        maxContextTokens:
+          type: integer
+          maximum: 20000.0
+          minimum: 100.0
+          title: Maxcontexttokens
+          default: 5000
+        filters:
+          $ref: '#/components/schemas/KnowledgeFilters'
+      type: object
+      required:
+      - query
+      title: KnowledgeQueryIn
+    KnowledgeQueryOut:
+      properties:
+        knowledgeBaseId:
+          type: string
+          format: uuid
+          title: Knowledgebaseid
+        passages:
+          items:
+            $ref: '#/components/schemas/PassageOut'
+          type: array
+          title: Passages
+      type: object
+      required:
+      - knowledgeBaseId
+      - passages
+      title: KnowledgeQueryOut
     LoginIn:
       properties:
         username:
@@ -3975,6 +5588,23 @@ components:
       required:
       - items
       title: Page[ConnectionOut]
+    Page_DocumentOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/DocumentOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[DocumentOut]
     Page_InputRequestOut_:
       properties:
         items:
@@ -4009,6 +5639,23 @@ components:
       required:
       - items
       title: Page[InstallationOut]
+    Page_KnowledgeBaseOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/KnowledgeBaseOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[KnowledgeBaseOut]
     Page_ModelOut_:
       properties:
         items:
@@ -4026,6 +5673,23 @@ components:
       required:
       - items
       title: Page[ModelOut]
+    Page_ProviderProfileOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ProviderProfileOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[ProviderProfileOut]
     Page_RunOut_:
       properties:
         items:
@@ -4060,6 +5724,158 @@ components:
       required:
       - items
       title: Page[ScheduleOut]
+    PassageDocument:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        name:
+          type: string
+          title: Name
+      type: object
+      required:
+      - id
+      - name
+      title: PassageDocument
+    PassageOut:
+      properties:
+        citationId:
+          type: string
+          title: Citationid
+        text:
+          type: string
+          title: Text
+          description: Untrusted document text; render escaped.
+        score:
+          type: number
+          title: Score
+        document:
+          $ref: '#/components/schemas/PassageDocument'
+        locator:
+          additionalProperties: true
+          type: object
+          title: Locator
+        location:
+          type: string
+          title: Location
+      type: object
+      required:
+      - citationId
+      - text
+      - score
+      - document
+      - locator
+      - location
+      title: PassageOut
+    ProviderProfileCreateIn:
+      properties:
+        provider:
+          type: string
+          enum:
+          - openai
+          - anthropic
+          title: Provider
+        displayName:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Displayname
+        apiKey:
+          type: string
+          maxLength: 512
+          minLength: 8
+          title: Apikey
+          description: Stored; never returned.
+        allowedModels:
+          items:
+            type: string
+          type: array
+          maxItems: 50
+          title: Allowedmodels
+        budgets:
+          additionalProperties: true
+          type: object
+          title: Budgets
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+      type: object
+      required:
+      - provider
+      - displayName
+      - apiKey
+      title: ProviderProfileCreateIn
+    ProviderProfileOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        provider:
+          type: string
+          enum:
+          - openai
+          - anthropic
+          title: Provider
+        displayName:
+          type: string
+          title: Displayname
+        allowedModels:
+          items:
+            type: string
+          type: array
+          title: Allowedmodels
+        budgets:
+          additionalProperties: true
+          type: object
+          title: Budgets
+        enabled:
+          type: boolean
+          title: Enabled
+        status:
+          type: string
+          title: Status
+        lastCheckedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Lastcheckedat
+      type: object
+      required:
+      - id
+      - provider
+      - displayName
+      - allowedModels
+      - budgets
+      - enabled
+      - status
+      - lastCheckedAt
+      title: ProviderProfileOut
+    ProviderProfileTestOut:
+      properties:
+        status:
+          type: string
+          enum:
+          - CONNECTED
+          - ERROR
+          title: Status
+        detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detail
+        checkedAt:
+          type: string
+          format: date-time
+          title: Checkedat
+      type: object
+      required:
+      - status
+      - checkedAt
+      title: ProviderProfileTestOut
     Readiness:
       properties:
         ready:
@@ -4141,6 +5957,13 @@ components:
           type: string
           format: date-time
           title: Createdat
+        occurredAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Occurredat
+          description: When the agent emitted the event (agent events only).
       type: object
       required:
       - runId
@@ -4550,10 +6373,16 @@ components:
           type: integer
           title: Idleunloadseconds
         callbackBaseUrl:
-          anyOf:
-          - type: string
-          - type: 'null'
+          type: string
           title: Callbackbaseurl
+          description: 'Read-only: set by CQ_PUBLIC_BASE_URL, the single source the capability broker
+            uses for the OAuth redirect and Twilio callbacks.'
+        callbackUrls:
+          additionalProperties:
+            type: string
+          type: object
+          title: Callbackurls
+          description: 'Exact URLs to register: googleRedirectUri, twilioCallbackBase.'
         setupCompleted:
           type: boolean
           title: Setupcompleted
@@ -4573,6 +6402,7 @@ components:
       - timezone
       - idleUnloadSeconds
       - callbackBaseUrl
+      - callbackUrls
       - setupCompleted
       - setupState
       - versions
@@ -4594,9 +6424,10 @@ components:
         callbackBaseUrl:
           anyOf:
           - type: string
-            pattern: ^https://[^\s/$.?#].[^\s]*$
           - type: 'null'
           title: Callbackbaseurl
+          description: Read-only; set CQ_PUBLIC_BASE_URL instead. Sending it returns 422 SETTING_READ_ONLY.
+          deprecated: true
         setupCompleted:
           anyOf:
           - type: boolean
@@ -4689,6 +6520,62 @@ components:
       - checks
       - runtime
       title: SystemStatusOut
+    TwilioCredentialsIn:
+      properties:
+        accountSid:
+          type: string
+          pattern: ^AC[0-9a-fA-F]{32}$
+          title: Accountsid
+        authToken:
+          type: string
+          maxLength: 128
+          minLength: 16
+          title: Authtoken
+          description: Stored; never returned.
+        fromNumber:
+          type: string
+          pattern: ^\+[1-9][0-9]{7,14}$
+          title: Fromnumber
+      type: object
+      required:
+      - accountSid
+      - authToken
+      - fromNumber
+      title: TwilioCredentialsIn
+    TwilioTestCallIn:
+      properties:
+        to:
+          type: string
+          pattern: ^\+[1-9][0-9]{7,14}$
+          title: To
+        confirm:
+          type: boolean
+          title: Confirm
+          description: 'Must be true: the owner confirmed a live call.'
+      type: object
+      required:
+      - to
+      - confirm
+      title: TwilioTestCallIn
+    TwilioTestCallOut:
+      properties:
+        placed:
+          type: boolean
+          title: Placed
+        to:
+          type: string
+          title: To
+          description: Masked destination.
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      type: object
+      required:
+      - placed
+      - to
+      title: TwilioTestCallOut
     UserOut:
       properties:
         id:

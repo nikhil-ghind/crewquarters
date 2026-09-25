@@ -35,7 +35,7 @@ from crewquarters_api.pagination import (
 from crewquarters_shared import audit
 from crewquarters_shared.cron import validate_timezone
 from crewquarters_shared.db.models import AuditEvent, Setting
-from crewquarters_shared.errors import conflict, not_found
+from crewquarters_shared.errors import conflict, invalid, not_found
 from crewquarters_shared.timeutil import utcnow
 
 router = APIRouter()
@@ -279,13 +279,25 @@ async def list_connections(
 SETTING_DEFAULTS: dict[str, tuple[str, Any]] = {
     "timezone": ("string", "UTC"),
     "idleUnloadSeconds": ("integer", 600),
-    "callbackBaseUrl": ("string", None),
     "setupCompleted": ("boolean", False),
     "setupState": ("object", {}),
 }
+# The broker builds the OAuth redirect and Twilio callback URLs from CQ_PUBLIC_BASE_URL at
+# startup, and Twilio signatures cover the exact URL, so the callback base is read-only
+# here: one source of truth (docs/adr/0009-callback-base-url.md).
+TWILIO_CALLBACK_PATH = "/api/v1/callbacks/twilio"
+GOOGLE_CALLBACK_PATH = "/api/v1/connections/google/callback"
 
 
-async def _settings_out(db: AsyncSession) -> schemas.SettingsOut:
+def callback_urls(public_base_url: str) -> dict[str, str]:
+    base = public_base_url.rstrip("/")
+    return {
+        "googleRedirectUri": base + GOOGLE_CALLBACK_PATH,
+        "twilioCallbackBase": base + TWILIO_CALLBACK_PATH,
+    }
+
+
+async def _settings_out(db: AsyncSession, public_base_url: str) -> schemas.SettingsOut:
     rows = {
         s.key: s
         for s in (await db.scalars(select(Setting).where(Setting.key.in_(SETTING_DEFAULTS)))).all()
@@ -295,7 +307,8 @@ async def _settings_out(db: AsyncSession) -> schemas.SettingsOut:
     return schemas.SettingsOut(
         timezone=values["timezone"],
         idle_unload_seconds=values["idleUnloadSeconds"],
-        callback_base_url=values["callbackBaseUrl"],
+        callback_base_url=public_base_url.rstrip("/"),
+        callback_urls=callback_urls(public_base_url),
         setup_completed=values["setupCompleted"],
         setup_state=values["setupState"],
         versions=versions,
@@ -306,9 +319,11 @@ async def _settings_out(db: AsyncSession) -> schemas.SettingsOut:
     "/settings", response_model=schemas.SettingsOut, tags=["settings"], summary="Platform settings"
 )
 async def get_settings_route(
-    _: AuthContext = Depends(current_auth), db: AsyncSession = Depends(get_db)
+    _: AuthContext = Depends(current_auth),
+    state: AppState = Depends(app_state),
+    db: AsyncSession = Depends(get_db),
 ) -> schemas.SettingsOut:
-    return await _settings_out(db)
+    return await _settings_out(db, state.settings.public_base_url)
 
 
 @router.patch(
@@ -322,12 +337,21 @@ async def patch_settings(
     body: schemas.SettingsPatchIn,
     request: Request,
     auth: AuthContext = Depends(require_owner),
+    state: AppState = Depends(app_state),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
+    if "callback_base_url" in body.model_fields_set:
+        raise invalid(
+            "SETTING_READ_ONLY",
+            "The callback base URL is set by CQ_PUBLIC_BASE_URL on the device.",
+            key="callbackBaseUrl",
+        )
     idem = await idempotency.begin(db, request, auth.user.id, body.model_dump(by_alias=True))
     if idem.replay:
         return idem.replay
-    updates = body.model_dump(by_alias=True, exclude_unset=True, exclude={"versions"})
+    updates = body.model_dump(
+        by_alias=True, exclude_unset=True, exclude={"versions", "callback_base_url"}
+    )
     if "timezone" in updates and updates["timezone"] is not None:
         validate_timezone(updates["timezone"])
     for key, value in updates.items():
@@ -365,7 +389,9 @@ async def patch_settings(
         metadata={"keys": sorted(updates)},
     )
     await db.flush()
-    return await idempotency.finish(db, idem, 200, await _settings_out(db))
+    return await idempotency.finish(
+        db, idem, 200, await _settings_out(db, state.settings.public_base_url)
+    )
 
 
 # --- Health and status ------------------------------------------------------------------

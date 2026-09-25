@@ -40,7 +40,7 @@ from crewquarters_shared.runs.states import (
     RunState,
     can_transition,
 )
-from crewquarters_shared.schema_guard import check_schema, check_size
+from crewquarters_shared.schema_guard import check_schema, check_size, json_size
 from crewquarters_shared.timeutil import utcnow
 
 JOB_DISPATCH = "run.dispatch"
@@ -109,16 +109,20 @@ def require_attempt(run: AgentRun, attempt: int) -> None:
 # --- Events ---------------------------------------------------------------------
 
 
+async def _last_sequence(session: AsyncSession, run_id: uuid.UUID) -> int:
+    last = await session.scalar(
+        select(func.coalesce(func.max(RunEvent.sequence), 0)).where(RunEvent.run_id == run_id)
+    )
+    return int(last or 0)
+
+
 async def append_event(
     session: AsyncSession, run: AgentRun, event_type: str, payload: dict[str, Any]
 ) -> RunEvent:
     """Append an event. The caller must hold the run row lock."""
-    last = await session.scalar(
-        select(func.coalesce(func.max(RunEvent.sequence), 0)).where(RunEvent.run_id == run.id)
-    )
     event = RunEvent(
         run_id=run.id,
-        sequence=int(last or 0) + 1,
+        sequence=await _last_sequence(session, run.id) + 1,
         attempt=run.current_attempt,
         type=event_type,
         payload=payload,
@@ -388,6 +392,116 @@ async def record_agent_event(
     if RunState(run.state) in TERMINAL_STATES:
         raise conflict("RUN_FINISHED", "The run has already finished.")
     return await append_event(session, run, event_type, redact(payload))
+
+
+@dataclass(frozen=True)
+class AgentEventInput:
+    client_event_id: str
+    type: str
+    payload: dict[str, Any]
+    occurred_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class EventBatchResult:
+    accepted: int
+    duplicates: int
+    last_sequence: int
+
+
+def _event_rejection(
+    index: int, event: AgentEventInput, run: AgentRun, validator: Draft202012Validator | None
+) -> dict[str, Any] | None:
+    base = {"index": index, "clientEventId": event.client_event_id}
+    if event.type not in AGENT_EVENT_TYPES:
+        return {
+            **base,
+            "code": "INVALID_EVENT_TYPE",
+            "errors": [f"Agents cannot emit {event.type}."],
+        }
+    if json_size(event.payload) > MAX_EVENT_BYTES:
+        return {
+            **base,
+            "code": "EVENT_TOO_LARGE",
+            "errors": [f"The event payload is larger than {MAX_EVENT_BYTES // 1024} KiB."],
+        }
+    if validator is None:
+        return None
+    envelope = {
+        "runId": str(run.id),
+        "sequence": 1,
+        "attempt": run.current_attempt,
+        "type": event.type,
+        "payload": event.payload,
+        "createdAt": (event.occurred_at or utcnow()).isoformat(),
+    }
+    errors = [e.message for e in validator.iter_errors(envelope)][:5]
+    return {**base, "code": "INVALID_EVENT", "errors": errors} if errors else None
+
+
+async def record_agent_event_batch(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    attempt_no: int,
+    events: list[AgentEventInput],
+    *,
+    validator: Draft202012Validator | None = None,
+) -> EventBatchResult:
+    """Store a batch of agent events all-or-nothing.
+
+    Every event is validated before anything is written. If any is rejected, nothing is
+    stored and a ``422`` lists every rejected event, so a client that then resends event
+    by event stores each valid event exactly once. A ``clientEventId`` already stored for
+    this run (or repeated in the batch) is skipped, so a retried batch is a no-op.
+    """
+    run = await lock_run(session, run_id)
+    require_attempt(run, attempt_no)
+    if RunState(run.state) in TERMINAL_STATES:
+        raise conflict("RUN_FINISHED", "The run has already finished.")
+    rejected = [
+        r for i, e in enumerate(events) if (r := _event_rejection(i, e, run, validator)) is not None
+    ]
+    if rejected:
+        codes = {r["code"] for r in rejected}
+        raise invalid(
+            codes.pop() if len(codes) == 1 else "INVALID_EVENT",
+            f"{len(rejected)} of {len(events)} events were rejected; none were stored.",
+            rejected=rejected,
+        )
+    ids = [e.client_event_id for e in events]
+    stored = set(
+        (
+            await session.scalars(
+                select(RunEvent.client_event_id).where(
+                    RunEvent.run_id == run.id, RunEvent.client_event_id.in_(ids)
+                )
+            )
+        ).all()
+    )
+    sequence = await _last_sequence(session, run.id)
+    accepted = duplicates = 0
+    now = utcnow()
+    for event in events:
+        if event.client_event_id in stored:
+            duplicates += 1
+            continue
+        stored.add(event.client_event_id)
+        sequence += 1
+        accepted += 1
+        session.add(
+            RunEvent(
+                run_id=run.id,
+                sequence=sequence,
+                attempt=run.current_attempt,
+                type=event.type,
+                payload=redact(event.payload),
+                created_at=now,
+                client_event_id=event.client_event_id,
+                occurred_at=event.occurred_at,
+            )
+        )
+    await session.flush()
+    return EventBatchResult(accepted=accepted, duplicates=duplicates, last_sequence=sequence)
 
 
 async def finish(
@@ -663,14 +777,21 @@ async def close_pending_inputs(session: AsyncSession, run: AgentRun, state: str)
 
 
 async def claim_action(
-    session: AsyncSession, run_id: uuid.UUID, attempt_no: int, key: str
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    attempt_no: int,
+    key: str,
+    claim_token: str | None = None,
 ) -> dict[str, Any]:
     """Claim an external-action key for this run.
 
     Only the call that creates the key receives ``claimed`` (proceed with the side
-    effect). Any later claim of an uncompleted key, from this attempt or another,
-    receives ``in_doubt``: the side effect may already have happened, so the agent
-    must check provider state before acting. ``completed`` returns the stored result.
+    effect). A retry of that same call (the same ``claim_token`` from the same attempt,
+    resent because the response was lost) receives ``claimed`` again: it is the same
+    claimant and nothing else has touched the key. Any other later claim of an
+    uncompleted key, from this attempt or another, receives ``in_doubt``: the side effect
+    may already have happened, so the agent must check provider state before acting.
+    ``completed`` returns the stored result.
     """
     run = await lock_run(session, run_id)
     require_attempt(run, attempt_no)
@@ -680,11 +801,26 @@ async def claim_action(
         )
     )
     if existing is None:
-        session.add(IdempotencyAction(run_id=run_id, key=key, state="claimed", attempt=attempt_no))
+        session.add(
+            IdempotencyAction(
+                run_id=run_id,
+                key=key,
+                state="claimed",
+                attempt=attempt_no,
+                claim_token=claim_token,
+            )
+        )
         await session.flush()
         return {"key": key, "status": "claimed"}
     if existing.state == "completed":
         return {"key": key, "status": "completed", "result": existing.result}
+    if (
+        existing.state == "claimed"
+        and claim_token is not None
+        and existing.claim_token == claim_token
+        and existing.attempt == attempt_no
+    ):
+        return {"key": key, "status": "claimed"}
     existing.state = "in_doubt"
     existing.attempt = attempt_no
     return {"key": key, "status": "in_doubt"}

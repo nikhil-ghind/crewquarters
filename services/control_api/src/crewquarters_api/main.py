@@ -5,19 +5,32 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
+import httpx
 from fastapi import FastAPI, Request, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from crewquarters_api import catalog, errors, security
 from crewquarters_api.deps import AppState
 from crewquarters_api.gateway_client import GatewayClient
-from crewquarters_api.routers import agents, auth, chat, internal, platform, runs, schedules
+from crewquarters_api.routers import (
+    agents,
+    auth,
+    chat,
+    internal,
+    knowledge,
+    platform,
+    runs,
+    schedules,
+)
+from crewquarters_api.routers import connections as connections_router
+from crewquarters_api.upstream import BrokerClient, ServiceClient
 from crewquarters_shared.clients import (
     ConnectionStatusClient,
     FakeConnectionStatusClient,
@@ -44,9 +57,12 @@ SECURITY_HEADERS = {
 }
 
 
-def _status_clients(settings: Settings) -> tuple[ModelStatusClient, ConnectionStatusClient]:
-    """Model status comes from the model gateway. Connection status still uses the fake
-    until the capability broker (Nikhil Sajan Khaneja, Person 3) publishes its API."""
+def _status_clients(
+    settings: Settings, broker: BrokerClient
+) -> tuple[ModelStatusClient, ConnectionStatusClient]:
+    """Model status comes from the model gateway and connection status from the capability
+    broker. The connection fake reports every provider connected, so it is allowed only in
+    the dev profile (``Settings.effective_broker_adapter``)."""
     models: ModelStatusClient
     if settings.model_gateway_adapter == "http":
         models = GatewayClient(
@@ -58,29 +74,41 @@ def _status_clients(settings: Settings) -> tuple[ModelStatusClient, ConnectionSt
         models = FakeModelStatusClient()
     else:
         raise RuntimeError(f"Unknown CQ_MODEL_GATEWAY_ADAPTER={settings.model_gateway_adapter!r}")
-    if settings.broker_adapter != "fake":
-        raise RuntimeError(
-            f"CQ_BROKER_ADAPTER={settings.broker_adapter!r} is not available yet; "
-            "only 'fake' is implemented."
-        )
-    return models, FakeConnectionStatusClient(settings.fake_connections)
+    if settings.effective_broker_adapter() == "fake":
+        return models, FakeConnectionStatusClient(settings.fake_connections)
+    return models, broker
 
 
 class BodySizeLimit:
     """Reject request bodies larger than ``limit`` bytes with 413, including chunked
     bodies that do not declare a Content-Length."""
 
-    def __init__(self, app: ASGIApp, limit: int) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        limit: int,
+        overrides: list[tuple[re.Pattern[str], int]] | None = None,
+    ) -> None:
         self.app = app
         self.limit = limit
+        # (path pattern, limit) pairs for routes with their own limit (document uploads).
+        self.overrides = overrides or []
+
+    def _limit_for(self, scope: Scope) -> int:
+        path = str(scope.get("path", ""))
+        for pattern, limit in self.overrides:
+            if scope.get("method") == "POST" and pattern.fullmatch(path):
+                return limit
+        return self.limit
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        limit = self._limit_for(scope)
         declared = dict(scope.get("headers") or []).get(b"content-length")
-        if declared is not None and declared.isdigit() and int(declared) > self.limit:
-            await self._reject(send)
+        if declared is not None and declared.isdigit() and int(declared) > limit:
+            await self._reject(send, limit)
             return
         seen = 0
         too_large = False
@@ -90,7 +118,7 @@ class BodySizeLimit:
             message = await receive()
             if message["type"] == "http.request":
                 seen += len(message.get("body", b""))
-                if seen > self.limit:
+                if seen > limit:
                     too_large = True
                     raise _BodyTooLarge
             return message
@@ -103,14 +131,14 @@ class BodySizeLimit:
         with contextlib.suppress(_BodyTooLarge):
             await self.app(scope, limited_receive, guarded_send)
         if too_large:
-            await self._reject(send)
+            await self._reject(send, limit)
 
-    async def _reject(self, send: Send) -> None:
+    async def _reject(self, send: Send, limit: int) -> None:
         body = json.dumps(
             {
                 "error": {
                     "code": "PAYLOAD_TOO_LARGE",
-                    "message": f"Request bodies are limited to {self.limit} bytes.",
+                    "message": f"Request bodies are limited to {limit} bytes.",
                     "requestId": None,
                     "details": {},
                 }
@@ -151,9 +179,28 @@ def _route_template(request: Request) -> str:
     return template
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    transports: dict[str, httpx.AsyncBaseTransport] | None = None,
+) -> FastAPI:
+    """``transports`` (tests only) replaces the HTTP transport of the ``broker``,
+    ``knowledge`` or ``gateway`` service clients."""
     settings = settings or get_settings()
-    models, connections = _status_clients(settings)
+    transports = transports or {}
+    token = settings.internal_service_token.get_secret_value()
+    broker = BrokerClient(settings.broker_url, token, transport=transports.get("broker"))
+    knowledge_client = ServiceClient(
+        "knowledge", settings.knowledge_url, token, transport=transports.get("knowledge")
+    )
+    gateway_admin = ServiceClient(
+        "model-gateway",
+        settings.model_gateway_url,
+        token,
+        transport=transports.get("gateway"),
+        timeout=60.0,
+    )
+    models, connections = _status_clients(settings, broker)
     runtime = _runtime_client(settings)
     metrics = ApiMetrics()
     engine = create_engine(settings.database_url, settings.db_pool_size)
@@ -171,6 +218,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await runtime.close()
         if isinstance(models, GatewayClient):
             await models.close()
+        for client in (broker, knowledge_client, gateway_admin):
+            await client.close()
         await engine.dispose()
 
     app = FastAPI(
@@ -194,6 +243,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         connections=connections,
         auth_limiter=security.RateLimiter(settings.auth_rate_limit_per_minute),
         metrics=metrics,
+        broker=broker,
+        knowledge=knowledge_client,
+        gateway_admin=gateway_admin,
         runtime=runtime,
     )
     app.state.engine = engine
@@ -234,10 +286,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         schedules.router,
         platform.router,
         chat.router,
+        connections_router.router,
+        knowledge.router,
     ):
         app.include_router(router, prefix=API_PREFIX)
     app.include_router(internal.router, prefix=INTERNAL_PREFIX)
-    app.add_middleware(BodySizeLimit, limit=settings.max_body_bytes)
+    app.add_middleware(
+        BodySizeLimit,
+        limit=settings.max_body_bytes,
+        overrides=[(knowledge.UPLOAD_PATH, settings.max_upload_bytes + knowledge.MULTIPART_SLACK)],
+    )
     return app
 
 

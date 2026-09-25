@@ -3,10 +3,15 @@
 The broker passes these through to the control plane's action records: the call that creates a
 key gets ``claimed``; any later claim of a key that was never completed gets ``in_doubt`` (the side
 effect may already have happened); a completed key returns its stored result.
+
+A claim is retried after a lost response. Each ``claim()`` call sends one random
+``X-Claim-Token`` on all of its retries, so the platform recognises a retry of the call that
+created the key and answers ``claimed`` again instead of ``in_doubt``.
 """
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal, TypeVar, overload
 from urllib.parse import quote
@@ -18,6 +23,7 @@ from crewquarters._models import WireModel
 from crewquarters._transport import BrokerClient
 from crewquarters.errors import OutcomeUnknown
 
+CLAIM_TOKEN_HEADER = "X-Claim-Token"  # noqa: S105 - a header name
 M = TypeVar("M", bound=BaseModel)
 T = TypeVar("T")
 
@@ -33,11 +39,13 @@ class IdempotencyClient:
         self._transport = transport
 
     async def claim(self, key: str) -> ActionRecord:
+        # Safe to retry only because every retry carries the same claim token.
         data = await self._transport.request(
             "POST",
             f"/actions/{quote(key, safe='')}/claim",
             operation="actions.claim",
             idempotent=True,
+            headers={CLAIM_TOKEN_HEADER: uuid.uuid4().hex},
         )
         return ActionRecord.model_validate(data)
 

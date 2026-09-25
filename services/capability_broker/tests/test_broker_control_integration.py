@@ -112,9 +112,13 @@ async def test_agent_lifecycle_through_broker(
         denied = await b.get("/internal/v1/sdk/google/gmail/messages", headers=headers)
         assert denied.status_code == 403
 
-        # Cancellation propagates, and a terminal run revokes the token.
+        # Cancellation propagates. Once the run is terminal, a heartbeat tells the agent to
+        # stop (cancelRequested) and every other operation is refused.
         cancel = await owner.post(f"/api/v1/runs/{run_id}/cancel")
         assert cancel.status_code in (200, 202), cancel.text
         await _wait_state(owner, run_id, "CANCELLED")
         after = await b.post("/internal/v1/sdk/heartbeat", headers=headers)
-        assert after.status_code == 409 and after.json()["error"]["code"] == "RUN_NOT_ACTIVE"
+        assert after.status_code == 200, after.text
+        assert after.json() == {"state": "CANCELLED", "cancelRequested": True}
+        refused = await b.post("/internal/v1/sdk/actions/call-row-2/claim", headers=headers)
+        assert refused.status_code == 409 and refused.json()["error"]["code"] == "RUN_NOT_ACTIVE"

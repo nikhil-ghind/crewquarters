@@ -19,8 +19,9 @@ class ChatSessionCreateIn:
     Attributes:
         title (None | str | Unset):
         model_profile (str | Unset): Local model variant. Default: 'local.general.small'.
-        knowledge_base_id (None | Unset | UUID): Requires the knowledge service (Nikhil Sajan Khaneja, Person 3).
-        retrieval_mode (ChatSessionCreateInRetrievalmode | Unset):  Default:
+        knowledge_base_id (None | Unset | UUID): One of your knowledge bases; answers cite its passages.
+        retrieval_mode (ChatSessionCreateInRetrievalmode | Unset): only_knowledge answers only from retrieved passages
+            and says so, without calling the model, when nothing is found. Default:
             ChatSessionCreateInRetrievalmode.WHEN_RELEVANT.
     """
 

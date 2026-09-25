@@ -25,7 +25,7 @@ from crewquarters_broker.errors import capability_denied, permission_denied, una
 from crewquarters_broker.internal import InternalClient
 from crewquarters_shared import capability
 from crewquarters_shared.errors import PlatformError
-from crewquarters_shared.runs.states import ACTIVE_STATES
+from crewquarters_shared.runs.states import ACTIVE_STATES, TERMINAL_STATES
 
 
 @dataclass(frozen=True)
@@ -70,7 +70,11 @@ class Grant:
         return value
 
 
-async def authorize(token: str, signing_key: str, control: InternalClient) -> Grant:
+async def authorize(
+    token: str, signing_key: str, control: InternalClient, *, allow_finished: bool = False
+) -> Grant:
+    """``allow_finished`` (heartbeat and result only) also accepts a run in a terminal
+    state, so the agent can learn it must stop and report."""
     try:
         claims = capability.verify(token, signing_key)
     except jwt.InvalidTokenError:
@@ -87,7 +91,8 @@ async def authorize(token: str, signing_key: str, control: InternalClient) -> Gr
         or run.get("installationId") != claims.installation_id
     ):
         raise unauthenticated("This capability token has been replaced or revoked.")
-    if run.get("state") not in ACTIVE_STATES:
+    finished = allow_finished and run.get("state") in TERMINAL_STATES
+    if run.get("state") not in ACTIVE_STATES and not finished:
         raise PlatformError("RUN_NOT_ACTIVE", "The run is no longer active.", 409)
     approved = capability.capabilities_from_permissions(
         run.get("permissions") or {}, run.get("modelBindings") or {}
