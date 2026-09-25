@@ -38,6 +38,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 coverage/
+apps/web/playwright-report/
+apps/web/test-results/
+apps/web/blob-report/
+apps/web/playwright/.cache/
 
 # --- Local data, models & knowledge files ---
 /data/
