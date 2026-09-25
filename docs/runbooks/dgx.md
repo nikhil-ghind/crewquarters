@@ -9,7 +9,9 @@ Owner: Akshay Sunil Navani (Person 2). Applies to DGX OS (Ubuntu 22.04, `aarch64
 | Runtime daemon (only component with Docker access) | `/usr/lib/crewquarters/python`, `crewquarters-runtime.{socket,service}` | `crewquarters-runtime` (in the `docker` group), Unix socket `/run/crewquarters/runtime.sock` (mode 0660, group `crewquarters`) |
 | Host firewall guard | `crewquarters-netguard.service` | root, oneshot: drops host-bound traffic from `cqa-*` / `cqm-*` bridges |
 | Platform stack (Postgres, control API, scheduler, model gateway, capability broker, knowledge service) | `/usr/share/crewquarters/compose/compose.appliance.yaml`, `crewquarters.service` | containers, non-root (uid 10001) plus the `crewquarters` group (`CQ_SOCKET_GID`) |
-| Edge proxy and web UI | `crewquarters/proxy:<version>` image, service `proxy` | nginx, uid 101; the **only** published port (`127.0.0.1:8080`). Routing: [proxy.md](proxy.md) |
+| Edge proxy and web UI | `crewquarters/proxy:<version>` image, service `proxy` | nginx, uid 101; the **only** published port (`127.0.0.1:8080`; in LAN HTTPS mode `:443` plus an HTTP redirect). Routing: [proxy.md](proxy.md) |
+| Desktop launcher | `/usr/share/applications/crewquarters.desktop` -> `/usr/share/crewquarters/launch.sh` | the desktop user: waits for readiness, opens `/setup` on first use, then `/` |
+| LAN HTTPS mode (opt-in) | `/etc/crewquarters/tls/` (device CA: `ca.key` 0600 root), `/etc/crewquarters/lan-https.env`, `compose.lan-https.yaml`, `/usr/lib/crewquarters/lan-tls.sh` | [lan-https.md](lan-https.md) |
 | Configuration | `/etc/crewquarters/crewquarters.env` (conffile) | |
 | Secrets (generated once) | `/etc/crewquarters/secrets.env`, `runtime-token`, `master.key` (0640 `root:crewquarters`) | |
 | Data | `/var/lib/crewquarters/{postgres,models,runs,documents,embedding-models,backups}` | preserved on remove and purge |
@@ -24,8 +26,10 @@ sudo apt install ./crewquarters_0.1.0_arm64.deb
 sudo crewquarters load-bundle crewquarters-offline_0.1.0_arm64.tar.zst
 sudo systemctl start crewquarters.service
 sudo crewquarters bootstrap-token      # one-time owner setup code
-xdg-open http://localhost:8080/setup   # or the Crewquarters desktop launcher
+/usr/share/crewquarters/launch.sh     # or the Crewquarters desktop launcher (waits, then opens /setup)
 ```
+
+**Headless device (no display):** set it up from another computer over HTTPS. Use `sudo CREWQUARTERS_HEADLESS=yes apt install ./crewquarters_0.1.0_arm64.deb` at install time, or `sudo crewquarters lan-https enable` later. Either one prints the LAN URL, the device CA fingerprint and how to trust the CA. See [lan-https.md](lan-https.md).
 
 The package scripts are non-interactive. They never ask for passwords or keys, never run OAuth, and never download models. On its first start, the stack's one-shot `knowledge-model` service downloads the pinned CPU embedding model (about 120 MB) and verifies it; an offline bundle built with that model pre-populates `/var/lib/crewquarters/embedding-models` instead.
 

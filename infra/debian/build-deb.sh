@@ -26,13 +26,15 @@ chmod 0755 "$PKG/DEBIAN/preinst" "$PKG/DEBIAN/postinst" "$PKG/DEBIAN/prerm" "$PK
 cp -r "$ROOT_DIR/services/runtime_daemon/src/crewquarters_runtime" "$PKG/usr/lib/crewquarters/python/"
 find "$PKG/usr/lib/crewquarters/python" -name '__pycache__' -prune -exec rm -rf {} +
 install -m 0755 "$ROOT_DIR/infra/debian/bin/netguard.sh" "$PKG/usr/lib/crewquarters/netguard.sh"
+install -m 0755 "$ROOT_DIR/infra/debian/bin/lan-tls.sh" "$PKG/usr/lib/crewquarters/lan-tls.sh"
 install -m 0755 "$ROOT_DIR/infra/debian/bin/crewquarters" "$PKG/usr/bin/crewquarters"
 cat > "$PKG/usr/bin/crewquarters-runtime" <<'WRAP'
 #!/bin/sh
 PYTHONPATH=/usr/lib/crewquarters/python exec python3 -m crewquarters_runtime.cli "$@"
 WRAP
 chmod 0755 "$PKG/usr/bin/crewquarters-runtime"
-install -m 0644 "$ROOT_DIR/infra/compose/compose.appliance.yaml" "$PKG/usr/share/crewquarters/compose/"
+install -m 0644 "$ROOT_DIR/infra/compose/compose.appliance.yaml" \
+    "$ROOT_DIR/infra/compose/compose.lan-https.yaml" "$PKG/usr/share/crewquarters/compose/"
 install -m 0644 "$ROOT_DIR"/catalog/models/dgx/*.json "$PKG/usr/share/crewquarters/catalog/models/"
 install -m 0755 "$ROOT_DIR/infra/debian/bin/launch.sh" "$PKG/usr/share/crewquarters/launch.sh"
 echo "$VERSION" > "$PKG/usr/share/crewquarters/VERSION"
@@ -43,6 +45,7 @@ install -m 0644 "$ROOT_DIR/infra/systemd/crewquarters.tmpfiles" "$PKG/usr/lib/tm
 sub "$ROOT_DIR/infra/debian/crewquarters.env" > "$PKG/etc/crewquarters/crewquarters.env"
 chmod 0644 "$PKG/etc/crewquarters/crewquarters.env"
 install -m 0644 "$ROOT_DIR/docs/runbooks/dgx.md" "$PKG/usr/share/doc/crewquarters/dgx-runbook.md"
+install -m 0644 "$ROOT_DIR/docs/runbooks/lan-https.md" "$PKG/usr/share/doc/crewquarters/lan-https.md"
 printf 'Crewquarters\nSee https://github.com/nikhil-ghind/crewquarters for license information.\n' \
     > "$PKG/usr/share/doc/crewquarters/copyright"
 

@@ -11,7 +11,10 @@ T = TypeVar("T", bound="SettingsOutCallbackurls")
 
 @_attrs_define
 class SettingsOutCallbackurls:
-    """Exact URLs to register: googleRedirectUri, twilioCallbackBase."""
+    """Exact URLs to register: googleRedirectUri (from CQ_PUBLIC_BASE_URL) and twilioCallbackBase (from
+    CQ_TWILIO_CALLBACK_BASE_URL, else CQ_PUBLIC_BASE_URL).
+
+    """
 
     additional_properties: dict[str, str] = _attrs_field(init=False, factory=dict)
 

@@ -442,7 +442,9 @@ export function StorageStep() {
           <span>
             <span className="field-label">Devices on my local network</span>
             <span className="field-help" style={{ display: 'block' }}>
-              Other computers on your network can sign in. The installer must have enabled LAN access with HTTPS.
+              Other computers on your network can sign in over HTTPS. Turn it on in a terminal on the device with{' '}
+              <code>sudo crewquarters lan-https enable</code>, then trust the device certificate it prints (compare the
+              fingerprint) on each computer or phone you use.
             </span>
           </span>
         </label>

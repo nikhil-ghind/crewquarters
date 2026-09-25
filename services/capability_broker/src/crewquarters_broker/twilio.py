@@ -365,7 +365,7 @@ class TelephonyService:
                 winner = await self._by_key(db, run_id, idempotency_key)
                 assert winner is not None
                 return view(winner)
-        base = f"{self.settings.public_base_url.rstrip('/')}{CALLBACK_PATH}"
+        base = f"{self.settings.twilio_base_url()}{CALLBACK_PATH}"
         form = {
             "To": to,
             "From": creds["fromNumber"],
@@ -414,7 +414,7 @@ class TelephonyService:
         elif not _well_formed(sent_signature):
             await self._reject("malformed_signature", path_and_query)
         creds = await self._signing_credentials()
-        url = f"{self.settings.public_base_url.rstrip('/')}{path_and_query}"
+        url = f"{self.settings.twilio_base_url()}{path_and_query}"
         expected = signature(creds["authToken"], url, params)
         if not hmac.compare_digest(expected, sent_signature or ""):
             await self._reject("bad_signature", path_and_query)
@@ -444,7 +444,7 @@ class TelephonyService:
 
     async def voice(self, call_id: uuid.UUID, params: Mapping[str, str]) -> str:
         call = await self._callback_call(call_id, params)
-        gather_url = f"{self.settings.public_base_url.rstrip('/')}{CALLBACK_PATH}/gather/{call.id}"
+        gather_url = f"{self.settings.twilio_base_url()}{CALLBACK_PATH}/gather/{call.id}"
         return voice_twiml(call.disclosure, call.script, gather_url, call.response_seconds)
 
     async def gather(self, call_id: uuid.UUID, params: Mapping[str, str]) -> str:

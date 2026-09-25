@@ -16,7 +16,11 @@ case "$1" in
             done
             echo "crewquarters: /var/lib/crewquarters preserved with its secrets (set CREWQUARTERS_PURGE_DATA=yes to delete)."
         fi
-        rm -f /etc/crewquarters/secrets.env /etc/crewquarters/runtime-token /etc/crewquarters/master.key
+        rm -f /etc/crewquarters/secrets.env /etc/crewquarters/runtime-token /etc/crewquarters/master.key \
+            /etc/crewquarters/lan-https.env
+        # LAN HTTPS mode's device CA and certificate (devices that trusted the CA should
+        # remove it; a reinstall makes a new one).
+        rm -rf /etc/crewquarters/tls
         rmdir /etc/crewquarters 2>/dev/null || true
         if getent passwd crewquarters-runtime >/dev/null; then deluser --system crewquarters-runtime >/dev/null 2>&1 || true; fi
         if getent group crewquarters-runtime >/dev/null; then delgroup --system crewquarters-runtime >/dev/null 2>&1 || true; fi

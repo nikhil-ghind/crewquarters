@@ -6,6 +6,18 @@ The edge proxy is the only published HTTP entry point (PLAN.md sections 4.1, 4.2
 | --- | --- | --- | --- |
 | Main | 8080 in the container; host `CQ_BIND_ADDRESS:CQ_HTTP_PORT` (default `127.0.0.1:8080`) | yes | The browser, the desktop launcher (`/setup`), Google's OAuth redirect on `localhost` |
 | Callbacks only | 8081 | no; reachable only on the `callbacks` Compose network | The `tunnel` service (profile `callbacks`) |
+| LAN HTTPS (opt-in) | 8443 in the container; host `CQ_BIND_ADDRESS:443` | only in LAN HTTPS mode | Browsers on the LAN. In this mode the main site's HTTP port redirects to HTTPS. See [lan-https.md](lan-https.md) |
+
+Configuration files:
+
+- `nginx.conf`: the default mode.
+- `nginx-lan-https.conf`: LAN HTTPS mode.
+- Both include the same pieces:
+  - `common.conf`: http-level settings;
+  - `main-site.conf`: the routes below;
+  - `callbacks-site.conf`;
+  - the header and error snippets.
+- `tls.conf` and `ca-download.conf`: used in LAN HTTPS mode only.
 
 ## Routing (main site, port 8080)
 
@@ -32,26 +44,36 @@ nginx picks the most specific match. The upstream is resolved at request time th
   - `413 PAYLOAD_TOO_LARGE`;
   - `429 RATE_LIMITED`, with `Retry-After`;
   - `503 SERVICE_UNAVAILABLE`, when a backend is down or starting.
+- **HSTS.** `Strict-Transport-Security: max-age=31536000` is sent only over HTTPS to a host name, which means only in LAN HTTPS mode, and never to `localhost` or an IP address.
 
   Upstream errors pass through unchanged.
 - **Access log.** JSON on stdout: method, path **without the query string**, status, bytes, duration and request ID. It never logs the referrer, because OAuth codes, tokens and phone numbers travel in query strings and referrers (PLAN.md section 10.2).
 
 ## Web UI
 
-The proxy image builds the web UI (`apps/web`, `npm ci` and `npm run build` in a Node stage) and serves the result, so every image carries the UI that matches its source tree. `make image` or `docker compose ... up --build` is enough; no separate UI build step is needed. The desktop launcher opens `http://localhost:8080/setup`, a UI route that the SPA fallback serves.
+The proxy image builds the web UI (`apps/web`, `npm ci` and `npm run build` in a Node stage) and serves the result, so every image carries the UI that matches its source tree. `make image` or `docker compose ... up --build` is enough; no separate UI build step is needed. The UI font (Inter 4.1, SIL OFL; `apps/web/src/assets/fonts/inter/`) is bundled and served from `/assets/`, so the `font-src 'self'` CSP holds.
+
+The desktop launcher waits for `/api/v1/health/ready`. It then opens `/setup` the first time and `/` afterwards, at the address in `/var/lib/crewquarters/public/ui-url`: `http://localhost:8080`, or `https://NAME.local` in LAN HTTPS mode.
 
 ## Callback exposure (profile `callbacks`)
 
-Google OAuth works without any tunnel. Google accepts `http://localhost` redirect URIs, so with the default `CQ_PUBLIC_BASE_URL=http://localhost:8080`, the redirect reaches the broker through the main site on the owner's own machine. Twilio needs a public HTTPS URL, and that is what the tunnel is for (PLAN.md section 14.3). Use it only for controlled demos, and stop it afterwards.
+Google and Twilio use separate callback origins (ADR 0009, "Revision"):
+
+| Provider | Origin | Setting | Why |
+| --- | --- | --- | --- |
+| Google OAuth redirect | The origin the owner's **browser** uses | `CQ_PUBLIC_BASE_URL` (default `http://localhost:8080`) | Google redirects the browser. The OAuth binding cookie lives on that origin |
+| Twilio voice, gather and status | The public **tunnel** origin | `CQ_TWILIO_CALLBACK_BASE_URL` (empty means `CQ_PUBLIC_BASE_URL`) | Twilio calls from the internet and signs the exact URL. The broker validates signatures against this origin |
+
+Google OAuth works without any tunnel: Google accepts `http://localhost` redirect URIs, so the redirect reaches the broker through the main site on the owner's own machine. Twilio needs a public HTTPS URL, and that is what the tunnel is for (PLAN.md section 14.3). Use it only for controlled demos, and stop it afterwards. `GET /api/v1/settings` returns both values as `callbackUrls.googleRedirectUri` and `callbackUrls.twilioCallbackBase`. The Connections page shows them.
 
 1. Create a Cloudflare tunnel with a fixed hostname, and point that hostname's service at `http://proxy:8081`. Put its token in `/etc/crewquarters/secrets.env` as `CQ_TUNNEL_TOKEN=...`. On a laptop, export it instead.
-2. Set `CQ_PUBLIC_BASE_URL=https://<hostname>` in `crewquarters.env`. The broker signs and validates Twilio callbacks against this exact URL. Then restart: `sudo crewquarters restart`.
+2. Set `CQ_TWILIO_CALLBACK_BASE_URL=https://<hostname>` in `crewquarters.env`. Leave `CQ_PUBLIC_BASE_URL` alone. The broker gives Twilio callback URLs on this origin and validates Twilio signatures against it. Then restart: `sudo crewquarters restart`. On a laptop, export the variable before `docker compose up`; `infra/compose/compose.yaml` must pass it to the broker and the control API.
 3. Start the tunnel: `sudo crewquarters tunnel up`. On a laptop: `docker compose -f infra/compose/compose.yaml --profile callbacks up -d tunnel`.
 4. Stop it after the demo: `sudo crewquarters tunnel down`. `crewquarters down` also stops it.
 
 The tunnel container can reach only the proxy's callbacks site, because it shares only the `callbacks` network with the proxy. The callbacks site serves exactly the two broker callback groups and returns 404 for everything else, including the UI, `/api/v1/*` and `/internal/*`. Nothing else becomes reachable from the internet.
 
-> **Caveat.** The broker builds both the Google redirect URI and the Twilio callback URLs from the single `CQ_PUBLIC_BASE_URL`. Pointing it at the tunnel therefore also moves the Google redirect to the tunnel hostname. The OAuth binding cookie is set on the local origin, so it is not sent to the tunnel hostname and Google sign-in fails the browser-binding check. Connect Google before switching `CQ_PUBLIC_BASE_URL` to the tunnel, or open the UI through the same hostname. A per-provider base URL would remove this limitation; the broker owns that change.
+> **Do not point `CQ_PUBLIC_BASE_URL` at the tunnel.** That moves the Google redirect to the tunnel hostname. The OAuth binding cookie is set on the origin the browser uses, so it is not sent to the tunnel hostname, and Google sign-in fails the browser-binding check. Use `CQ_TWILIO_CALLBACK_BASE_URL` for the tunnel instead. Older setups that set `CQ_PUBLIC_BASE_URL` to the tunnel keep working for Twilio, because Twilio falls back to it.
 
 ## Verifying
 
@@ -65,3 +87,14 @@ docker compose -p crewquarters exec proxy wget -qO- http://127.0.0.1:8081/ # 404
 ```
 
 The CI package job builds the image, runs `nginx -t`, and checks that the proxy is the only service publishing a port.
+
+`infra/proxy/test-proxy.sh <image>` runs both nginx configurations against stub backends. It checks:
+
+- routing;
+- the TLS handshake against a generated device CA;
+- TLS versions and ciphers;
+- HSTS;
+- the HTTP-to-HTTPS redirect;
+- the CA download;
+- the bundled font;
+- both healthchecks.

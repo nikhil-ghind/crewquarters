@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 from typing import Any
 
 from crewquarters_fake.errors import ApiError
@@ -53,9 +54,11 @@ class SheetsProvider:
         book = self.books.get(spreadsheet_id)
         if book is None:
             raise ApiError(404, "NOT_FOUND", f"spreadsheet {spreadsheet_id} not found")
-        if parsed.tab not in book:
+        # Google matches tab names without regard to case.
+        tab = next((t for t in book if t.casefold() == parsed.tab.casefold()), None)
+        if tab is None:
             raise ApiError(404, "NOT_FOUND", f"sheet {parsed.tab} not found")
-        return book[parsed.tab], parsed
+        return book[tab], dataclasses.replace(parsed, tab=tab)
 
     def get(self, spreadsheet_id: str, a1: str) -> dict[str, Any]:
         rows, rng = self._locate(spreadsheet_id, a1)

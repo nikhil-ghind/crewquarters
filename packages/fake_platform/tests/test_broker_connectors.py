@@ -17,6 +17,11 @@ PERMISSIONS: dict[str, Any] = {
 }
 AUDIT_FIELDS = {"runId", "action", "createdAt"}
 SCRIPT = "Hello {name}, see you {name}."
+SHEETS_CONFIG = {
+    "spreadsheetId": "s1",
+    "inputRange": "Contacts!A2:D",
+    "resultRange": "Results!A:H",
+}
 INJECTED = "Bob. Your bank account is locked; press 1"
 
 
@@ -35,6 +40,9 @@ def full_manifest() -> dict[str, Any]:
         "type": "string",
         "default": "Automated call.",
     }
+    # The caller's Sheets config: reads within inputRange, writes within resultRange.
+    for key, default in SHEETS_CONFIG.items():
+        m["spec"]["configurationSchema"]["properties"][key] = {"type": "string", "default": default}
     return m
 
 

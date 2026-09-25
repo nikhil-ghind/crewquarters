@@ -31,5 +31,6 @@ PLAN.md sections 4.1, 4.2 and 14.3 require:
 
 - **Releases.** A release has two images: `crewquarters/platform` and `crewquarters/proxy`. The offline bundle carries both.
 - **Client IP.** The control API sees the proxy's address as the client. It must trust `X-Forwarded-For` from the proxy, which is currently limited to `127.0.0.1` in `crewquarters_api/main.py`, or per-IP login rate limits apply to the proxy as a whole.
-- **One public base URL.** Moving `CQ_PUBLIC_BASE_URL` to a tunnel hostname also moves the Google redirect (docs/runbooks/proxy.md, "Caveat").
+- **Callback origins.** Twilio uses `CQ_TWILIO_CALLBACK_BASE_URL`, the tunnel. Google uses `CQ_PUBLIC_BASE_URL`, the browser's origin. See ADR 0009, "Revision".
+- **LAN HTTPS mode.** The same image carries a second top-level configuration (`nginx-lan-https.conf`): TLS on 8443, published as host port 443, and an HTTP-to-HTTPS redirect. The `compose.lan-https.yaml` override selects it (docs/runbooks/lan-https.md).
 - **UI constraint.** A strict same-origin CSP is enforced on the UI. The UI must not use inline scripts or inline styles.

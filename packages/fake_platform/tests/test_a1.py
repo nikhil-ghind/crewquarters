@@ -29,10 +29,14 @@ def test_parse_range(text: str, expected: A1Range) -> None:
     assert parse_range(text) == expected
 
 
-@pytest.mark.parametrize("text", ["", "!A1", "Tab!", "Tab!1A", "Tab!A1:B2:C3", "Tab!a1"])
+@pytest.mark.parametrize("text", ["", "!A1", "Tab!", "Tab!1A", "Tab!A1:B2:C3"])
 def test_parse_range_rejects_garbage(text: str) -> None:
     with pytest.raises(ValueError):
         parse_range(text)
+
+
+def test_lower_case_columns_parse_like_upper_case() -> None:
+    assert parse_range("Tab!a2:d") == parse_range("Tab!A2:D")
 
 
 def test_format_range_quotes_when_needed() -> None:

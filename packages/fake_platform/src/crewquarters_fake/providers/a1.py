@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-_CELL_RE = re.compile(r"^([A-Z]+)(\d+)?$")
+_CELL_RE = re.compile(r"^([A-Za-z]+)(\d+)?$")  # Google accepts lower-case columns
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,7 @@ class A1Range:
 
 def col_index(letters: str) -> int:
     index = 0
-    for char in letters:
+    for char in letters.upper():
         index = index * 26 + (ord(char) - ord("A") + 1)
     return index - 1
 

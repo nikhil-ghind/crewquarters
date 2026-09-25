@@ -1,5 +1,5 @@
-# Crewquarters edge proxy (nginx, non-root uid 101, listens on 8080 and 8081) with the
-# web UI built in. Build from the repository root:
+# Crewquarters edge proxy (nginx, non-root uid 101, listens on 8080 and 8081, plus 8443 in
+# LAN HTTPS mode) with the web UI built in. Build from the repository root:
 #   docker build -f infra/docker/proxy.Dockerfile -t crewquarters/proxy:dev .
 #
 # The web UI (apps/web) is built in the first stage, so every proxy image carries the UI that
@@ -16,10 +16,13 @@ RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.28-alpine@sha256:7377697a821c131a924a7105fafbe7414db4e9fcc77a6f08f776f33f141ec3f8
 ENV NGINX_ENTRYPOINT_QUIET_LOGS=1
-COPY infra/proxy/nginx.conf /etc/nginx/nginx.conf
-COPY infra/proxy/security-headers.conf infra/proxy/ui-headers.conf infra/proxy/json-errors.conf \
-    /etc/nginx/cq/
+# nginx.conf is the default (HTTP) mode; LAN HTTPS mode runs
+# `nginx -c /etc/nginx/nginx-lan-https.conf` (infra/compose/compose.lan-https.yaml).
+COPY infra/proxy/nginx.conf infra/proxy/nginx-lan-https.conf /etc/nginx/
+COPY infra/proxy/common.conf infra/proxy/main-site.conf infra/proxy/callbacks-site.conf \
+    infra/proxy/tls.conf infra/proxy/ca-download.conf infra/proxy/security-headers.conf \
+    infra/proxy/ui-headers.conf infra/proxy/json-errors.conf /etc/nginx/cq/
 COPY --from=web /src/apps/web/dist/ /usr/share/crewquarters/ui/
-EXPOSE 8080 8081
+EXPOSE 8080 8081 8443
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
     CMD wget -q -O /dev/null http://127.0.0.1:8080/index.html || exit 1

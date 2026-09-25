@@ -1,0 +1,22 @@
+/*
+ * Inter 4.1 (https://github.com/rsms/inter), SIL Open Font License 1.1: see
+ * ../assets/fonts/inter/LICENSE.txt. Bundled so the UI font loads from the device itself
+ * under the proxy's CSP (font-src 'self'); Vite emits the files to /assets with hashed
+ * names. The full variable fonts are used, not a subset, because the UI turns on the
+ * cv11 and ss01 features (base.css) and uses in-between weights (550, 680).
+ */
+@font-face {
+  font-family: InterVariable;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../assets/fonts/inter/InterVariable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: InterVariable;
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../assets/fonts/inter/InterVariable-Italic.woff2') format('woff2');
+}
