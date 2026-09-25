@@ -240,3 +240,33 @@ def test_unreachable_broker_exits_2(
     assert "Traceback" not in err
     assert len(err.splitlines()) == 1
     assert "handshake" in err
+
+
+async def test_event_delivery_failure_never_blocks_the_outcome() -> None:
+    agent = Agent("test-agent")
+
+    @agent.run
+    async def run(ctx: RunContext[Any]) -> dict[str, Any]:
+        await ctx.events.log("info", "hello")
+        return {"ok": True}
+
+    def explode(request: Any) -> Any:
+        raise RuntimeError("unexpected failure inside event delivery")
+
+    broker = FakeBroker(heartbeat_interval=60)
+    broker.overrides[("POST", "/events")] = explode
+    assert await execute(agent, broker) == 0
+    assert broker.results == [{"outcome": "succeeded", "result": {"ok": True}}]
+
+
+async def test_datetime_log_field_does_not_break_a_successful_run() -> None:
+    agent = Agent("test-agent")
+
+    @agent.run
+    async def run(ctx: RunContext[Any]) -> dict[str, Any]:
+        await ctx.events.log("info", "started", when=datetime(2026, 9, 24, tzinfo=UTC))
+        return {"ok": True}
+
+    broker = FakeBroker(heartbeat_interval=60)
+    assert await execute(agent, broker) == 0
+    assert broker.events[0]["payload"]["fields"] == {"when": "2026-09-24T00:00:00Z"}

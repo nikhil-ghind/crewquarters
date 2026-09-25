@@ -69,3 +69,19 @@ def test_input_range_must_start_at_a_row_in_column_a(value: str) -> None:
 def test_bounds(field: str, value: object) -> None:
     with pytest.raises(ValidationError):
         CallerConfig.model_validate({"spreadsheetId": "s1", field: value})
+
+
+@pytest.mark.parametrize(
+    ("input_range", "result_range"),
+    [
+        ("Contacts!A2:D", "Contacts!A:H"),
+        ("'My List'!A2:D", "'My List'!A:H"),
+        ("'Contacts'!A2:D", "Contacts!A:H"),
+    ],
+)
+def test_results_cannot_overwrite_the_contacts_tab(input_range: str, result_range: str) -> None:
+    with pytest.raises(ValidationError) as info:
+        CallerConfig.model_validate(
+            {"spreadsheetId": "s1", "inputRange": input_range, "resultRange": result_range}
+        )
+    assert "different tab" in str(info.value)

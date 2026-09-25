@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import sys
 import uuid
 from collections.abc import Callable
@@ -11,11 +12,18 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
 
+from pydantic_core import to_jsonable_python
+
 from crewquarters._transport import BrokerClient
 from crewquarters.errors import PlatformError
 from crewquarters.redact import redact_text, redact_value
 
 LEVELS = frozenset({"debug", "info", "warning", "error"})
+
+
+def _jsonable(value: Any) -> Any:
+    """Make any value JSON-safe (datetimes become ISO strings, unknown objects their str())."""
+    return to_jsonable_python(value, fallback=str)
 
 
 def _default_echo(line: str) -> None:
@@ -45,7 +53,11 @@ class EventsClient:
     async def log(self, level: str, message: str, **fields: Any) -> None:
         if level not in LEVELS:
             raise ValueError(f"level must be one of {sorted(LEVELS)}")
-        payload = {"level": level, "message": redact_text(message)[:4000], "fields": redact_value(fields)}
+        payload = {
+            "level": level,
+            "message": redact_text(message)[:4000],
+            "fields": redact_value(_jsonable(fields)),
+        }
         if self._echo is not None:
             self._echo(json.dumps({"ts": _now(), **payload}, default=str))
         await self._add("log", payload)
@@ -56,11 +68,17 @@ class EventsClient:
         await self._add("progress", {"percent": percent, "message": redact_text(message)[:500], "step": step})
 
     async def metric(self, name: str, value: float, unit: str | None = None) -> None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError("metric value must be a finite number")
         await self._add("metric", {"name": name, "value": value, "unit": unit})
 
     async def artifact(
         self, name: str, media_type: str, summary: str | None = None, size_bytes: int | None = None
     ) -> None:
+        if size_bytes is not None and (
+            isinstance(size_bytes, bool) or not isinstance(size_bytes, int) or size_bytes < 0
+        ):
+            raise ValueError("size_bytes must be a non-negative integer")
         payload = {"name": name, "mediaType": media_type, "summary": summary, "sizeBytes": size_bytes}
         await self._add("artifact", payload)
 
@@ -75,16 +93,40 @@ class EventsClient:
         if len(self._buffer) >= self._max_batch:
             try:
                 await self.flush()
-            except PlatformError as exc:
+            except Exception as exc:
                 self._note(f"event delivery deferred: {exc}")
 
+    async def _post(self, batch: list[dict[str, Any]]) -> None:
+        await self._transport.request(
+            "POST", "/events", operation="events", idempotent=True, json={"events": batch}
+        )
+
+    async def _salvage(self, batch: list[dict[str, Any]], error: PlatformError) -> None:
+        """The broker rejected a batch: resend event by event and drop only the rejected ones."""
+        dropped = 0
+        if len(batch) == 1:
+            dropped = 1
+        else:
+            for event in batch:
+                try:
+                    await self._post([event])
+                except PlatformError as exc:
+                    if exc.retryable:
+                        raise
+                    dropped += 1
+        self._note(f"dropped {dropped} event{'s' if dropped != 1 else ''} the broker rejected: {error.code}")
+
     async def flush(self) -> None:
+        """Deliver buffered events. Rejected events are dropped; retryable failures keep them for later."""
         async with self._lock:
             while self._buffer:
                 batch = self._buffer[: self._max_batch]
-                await self._transport.request(
-                    "POST", "/events", operation="events", idempotent=True, json={"events": batch}
-                )
+                try:
+                    await self._post(batch)
+                except PlatformError as exc:
+                    if exc.retryable:
+                        raise
+                    await self._salvage(batch, exc)
                 del self._buffer[: len(batch)]
 
     def start(self) -> None:
@@ -96,7 +138,7 @@ class EventsClient:
             await asyncio.sleep(self._flush_interval)
             try:
                 await self.flush()
-            except PlatformError as exc:
+            except Exception as exc:
                 self._note(f"event delivery deferred: {exc}")
 
     async def aclose(self) -> None:
@@ -107,7 +149,7 @@ class EventsClient:
             self._task = None
         try:
             await self.flush()
-        except PlatformError as exc:
+        except Exception as exc:
             self._note(f"could not deliver {len(self._buffer)} events: {exc}")
         if self._dropped:
             self._note(f"dropped {self._dropped} events because the buffer was full")

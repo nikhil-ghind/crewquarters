@@ -160,3 +160,24 @@ def test_target_date_override_digests_that_day(fake_client: FakePlatformClient, 
     )
     assert outcome.result["date"] == "2026-09-22"
     assert ids(outcome, "lowPriority") == ["b-prevday"]
+
+
+def test_a_message_deleted_between_list_and_get_is_skipped(
+    fake_client: FakePlatformClient, tmp_path: Path
+) -> None:
+    manifest, installation = prepare(
+        fake_client, "gmail_digest", "digest-basic", {"timezone": "Asia/Kolkata"}
+    )
+    fake_client.add_fault("broker.gmail.get", "error", count=1, status=404, code="NOT_FOUND")
+    outcome = launch(
+        fake_client,
+        "gmail_digest",
+        manifest,
+        installation,
+        tmp_path,
+        trigger="schedule",
+        scheduled_for=KOLKATA_10AM,
+    )
+    assert outcome.state == "SUCCEEDED", outcome.log
+    assert outcome.result["processedCount"] == 7
+    assert any("no longer available" in e["payload"]["message"] for e in outcome.events_of("log"))

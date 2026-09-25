@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import zoneinfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 DEFAULT_SCRIPT = (
@@ -17,6 +17,12 @@ _PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
 _TAB = r"(?P<tab>'(?:[^']|'')+'|[^!']+)"
 _INPUT_RE = re.compile(_TAB + r"!A(?P<row>[1-9]\d*):D(?:\d+)?$")
 _RESULT_RE = re.compile(_TAB + r"!A:H$")
+
+
+def _unquote(tab: str) -> str:
+    if len(tab) >= 2 and tab[0] == tab[-1] == "'":
+        return tab[1:-1].replace("''", "'")
+    return tab
 
 
 class CallerConfig(BaseModel):
@@ -63,6 +69,20 @@ class CallerConfig(BaseModel):
         ):
             raise ValueError(f"use an IANA timezone such as Asia/Kolkata, not {value!r}")
         return value
+
+    @model_validator(mode="after")
+    def _separate_tabs(self) -> CallerConfig:
+        if _unquote(self.input_tab) == _unquote(self.result_tab):
+            raise ValueError(
+                "resultRange must use a different tab than inputRange so results never overwrite contacts"
+            )
+        return self
+
+    @property
+    def input_tab(self) -> str:
+        match = _INPUT_RE.match(self.input_range)
+        assert match is not None
+        return match.group("tab")
 
     @property
     def input_start_row(self) -> int:

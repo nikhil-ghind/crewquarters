@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from crewquarters import Agent, RunContext
-from crewquarters.errors import AgentError, NeedsConnection
+from crewquarters.errors import AgentError, NeedsConnection, PlatformError
 from crewquarters.google.mime import strip_quoted_replies
 from crewquarters.untrusted import new_boundary
 from gmail_digest.classify import classify_batch
@@ -24,11 +24,18 @@ FETCH_CONCURRENCY = 5
 async def _fetch_all(ctx: RunContext[DigestConfig], ids: list[str]) -> list[FetchedMessage]:
     limit = asyncio.Semaphore(FETCH_CONCURRENCY)
 
-    async def fetch(message_id: str) -> FetchedMessage:
+    async def fetch(message_id: str) -> FetchedMessage | None:
         async with limit:
-            message = await ctx.google.gmail.get_message(
-                message_id, max_chars=ctx.config.max_chars_per_message
-            )
+            try:
+                message = await ctx.google.gmail.get_message(
+                    message_id, max_chars=ctx.config.max_chars_per_message
+                )
+            except PlatformError as exc:
+                if exc.code != "NOT_FOUND":
+                    raise
+                # Deleted or moved between list and get: skip it rather than fail the whole digest.
+                await ctx.events.log("warning", f"message {message_id} is no longer available; skipped")
+                return None
         return FetchedMessage(
             id=message.id or message_id,
             thread_id=message.thread_id,
@@ -39,7 +46,8 @@ async def _fetch_all(ctx: RunContext[DigestConfig], ids: list[str]) -> list[Fetc
             web_link=message.web_link,
         )
 
-    return list(await asyncio.gather(*(fetch(message_id) for message_id in ids)))
+    fetched = await asyncio.gather(*(fetch(message_id) for message_id in ids))
+    return [message for message in fetched if message is not None]
 
 
 @agent.run

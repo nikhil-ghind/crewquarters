@@ -183,7 +183,10 @@ class Agent:
         return to_jsonable_python(value)
 
     async def _finish(self, transport: BrokerClient, events: EventsClient, body: dict[str, Any]) -> int:
-        await events.aclose()
+        try:
+            await events.aclose()
+        except Exception as exc:  # event delivery must never prevent the outcome from being posted
+            _stderr(f"crewquarters: event delivery failed: {exc!r}")
         try:
             response = await transport.request(
                 "POST", "/result", operation="result", idempotent=True, json=body
