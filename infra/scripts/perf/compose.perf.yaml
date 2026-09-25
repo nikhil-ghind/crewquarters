@@ -1,0 +1,39 @@
+# Performance-harness overrides (infra/scripts/perf/perf.py). Used on top of
+# infra/compose/compose.yaml and infra/compose/compose.runtime.yaml, under its own Compose
+# project (default `cqperf`), host ports and image tags, so it runs beside a developer's
+# stack without touching it. DEVELOPMENT ONLY, like compose.runtime.yaml.
+#
+# perf.py sets: COMPOSE_PROJECT_NAME, CQ_HTTP_PORT, CQ_POSTGRES_PORT, CQ_PLATFORM_IMAGE,
+# CQ_PROXY_IMAGE, CQ_DATA_DIR, CQ_PUBLIC_BASE_URL, CQ_EMBEDDING_MODE and the variables below.
+services:
+  postgres:
+    # A parallel HNSW build uses dynamic shared memory sized by maintenance_work_mem;
+    # Docker's default 64 MiB /dev/shm is too small for the ad hoc index at 100k chunks.
+    shm_size: 2g
+
+  runtime-daemon:
+    environment:
+      # The daemon's run and model networks default to cq-agents/cq-models; give this stack
+      # its own so its containers never join another stack's networks.
+      CQ_RUNTIME_AGENT_NETWORK: ${CQ_PERF_AGENT_NETWORK:-cqperf-agents}
+      CQ_RUNTIME_MODEL_NETWORK: ${CQ_PERF_MODEL_NETWORK:-cqperf-models}
+
+  model-gateway:
+    environment:
+      # Short idle grace so the idle-unload measurement finishes in minutes, not 10+.
+      CQ_GATEWAY_IDLE_UNLOAD_SECONDS: ${CQ_PERF_IDLE_UNLOAD_SECONDS:-60}
+
+  # Local registry for the digest-pinned agent image (crewctl build --push).
+  perf-registry:
+    image: registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+    ports:
+      - "127.0.0.1:${CQ_PERF_REGISTRY_PORT:-15021}:5000"
+
+networks:
+  models:
+    name: ${CQ_PERF_MODEL_NETWORK:-cqperf-models}
+  run-agents:
+    name: ${CQ_PERF_AGENT_NETWORK:-cqperf-agents}
+  # Declared by compose.yaml for the `fake` profile; renamed so it can never collide.
+  agents:
+    name: ${COMPOSE_PROJECT_NAME:-cqperf}-crewq-agents

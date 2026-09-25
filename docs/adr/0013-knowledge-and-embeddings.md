@@ -74,7 +74,7 @@ There is no vector index. The migration creates none, and its docstring notes th
 
 ## Consequences
 
-- Query latency grows linearly with the chunks in one knowledge base. `cq_knowledge_retrieval_duration_seconds` (target p95 below 1 s) shows when an HNSW index becomes worth adding. Adding one is a migration only.
+- Query latency grows linearly with the chunks in one knowledge base. `cq_knowledge_retrieval_duration_seconds` (target p95 below 1 s) shows when an HNSW index becomes worth adding. Adding one is a migration only. On a laptop, exact search at 100k chunks measured 426 ms p95 through the API, and an ad hoc HNSW index measured 49 ms with recall@8 of 0.994 (`docs/benchmarks/laptop.md`). The GB10 run decides.
 - Moving to another embedding model or revision means a new profile id and re-indexing every affected knowledge base.
 - `fake` mode makes laptop and CI retrieval deterministic, but relevance there is lexical. Real relevance must be checked with `CQ_EMBEDDING_MODE=local` (the appliance default in `infra/compose/compose.appliance.yaml`).
 - There is no OCR, so scanned PDFs are rejected.
