@@ -213,6 +213,30 @@ jobs:
       - if: failure()
         run: docker compose -f infra/compose/compose.yaml --profile fake logs fake-platform
 
+  # Real agent images through the real stack: control API, scheduler, containerized runtime
+  # daemon, capability broker (fake Google/Twilio), model gateway, knowledge service, proxy.
+  # docs/testing-realstack.md
+  realstack-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.11"
+      - run: uv sync --frozen --python 3.12 --all-packages
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+      - run: make realstack-up
+      - run: make realstack-test
+      - if: failure()
+        run: |
+          docker compose -p cqreal --env-file infra/compose/realstack.env -f infra/compose/compose.yaml \
+            -f infra/compose/compose.runtime.yaml -f infra/compose/compose.realstack.yaml logs --no-color --tail 300
+      - if: always()
+        run: make realstack-down
+
   agent-images-arm64:
     runs-on: ubuntu-24.04
     timeout-minutes: 45

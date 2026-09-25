@@ -160,6 +160,31 @@ async def test_partial_grant_and_reconnect_replaces(
         assert len((await db.scalars(select(EncryptedSecret))).all()) == 1
 
 
+async def test_fake_google_accumulates_separate_consents_until_revoked(
+    harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    """The broker asks for include_granted_scopes=true, so consenting to Sheets after Gmail
+    keeps Gmail (as with Google). Found by the real-stack suite: the fake used to grant only
+    the latest consent's scopes, so connecting Sheets silently dropped Gmail."""
+    for scope in ("gmail.readonly", "spreadsheets"):
+        state, binding, _ = await _start(harness, user_id, [scope])
+        location = await _callback(harness, binding, state=state, code=f"fake-code:{scope}")
+        assert location.endswith("result=connected")
+    async with sessions() as db:
+        conns = (await db.scalars(select(OAuthConnection))).all()
+        assert len(conns) == 1 and conns[0].scopes == ["gmail.readonly", "spreadsheets"]
+
+    resp = await harness.client.delete(
+        f"/internal/v1/connections/google?userId={user_id}", headers=harness.service_headers
+    )
+    assert resp.status_code in (200, 204), resp.text
+    state, binding, _ = await _start(harness, user_id, ["spreadsheets"])
+    await _callback(harness, binding, state=state, code="fake-code:spreadsheets")
+    async with sessions() as db:
+        conns = (await db.scalars(select(OAuthConnection))).all()
+        assert [c.scopes for c in conns] == [["spreadsheets"]]  # revoking forgot the grant
+
+
 async def test_expired_refresh_needs_reconnect(
     harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -326,6 +351,17 @@ async def test_gmail_list_paginates_and_get_passes_through(
         GMAIL, params={"labelIds": ["INBOX", "CATEGORY_PROMOTIONS"]}, headers=headers
     )
     assert [m["id"] for m in promos.json()["messages"]] == ["m-promo"]
+    # Search operators the digest agent sends (found by the real-stack suite: the fake
+    # ignored them, so promotions reached the digest).
+    no_promos = await harness.client.get(
+        GMAIL, params={"q": "-category:promotions"}, headers=headers
+    )
+    assert "m-promo" not in {m["id"] for m in no_promos.json()["messages"]}
+    assert no_promos.json()["resultSizeEstimate"] == 7
+    labelled = await harness.client.get(
+        GMAIL, params={"q": "label:CATEGORY_PROMOTIONS"}, headers=headers
+    )
+    assert [m["id"] for m in labelled.json()["messages"]] == ["m-promo"]
 
     resp = await harness.client.get(f"{GMAIL}/m-html", headers=headers)
     assert resp.json() == harness.google.messages["m-html"]  # format=full, unmodified
