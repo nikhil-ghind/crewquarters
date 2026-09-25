@@ -158,3 +158,11 @@ demo-approve: ## Approve the pending input request on the fake platform
 
 evidence: ## Run every suite and write evidence/<UTC>/report.md
 	CREWQ_FAKE_URL=$(FAKE_URL) infra/scripts/collect-evidence.sh
+
+# --- Performance harness (PLAN.md section 22; docs/benchmarks/laptop.md) --------------------
+PERF_TAG ?= perf
+.PHONY: perf
+perf: ## Measure PLAN §22 targets in a separate stack (project cqperf, port 18094); writes tmp/perf/results.json
+	docker build -f infra/docker/python.Dockerfile -t crewquarters/platform:$(PERF_TAG) .
+	docker build -f infra/docker/proxy.Dockerfile -t crewquarters/proxy:$(PERF_TAG) .
+	PERF_TAG=$(PERF_TAG) uv run python infra/scripts/perf/perf.py all $(PERF_ARGS)

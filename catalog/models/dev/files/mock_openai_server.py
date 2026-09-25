@@ -9,7 +9,9 @@ Standard library only.
 from __future__ import annotations
 
 import argparse
+import html
 import json
+import re
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -39,6 +41,31 @@ def _value_for(schema: dict[str, Any]) -> Any:
     return "mock"
 
 
+# Knowledge-grounded messages: a preamble, then <evidence><passage id=...>text</passage>
+# ...</evidence>. Kept identical to crewquarters_gateway.adapters.mock_reply (a test checks).
+_EVIDENCE_MARKERS = ("<evidence>", "UNTRUSTED EVIDENCE")
+_FIRST_PASSAGE = re.compile(
+    r"<passage\s+id=(?:\"([^\"]*)\"|'([^']*)')[^>]*>(.*?)</passage>", re.DOTALL
+)
+MOCK_SNIPPET_CHARS = 120
+
+
+def mock_reply(content: str) -> str:
+    """Echo ordinary messages; answer evidence messages with a short cited snippet and
+    never repeat the preamble, the delimiters or the whole message."""
+    if not any(marker in content for marker in _EVIDENCE_MARKERS):
+        return f"Mock reply to: {content[:200]}"
+    match = _FIRST_PASSAGE.search(content)
+    if match is None:
+        return "Mock answer: the evidence did not contain a passage to quote."
+    citation = html.unescape(match.group(1) or match.group(2) or "")
+    text = " ".join(html.unescape(match.group(3)).split())
+    text = text.replace("<", "").replace(">", "")
+    if len(text) > MOCK_SNIPPET_CHARS:
+        text = text[:MOCK_SNIPPET_CHARS].rsplit(" ", 1)[0] + "..."
+    return f'Mock answer from the knowledge base: "{text}" [{citation}]'
+
+
 def _answer(body: dict[str, Any]) -> str:
     fmt = body.get("response_format") or {}
     if fmt.get("type") == "json_schema":
@@ -51,7 +78,7 @@ def _answer(body: dict[str, Any]) -> str:
     content = last.get("content")
     if isinstance(content, list):
         content = " ".join(p.get("text", "") for p in content if isinstance(p, dict))
-    return f"Mock reply to: {str(content)[:200]}"
+    return mock_reply(str(content))
 
 
 class Handler(BaseHTTPRequestHandler):

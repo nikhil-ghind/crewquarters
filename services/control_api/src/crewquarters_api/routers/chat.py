@@ -314,6 +314,7 @@ async def send_message(
             auth.user.id,
             session.retrieval_mode,
             body.content,
+            min_relevance=state.settings.chat_relevance_cutoff,
         )
         citations = grounding.citations(session.knowledge_base_id)
     # only_knowledge with nothing retrieved: answer without calling the model.

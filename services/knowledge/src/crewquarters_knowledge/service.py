@@ -426,6 +426,9 @@ async def query(
         )
     return {
         "knowledgeBaseId": str(kb_id),
+        # Scores are only comparable within one embedding profile; callers that apply a
+        # relevance cutoff (the control API's chat) choose it by this profile.
+        "embeddingProfile": kb.embedding_profile,
         "passages": passages,
         "context": format_context(passages),
     }

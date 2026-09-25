@@ -16,7 +16,9 @@ clear error instead of silently degrading; parameters a model rejects outright
 
 from __future__ import annotations
 
+import html
 import json
+import re
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -291,7 +293,7 @@ class InProcessMockAdapter:
         if request.response_schema is not None:
             return json.dumps(_mock_value(request.response_schema))
         last = next((m for m in reversed(request.messages) if m["role"] == "user"), {"content": ""})
-        return f"Mock reply to: {str(last['content'])[:200]}"
+        return mock_reply(str(last["content"]))
 
     async def chat(self, request: ChatRequest) -> ChatResult:
         text = self._text(request)
@@ -314,6 +316,36 @@ class InProcessMockAdapter:
         for i, word in enumerate(result.text.split(" ")):
             yield {"type": "delta", "text": word if i == 0 else " " + word}
         yield {"type": "result", "result": result}
+
+
+# Knowledge-grounded messages (crewquarters_knowledge.service.format_context): a preamble,
+# then <evidence><passage id=... document=... location=...>text</passage>...</evidence>.
+_EVIDENCE_MARKERS = ("<evidence>", "UNTRUSTED EVIDENCE")
+_FIRST_PASSAGE = re.compile(
+    r"<passage\s+id=(?:\"([^\"]*)\"|'([^']*)')[^>]*>(.*?)</passage>", re.DOTALL
+)
+MOCK_SNIPPET_CHARS = 120
+
+
+def mock_reply(content: str) -> str:
+    """The mock model's plain-text reply to the last user message.
+
+    Ordinary messages are echoed (``Mock reply to: ...``, bounded). A message carrying an
+    evidence block gets a short answer that quotes at most a snippet of the first passage
+    and cites it, and never repeats the preamble, the delimiters or the whole message.
+    Kept identical to ``catalog/models/dev/files/mock_openai_server.py`` (a test checks).
+    """
+    if not any(marker in content for marker in _EVIDENCE_MARKERS):
+        return f"Mock reply to: {content[:200]}"
+    match = _FIRST_PASSAGE.search(content)
+    if match is None:
+        return "Mock answer: the evidence did not contain a passage to quote."
+    citation = html.unescape(match.group(1) or match.group(2) or "")
+    text = " ".join(html.unescape(match.group(3)).split())
+    text = text.replace("<", "").replace(">", "")
+    if len(text) > MOCK_SNIPPET_CHARS:
+        text = text[:MOCK_SNIPPET_CHARS].rsplit(" ", 1)[0] + "..."
+    return f'Mock answer from the knowledge base: "{text}" [{citation}]'
 
 
 def _mock_value(schema: dict[str, Any]) -> Any:

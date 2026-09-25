@@ -634,6 +634,52 @@ async def test_when_relevant_uses_only_relevant_passages(
     assert unrelated["messages"][-1]["content"] == "zebra quantum banjo"
 
 
+async def test_when_relevant_cutoff_follows_the_reported_embedding_profile(
+    owner: httpx.AsyncClient,
+    services: Services,
+    app: Any,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """The fake hashing embedder scores a related question around 0.2: below the 0.3
+    default meant for real embeddings, above the fake profile's own cutoff."""
+    kb = await _kb(owner)
+    await owner.post(
+        f"/api/v1/knowledge-bases/{kb}/documents", files={"file": ("policy.md", POLICY)}
+    )
+    await services.drain()
+    question = "do I get money back for refunds"
+    raw = await owner.post(f"/api/v1/knowledge-bases/{kb}/query", json={"query": question})
+    top = raw.json()["passages"][0]["score"]
+    assert 0.1 <= top < evidence.RELEVANCE_MIN_SCORE
+
+    session_id = await _chat(owner, sessions, knowledgeBaseId=kb, retrievalMode="when_relevant")
+    url = f"/api/v1/chat/sessions/{session_id}/messages"
+    first = _events((await owner.post(url, json={"content": question})).text)
+    assert first[-1][1]["citations"], "the fake profile's cutoff keeps the passage"
+    sent = app.state.cq.models.chat_requests[-1]["messages"][-1]["content"]
+    assert sent.startswith(evidence.EVIDENCE_PREAMBLE)
+
+    # Without a per-profile value the default cutoff (CQ_CHAT_MIN_RELEVANCE) applies.
+    settings: Settings = app.state.cq.settings
+    settings.chat_min_relevance_by_profile = {}
+    second = _events((await owner.post(url, json={"content": question})).text)
+    assert second[-1][1]["citations"] == []
+    assert app.state.cq.models.chat_requests[-1]["messages"][-1]["content"] == question
+
+
+@pytest.mark.no_db
+def test_chat_relevance_cutoff_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    defaults = Settings()
+    assert defaults.chat_relevance_cutoff(None) == 0.3
+    assert defaults.chat_relevance_cutoff("local.some-real-model") == 0.3
+    assert defaults.chat_relevance_cutoff("fake.hashing-512") == 0.1
+    monkeypatch.setenv("CQ_CHAT_MIN_RELEVANCE", "0.45")
+    monkeypatch.setenv("CQ_CHAT_MIN_RELEVANCE_BY_PROFILE", '{"fake.hashing-512": 0.05}')
+    tuned = Settings()
+    assert tuned.chat_relevance_cutoff("anything") == 0.45
+    assert tuned.chat_relevance_cutoff("fake.hashing-512") == 0.05
+
+
 async def test_grounded_chat_fails_instead_of_answering_without_sources(
     owner: httpx.AsyncClient, app: Any, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
