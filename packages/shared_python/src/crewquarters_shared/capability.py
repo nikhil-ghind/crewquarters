@@ -112,14 +112,30 @@ def verify(token: str, signing_key: str) -> CapabilityClaims:
         issuer=ISSUER,
         options={"require": ["exp", "iat", "jti", "aud", "iss"]},
     )
-    return CapabilityClaims(
-        token_id=data["jti"],
-        run_id=data["run"],
-        attempt=int(data["att"]),
-        installation_id=data["ins"],
-        agent_version_id=data["ver"],
-        capabilities=list(data["cap"]),
-        resources=dict(data.get("res") or {}),
-        issued_at=datetime.fromtimestamp(data["iat"], UTC),
-        expires_at=datetime.fromtimestamp(data["exp"], UTC),
-    )
+    # A correctly signed token can still carry malformed claims; reject it like any other
+    # invalid token instead of failing the request with a 500.
+    try:
+        cap, res, attempt = data["cap"], data.get("res") or {}, data["att"]
+        strings = (data["jti"], data["run"], data["ins"], data["ver"])
+        if (
+            not all(isinstance(s, str) for s in strings)
+            or not isinstance(attempt, int)
+            or isinstance(attempt, bool)
+            or not isinstance(cap, list)
+            or not all(isinstance(c, str) for c in cap)
+            or not isinstance(res, dict)
+        ):
+            raise TypeError("malformed capability claims")
+        return CapabilityClaims(
+            token_id=data["jti"],
+            run_id=data["run"],
+            attempt=attempt,
+            installation_id=data["ins"],
+            agent_version_id=data["ver"],
+            capabilities=list(cap),
+            resources=dict(res),
+            issued_at=datetime.fromtimestamp(data["iat"], UTC),
+            expires_at=datetime.fromtimestamp(data["exp"], UTC),
+        )
+    except (KeyError, TypeError, ValueError, OverflowError, OSError) as exc:
+        raise jwt.InvalidTokenError("malformed capability claims") from exc

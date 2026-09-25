@@ -19,6 +19,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from crewquarters_api import catalog, errors, security
 from crewquarters_api.deps import AppState
 from crewquarters_api.gateway_client import GatewayClient
+from crewquarters_api.json_guard import JsonBodyGuard
 from crewquarters_api.routers import (
     agents,
     auth,
@@ -291,6 +292,9 @@ def create_app(
     ):
         app.include_router(router, prefix=API_PREFIX)
     app.include_router(internal.router, prefix=INTERNAL_PREFIX)
+    # Inside the size limit, which bounds what the guard buffers: 422 for JSON nested too
+    # deeply to redact/validate/serialize, or carrying NULs that PostgreSQL cannot store.
+    app.add_middleware(JsonBodyGuard)
     app.add_middleware(
         BodySizeLimit,
         limit=settings.max_body_bytes,

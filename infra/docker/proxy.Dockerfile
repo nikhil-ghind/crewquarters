@@ -14,7 +14,7 @@ COPY packages/contracts/clients/typescript /src/packages/contracts/clients/types
 COPY apps/web ./
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.28-alpine@sha256:7377697a821c131a924a7105fafbe7414db4e9fcc77a6f08f776f33f141ec3f8
+FROM nginxinc/nginx-unprivileged:1.28.3-alpine@sha256:6a23acdfca2b9cfbcec61419e3f1426bcbedb91362f2f19306a8567423bb4612
 ENV NGINX_ENTRYPOINT_QUIET_LOGS=1
 COPY infra/proxy/nginx.conf /etc/nginx/nginx.conf
 COPY infra/proxy/security-headers.conf infra/proxy/ui-headers.conf infra/proxy/json-errors.conf \

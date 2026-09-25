@@ -29,6 +29,8 @@ jobs:
           packages/secret_store/src services/capability_broker/src services/knowledge/src
           packages/python_sdk/src packages/fake_platform/src packages/crewctl/src
           agents/contract_probe/src agents/gmail_digest/src agents/caller/src
+      - name: Third-party license inventory is up to date (PLAN.md 23.1)
+        run: uv run python infra/scripts/license_inventory.py --check
 
   platform-tests:
     runs-on: ubuntu-24.04
@@ -78,6 +80,12 @@ jobs:
           infra/debian/build-deb.sh "0.1.0+${GITHUB_SHA::7}" arm64
           infra/debian/build-deb.sh "0.1.0+${GITHUB_SHA::7}" amd64
           mv dist/crewquarters_*_amd64.deb dist/crewquarters_0.1.0_amd64.deb
+      - name: License inventory and NOTICE are in the package
+        run: |
+          dpkg-deb -c dist/crewquarters_0.1.0_amd64.deb | grep -q usr/share/doc/crewquarters/THIRD_PARTY_LICENSES.md
+          dpkg-deb -c dist/crewquarters_0.1.0_amd64.deb | grep -q usr/share/doc/crewquarters/NOTICE
+      - name: Secret scan of the built packages (fails on findings)
+        run: infra/scripts/scan_secrets.sh dist/*.deb
       - name: Install, reinstall, remove, purge in ubuntu:22.04
         run: |
           docker run --rm -v "$PWD/dist:/pkgs:ro" -v /var/run/docker.sock:/var/run/docker.sock \
@@ -240,6 +248,8 @@ jobs:
       - run: npm run build
       - name: No provider/model/internal hosts in the bundle
         run: npm run check:bundle
+      - name: Secret scan of the built UI (fails on findings)
+        run: ../../infra/scripts/scan_secrets.sh dist
       - name: Unit and component tests
         run: npm test
       - name: Install Playwright Chromium
@@ -258,3 +268,204 @@ jobs:
             apps/web/e2e/screenshots
           if-no-files-found: ignore
           retention-days: 14
+
+  # --- Release security checks (PLAN.md 16.2, 23.6; docs/security/release-checklist.md) -----
+
+  fuzz:
+    # Fuzz and limit tests: manifests, config schemas, run events/redaction, cron, capability
+    # tokens, A1 ranges, Twilio callbacks, document extraction, Gmail MIME, API body limits.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: crewquarters
+          POSTGRES_PASSWORD: crewquarters
+          POSTGRES_DB: crewquarters
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U crewquarters" --health-interval 2s
+          --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.11"
+      - run: uv sync --frozen --python 3.12 --all-packages
+      - name: Hypothesis properties (bounded, derandomized budget)
+        run: uv run pytest -q -p no:cacheprovider tests/fuzz
+        env:
+          CQ_TEST_ADMIN_URL: postgresql+psycopg://crewquarters:crewquarters@127.0.0.1:55432/crewquarters
+          CQ_FUZZ_EXAMPLES: "150"
+
+  dependency-scan:
+    # uv.lock and apps/web/package-lock.json (all groups, dev included): fail on fixable
+    # CRITICAL, report HIGH. Image contents are scanned per image in `image-security`.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lockfile vulnerability scan (fail on fixable CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: infra/scripts/trivyignore
+      - name: Lockfile vulnerability report (HIGH, not blocking)
+        if: always()
+        run: >-
+          trivy fs --quiet --scanners vuln --severity HIGH,CRITICAL
+          --ignorefile infra/scripts/trivyignore . | tee -a "$GITHUB_STEP_SUMMARY"
+
+  image-security:
+    # Every shipped image on both architectures: SPDX SBOM, Trivy (fail on fixable CRITICAL,
+    # report HIGH), non-root and setuid checks, and a secret scan of the filesystem. Each image
+    # is built once into a docker archive; nothing is run, so arm64 is scanned without QEMU
+    # execution (QEMU is only needed for the RUN steps of the build, cached from `images`).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [platform, proxy, contract_probe, gmail_digest, caller]
+        arch: [amd64, arm64]
+        include:
+          - image: platform
+            dockerfile: infra/docker/python.Dockerfile
+            cache: ""
+          - image: proxy
+            dockerfile: infra/docker/proxy.Dockerfile
+            cache: proxy-
+          - image: contract_probe
+            dockerfile: agents/contract_probe/Dockerfile
+            cache: agent-contract_probe-
+            write-cache: true
+          - image: gmail_digest
+            dockerfile: agents/gmail_digest/Dockerfile
+            cache: agent-gmail_digest-
+            write-cache: true
+          - image: caller
+            dockerfile: agents/caller/Dockerfile
+            cache: agent-caller-
+            write-cache: true
+    env:
+      NAME: ${{ matrix.image }}-${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.arch == 'arm64'
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.image }} (linux/${{ matrix.arch }}) into an image archive
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          tags: crewquarters/${{ matrix.image }}:ci-${{ matrix.arch }}
+          outputs: type=docker,dest=${{ runner.temp }}/image.tar
+          provenance: false
+          # Platform and proxy reuse the cache the `images` job writes (same scopes).
+          cache-from: type=gha,scope=${{ matrix.cache }}linux/${{ matrix.arch }}
+          cache-to: ${{ matrix.write-cache && format('type=gha,mode=max,scope={0}linux/{1}', matrix.cache, matrix.arch) || '' }}
+      - name: Runs as non-root; no setuid/setgid files beyond the allowlist
+        run: python3 infra/scripts/check_image.py "$RUNNER_TEMP/image.tar"
+      - uses: anchore/sbom-action/download-syft@v0.24.2
+        id: syft
+      - name: SBOM (SPDX JSON)
+        run: >-
+          ${{ steps.syft.outputs.cmd }} "docker-archive:$RUNNER_TEMP/image.tar"
+          -o "spdx-json=sbom-$NAME.spdx.json"
+      - name: Vulnerability scan (fail on fixable CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          input: ${{ runner.temp }}/image.tar
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: infra/scripts/trivyignore
+      - name: Vulnerability report (HIGH and CRITICAL, not blocking)
+        if: always()
+        run: |
+          trivy image --quiet --input "$RUNNER_TEMP/image.tar" --scanners vuln \
+            --severity HIGH,CRITICAL --ignorefile infra/scripts/trivyignore \
+            --format json --output "trivy-$NAME.json"
+          {
+            echo "### $NAME"
+            jq -r '[.Results[]?.Vulnerabilities[]?] | group_by(.Severity) | .[]
+              | "- \(.[0].Severity): \(length) (\(map(select(.FixedVersion != null and .FixedVersion != "")) | length) fixable)"' \
+              "trivy-$NAME.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Secret scan of the image filesystem (fails on findings)
+        if: always()
+        run: infra/scripts/scan_secrets.sh --image "$RUNNER_TEMP/image.tar"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: image-security-${{ env.NAME }}
+          path: |
+            sbom-${{ env.NAME }}.spdx.json
+            trivy-${{ env.NAME }}.json
+          if-no-files-found: warn
+          retention-days: 90
+
+  release-refs:
+    # PLAN.md 16.2: no mutable image tags in release manifests.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.11"
+      - run: uv sync --frozen --python 3.12
+      - name: Image references (development build, tags are warnings)
+        run: uv run python infra/scripts/check_release_refs.py --mode dev
+      - name: Release mode rejects tag-only references and accepts digests (self-test)
+        run: |
+          if uv run python infra/scripts/check_release_refs.py --mode release --skip-dockerfiles; then
+            echo "release mode accepted tag-only references" && exit 1
+          fi
+          printf 'CQ_VERSION=0.1.0@sha256:%064d\n' 0 > "$RUNNER_TEMP/release.env"
+          uv run python infra/scripts/check_release_refs.py --mode release --skip-dockerfiles \
+            --env-file "$RUNNER_TEMP/release.env"
+      - name: Release build - every reference pinned by digest
+        if: startsWith(github.ref, 'refs/tags/v')
+        # The release pipeline writes release.env with CQ_VERSION=<version>@sha256:<digest>
+        # (and the proxy/platform image names) before tagging.
+        run: uv run python infra/scripts/check_release_refs.py --mode release --env-file release.env
+
+  offline-bundle-secrets:
+    # Builds the amd64 offline bundle and secret-scans its manifest, SBOMs, and .deb. Heavy
+    # (pulls PostgreSQL and the embedding model), so it runs on main and tags, not on PRs.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build platform image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/python.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: crewquarters/platform:0.1.0-ci
+          cache-from: type=gha,scope=linux/amd64
+      - name: Build proxy image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/proxy.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: crewquarters/proxy:0.1.0-ci
+          cache-from: type=gha,scope=proxy-linux/amd64
+      - uses: anchore/sbom-action/download-syft@v0.24.2
+      - run: infra/debian/build-offline-bundle.sh 0.1.0-ci amd64
+      - name: Secret scan of the bundle manifest, SBOMs, and package (fails on findings)
+        run: infra/scripts/scan_secrets.sh dist/crewquarters-offline_0.1.0-ci_amd64.tar.zst

@@ -1,0 +1,11 @@
+# Vulnerability exceptions for the image-security CI job (Trivy .trivyignore format).
+#
+# Severity policy (docs/security/release-checklist.md):
+#   * CRITICAL with a fixed version available: the build fails. Fix by bumping the base
+#     image digest or the package; an exception here needs the security owner's (Person 3)
+#     review, a reason, and an expiry date (`exp:YYYY-MM-DD`).
+#   * CRITICAL without a fix, and all HIGH: reported (job summary and artifact), triaged at
+#     each release, not blocking.
+#
+# Format: one ID per line, optionally followed by `exp:YYYY-MM-DD`, with a comment above it.
+# No exceptions are in force.
