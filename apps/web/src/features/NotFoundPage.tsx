@@ -7,7 +7,7 @@ export default function NotFoundPage() {
   return (
     <Page>
       <PageHeader title="Page not found" purpose="This address does not match any page in Crewquarters." />
-      <EmptyState icon={Compass} title="Nothing here" action={<ButtonLink to="/" variant="secondary">Go to Overview</ButtonLink>}>
+      <EmptyState icon={Compass} title="Nothing here" action={<ButtonLink to="/" variant="secondary">Go to Home</ButtonLink>}>
         Check the address, or use the navigation.
       </EmptyState>
     </Page>

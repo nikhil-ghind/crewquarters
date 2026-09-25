@@ -47,10 +47,10 @@ test('layout is usable at 1440, 1024, 768 and 390 CSS pixels', async ({ page, mo
       const sidebar = page.locator('.app-shell > .sidebar');
       if (width >= 1280) {
         await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
-        await expect(sidebar.getByText('Overview', { exact: true })).toBeVisible();
+        await expect(sidebar.getByText('Home', { exact: true })).toBeVisible();
       } else if (width >= 768) {
         await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
-        await expect(sidebar.getByRole('link', { name: 'Overview' })).toBeVisible();
+        await expect(sidebar.getByRole('link', { name: 'Home' })).toBeVisible();
       } else {
         await expect(sidebar).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible();

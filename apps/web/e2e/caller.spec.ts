@@ -45,7 +45,7 @@ test('caller approval appears in three places, cancel places no calls, approve c
   await expect(card.root.getByText('If you approve')).toBeVisible();
   await expect(card.button('Approve 3 calls')).toBeVisible();
 
-  // The same request on Activity › Crew Requests and on Overview.
+  // The same request on Activity › Crew Requests and on Home.
   await page.goto('/activity/approvals');
   await expect(new InputRequestCard(page).button('Approve 3 calls')).toBeVisible();
   await page.goto('/');

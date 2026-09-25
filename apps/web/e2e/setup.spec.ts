@@ -71,7 +71,7 @@ test('first-run setup completes without a shell and resumes after refresh and Go
   expect((await download).suggestedFilename()).toMatch(/^crewquarters-diagnostics-.*\.zip$/);
   await page.getByRole('button', { name: 'Finish setup' }).click();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible();
 
   // The wizard is hidden once setup is complete.
   await page.goto('/setup');
