@@ -23,7 +23,9 @@ jobs:
       - run: uv sync --frozen --python 3.12
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run mypy packages/shared_python/src services/control_api/src services/scheduler/src
+      - run: >-
+          uv run mypy packages/shared_python/src services/control_api/src services/scheduler/src
+          services/model_gateway/src services/runtime_daemon/src
 
   platform-tests:
     runs-on: ubuntu-24.04
@@ -49,6 +51,46 @@ jobs:
           CQ_TEST_ADMIN_URL: postgresql+psycopg://crewquarters:crewquarters@127.0.0.1:55432/crewquarters
       - name: Coverage thresholds on security/state modules
         run: uv run python infra/scripts/check_coverage.py coverage.json
+
+  runtime-daemon-py310:
+    # The daemon runs on the DGX OS host (Ubuntu 22.04, Python 3.10) from the .deb.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.11"
+      - name: Daemon tests on Python 3.10 against the runner's Docker engine
+        run: >-
+          PYTHONPATH=services/runtime_daemon/src uv run --python 3.10 --isolated --no-project
+          --with pytest --with pytest-asyncio --with httpx
+          pytest -q --noconftest -p no:cacheprovider services/runtime_daemon/tests
+
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build .deb packages
+        run: |
+          infra/debian/build-deb.sh "0.1.0+${GITHUB_SHA::7}" arm64
+          infra/debian/build-deb.sh "0.1.0+${GITHUB_SHA::7}" amd64
+          mv dist/crewquarters_*_amd64.deb dist/crewquarters_0.1.0_amd64.deb
+      - name: Install, reinstall, remove, purge in ubuntu:22.04
+        run: |
+          docker run --rm -v "$PWD/dist:/pkgs:ro" -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/infra/debian/test-install.sh:/t.sh:ro" ubuntu:22.04 bash /t.sh
+      - name: Verify systemd units
+        run: systemd-analyze verify --man=no infra/systemd/*.service infra/systemd/*.socket || true
+      - name: Validate Compose files
+        run: |
+          docker compose -f infra/compose/compose.yaml -f infra/compose/compose.runtime.yaml config -q
+          CQ_VERSION=0 CQ_SOCKET_GID=1 POSTGRES_PASSWORD=x CQ_SECRET_KEY=x \
+            CQ_CAPABILITY_SIGNING_KEY=x CQ_INTERNAL_SERVICE_TOKEN=x \
+            docker compose -f infra/compose/compose.appliance.yaml config -q
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crewquarters-deb
+          path: dist/crewquarters_*_arm64.deb
 
   secret-scan:
     runs-on: ubuntu-24.04

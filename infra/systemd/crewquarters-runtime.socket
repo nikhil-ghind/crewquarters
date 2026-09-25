@@ -1,0 +1,15 @@
+[Unit]
+Description=Crewquarters runtime daemon socket
+PartOf=crewquarters-runtime.service
+
+[Socket]
+ListenStream=/run/crewquarters/runtime.sock
+SocketUser=crewquarters-runtime
+SocketGroup=crewquarters
+SocketMode=0660
+DirectoryMode=0750
+# Directory ownership (root:crewquarters) comes from /usr/lib/tmpfiles.d/crewquarters.conf.
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

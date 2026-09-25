@@ -4,7 +4,7 @@ COMPOSE := docker compose -f infra/compose/compose.yaml
 OPENAPI_PY_CLIENT := openapi-python-client==0.29.1
 OPENAPI_TS := openapi-typescript@7.4.4
 
-.PHONY: help sync db-up db-down migrate dev-up dev-down dev-bootstrap dev-logs coverage \
+.PHONY: help sync db-up db-down migrate dev-up dev-down dev-bootstrap dev-logs coverage integration-up integration-down deb bundle \
         test test-platform test-contract contracts contracts-check lint fmt image image-arm64
 
 help:
@@ -26,6 +26,17 @@ dev-up: ## Build and start the core stack (API on http://127.0.0.1:8080)
 	$(COMPOSE) up -d --build --wait
 	@echo "Control API: http://127.0.0.1:8080/api/v1/docs"
 	@echo "Create the owner with: make dev-bootstrap"
+
+integration-up: ## Dev stack plus the runtime daemon in a container (real agent/model containers)
+	mkdir -p $${CQ_DATA_DIR:-/tmp/crewquarters-data}
+	docker build -f infra/docker/python.Dockerfile -t crewquarters/platform:dev .
+	# The daemon creates the internal cq-models network the gateway joins.
+	$(COMPOSE) -f infra/compose/compose.runtime.yaml up -d --wait runtime-daemon
+	$(COMPOSE) -f infra/compose/compose.runtime.yaml up -d --wait
+	@echo "Control API: http://127.0.0.1:8080/api/v1/docs (runtime daemon: containerized, dev only)"
+
+integration-down: ## Stop the integration stack
+	$(COMPOSE) -f infra/compose/compose.runtime.yaml down
 
 dev-bootstrap: ## Print a one-time owner setup code for the running stack
 	$(COMPOSE) exec control-api cq-admin bootstrap-token

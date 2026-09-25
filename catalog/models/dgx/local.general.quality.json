@@ -1,0 +1,68 @@
+{
+  "id": "local.general.quality",
+  "family": "local.general",
+  "displayName": "General (quality) - Qwen2.5 32B Instruct AWQ",
+  "backend": "vllm",
+  "source": {
+    "type": "huggingface",
+    "repo": "Qwen/Qwen2.5-32B-Instruct-AWQ",
+    "revision": "5c7cb76a268fc6cfbb9c4777eb24ba6e27f9ee6c",
+    "allowPatterns": [
+      "*.json",
+      "*.safetensors",
+      "*.txt",
+      "*.model",
+      "tokenizer*",
+      "LICENSE"
+    ]
+  },
+  "license": {
+    "name": "Apache-2.0",
+    "gated": false,
+    "url": "https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-AWQ"
+  },
+  "quantization": "awq-int4",
+  "launch": {
+    "image": "nvcr.io/nvidia/vllm@sha256:15f380ad9c32f0ac57ac16e4b778c6f733c88b9ffe3a936035d0a59ad17b1aab",
+    "gpu": true,
+    "ipcHost": true,
+    "port": 8000,
+    "healthPath": "/v1/models",
+    "startupTimeoutSeconds": 900,
+    "args": [
+      "vllm",
+      "serve",
+      "{model_path}",
+      "--served-model-name",
+      "{served_model_name}",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "{port}",
+      "--max-model-len",
+      "8192",
+      "--gpu-memory-utilization",
+      "0.45",
+      "--enable-prefix-caching"
+    ],
+    "env": {
+      "HF_HUB_OFFLINE": "1",
+      "VLLM_NO_USAGE_STATS": "1"
+    }
+  },
+  "memory": {
+    "weightBytes": 21474836480,
+    "startupPeakBytes": 64424509440,
+    "validated": false
+  },
+  "contextLimit": 8192,
+  "capabilities": [
+    "chat",
+    "structured_output",
+    "streaming"
+  ],
+  "validation": {
+    "status": "candidate",
+    "note": "Pinned candidate. Confirm the NGC image tag against NVIDIA's DGX Spark vLLM recipe and measure memory on the target GB10 before the demo (PLAN.md section 8.1)."
+  }
+}

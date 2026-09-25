@@ -71,6 +71,9 @@ def alembic_config(url: str) -> Config:
 def empty_database_url() -> Iterator[str]:
     with fresh_database() as url:
         yield url
+        for cached in list(_SYNC_ENGINES):
+            if cached == url:
+                _SYNC_ENGINES.pop(cached).dispose()
 
 
 @pytest.fixture(scope="session")
@@ -91,6 +94,7 @@ def settings(database_url: str) -> Settings:
         worker_concurrency=2,
         auth_rate_limit_per_minute=1000,
         fake_connections=["google", "twilio", "openai", "anthropic"],
+        model_gateway_adapter="fake",
     )
 
 
@@ -106,27 +110,33 @@ def sessions(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return session_factory(engine)
 
 
+_SYNC_ENGINES: dict[str, Any] = {}
+
+
 @pytest.fixture(autouse=True)
-async def clean_db(request: pytest.FixtureRequest) -> AsyncIterator[None]:
+def clean_db(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Truncate every table before each database test (synchronous, so it never needs
+    the async engine from inside a running event loop)."""
     if "no_db" in request.keywords:
         yield
         return
-    engine: AsyncEngine = request.getfixturevalue("engine")
-    async with engine.begin() as conn:
+    url = request.getfixturevalue("database_url")
+    engine = _SYNC_ENGINES.get(url)
+    if engine is None:
+        engine = _SYNC_ENGINES[url] = create_sync_engine(url)
+    with engine.begin() as conn:
         tables = (
-            (
-                await conn.execute(
-                    text(
-                        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
-                        "AND tablename <> 'alembic_version'"
-                    )
+            conn.execute(
+                text(
+                    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
+                    "AND tablename <> 'alembic_version'"
                 )
             )
             .scalars()
             .all()
         )
         if tables:
-            await conn.execute(text(f"TRUNCATE {', '.join(tables)} RESTART IDENTITY CASCADE"))
+            conn.execute(text(f"TRUNCATE {', '.join(tables)} RESTART IDENTITY CASCADE"))
     yield
 
 

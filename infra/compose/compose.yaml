@@ -1,6 +1,9 @@
-# Crewquarters core Compose stack (laptop dev profile).
-# Stage 1 walking skeleton by Nikhil Hiro Ghind (Person 1). Vineet Kumar (Person 5) owns
-# laptop Compose from Stage 2 on; Akshay Sunil Navani (Person 2) owns the dgx profile.
+# Crewquarters Compose stack for laptops (dev profile).
+#   make dev-up          core stack; model gateway uses its in-process mock backend and the
+#                        scheduler uses the fake agent runtime (no Docker access needed)
+#   make integration-up  adds compose.runtime.yaml: the runtime daemon in a container, so
+#                        real hardened agent containers and mock model-server containers run
+# The appliance uses compose.appliance.yaml from the .deb instead (Akshay Sunil Navani).
 name: crewquarters
 
 x-app-env: &app-env
@@ -11,6 +14,8 @@ x-app-env: &app-env
   CQ_INTERNAL_SERVICE_TOKEN: ${CQ_INTERNAL_SERVICE_TOKEN:-dev-insecure-internal-token-change-me-0000}
   CQ_CATALOG_DIR: /app/catalog/dev
   CQ_RUNTIME_ADAPTER: fake
+  CQ_MODEL_GATEWAY_URL: http://model-gateway:8090
+  CQ_CHAT_CLIENT_TOKEN: ${CQ_CHAT_CLIENT_TOKEN:-dev-insecure-chat-token-change-me-000000000}
 
 services:
   postgres:
@@ -53,6 +58,26 @@ services:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/api/v1/health/ready')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  model-gateway:
+    image: crewquarters/platform:dev
+    command: ["cq-gateway"]
+    environment:
+      <<: *app-env
+      CQ_GATEWAY_HOST: 0.0.0.0
+      CQ_GATEWAY_RUNTIME: inprocess
+      CQ_GATEWAY_CONTROL_API_URL: http://control-api:8080
+      CQ_GATEWAY_SYSTEM_RESERVE_BYTES: "2147483648"
+      CQ_GATEWAY_MAX_SERVING_BYTES: "8589934592"
+      CQ_GATEWAY_LOAD_SAFETY_MARGIN_BYTES: "1073741824"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8090/internal/v1/health')"]
       interval: 5s
       timeout: 3s
       retries: 20

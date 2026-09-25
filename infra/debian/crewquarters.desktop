@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Crewquarters
+Comment=Your own local AI crew
+Exec=/usr/share/crewquarters/launch.sh
+Icon=utilities-system-monitor
+Terminal=false
+Categories=Utility;System;

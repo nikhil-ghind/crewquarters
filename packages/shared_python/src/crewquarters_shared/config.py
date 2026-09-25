@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     secret_key: SecretStr = SecretStr("dev-insecure-secret-key-change-me-0000000000")
     capability_signing_key: SecretStr = SecretStr("dev-insecure-capability-key-change-me-00000")
     internal_service_token: SecretStr = SecretStr("dev-insecure-internal-token-change-me-0000")
+    # Held only by the control API and the model gateway: authorizes chat leases/inference.
+    chat_client_token: SecretStr = SecretStr("dev-insecure-chat-token-change-me-000000000")
 
     public_origins: list[str] = ["http://localhost:8080", "http://127.0.0.1:8080"]
     cookie_secure: bool = False
@@ -43,7 +45,8 @@ class Settings(BaseSettings):
 
     runtime_adapter: str = Field("fake", description="fake | daemon")
     runtime_socket: Path = Path("/run/crewquarters/runtime.sock")
-    model_gateway_adapter: str = "fake"
+    model_gateway_adapter: str = Field("http", description="http (model gateway) | fake (tests)")
+    model_gateway_url: str = "http://model-gateway:8090"
     broker_adapter: str = "fake"
     fake_connections: list[str] = ["google", "twilio", "openai", "anthropic"]
 

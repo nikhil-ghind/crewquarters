@@ -275,6 +275,7 @@ One database is used. Alembic owns migrations. The `vector` extension is enabled
 | `document_chunks` | document_id, ordinal, text, token_count, source locator, embedding vector; HNSW index after corpus threshold |
 | `chat_sessions` | user_id, model_profile, kb_id, enabled, active_lease_id, timestamps |
 | `chat_messages` | session_id, role, content, citations JSON, model/provider metadata, created_at |
+| `llm_usage` | day, provider, model, holder type/id, input/output tokens, latency, outcome, request_id; no prompts; feeds budgets and metrics |
 | `provider_profiles` | owner_id, provider, display name, encrypted_secret_id, allowed models, budgets, enabled |
 | `telephony_calls` | run_id, idempotency key, provider SID, destination hash/last4, state, transcript, timestamps; never log full number |
 | `audit_events` | actor, action, target, request_id, security metadata, created_at; append-only application policy |
@@ -286,7 +287,7 @@ Table ownership (the owner designs the table and its access module; Nikhil Hiro 
 | Owner | Tables |
 | --- | --- |
 | Nikhil Hiro Ghind (Person 1) | `users`, `sessions`, `settings`, `agent_catalog_entries`, `agent_versions`, `agent_installations`, `agent_runs`, `run_attempts`, `run_events`, `input_requests`, `idempotency_actions`, `schedules`, `jobs`, `idempotency_records`, `audit_events` |
-| Akshay Sunil Navani (Person 2) | `model_catalog`, `model_installations`, `model_instances`, `model_leases` |
+| Akshay Sunil Navani (Person 2) | `model_catalog`, `model_installations`, `model_instances`, `model_leases`, `chat_sessions`, `chat_messages`, `llm_usage` |
 | Nikhil Sajan Khaneja (Person 3) | `encrypted_secrets`, `oauth_connections`, `provider_profiles`, `telephony_calls`, `knowledge_bases`, `documents`, `document_chunks` |
 | Srija Taduri (Person 4) | none (UI only) |
 | Vineet Kumar (Person 5) | none; uses APIs and test fixtures |

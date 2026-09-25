@@ -1,0 +1,1 @@
+"""Crewquarters model gateway."""

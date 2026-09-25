@@ -111,3 +111,26 @@ async def test_emitted_run_events_conform_to_event_schema(
         for event in events:
             errors = list(validator.iter_errors(event))
             assert errors == [], f"{event['type']}: {errors[0].message}"
+
+
+@pytest.mark.no_db
+def test_model_catalogs_are_pinned_and_consistent() -> None:
+    """Every bundled file matches its pinned SHA-256; every launch image is digest-pinned;
+    Hugging Face sources pin full commit hashes; ids match file names."""
+    import hashlib
+
+    for profile_path in (ROOT / "catalog/models").rglob("*.json"):
+        profile = json.loads(profile_path.read_text())
+        assert profile["id"] == profile_path.stem
+        assert "@sha256:" in profile["launch"]["image"], profile_path
+        source = profile["source"]
+        if source["type"] == "bundled":
+            for item in source["files"]:
+                data = (profile_path.parent / item["from"]).read_bytes()
+                assert hashlib.sha256(data).hexdigest() == item["sha256"], profile_path
+                assert len(data) == item["size"]
+        elif source["type"] == "huggingface":
+            assert len(source["revision"]) == 40, profile_path
+        assert profile["memory"]["startupPeakBytes"] > 0
+    ids = {p.stem for p in (ROOT / "catalog/models/dgx").glob("*.json")}
+    assert ids == {p.stem for p in (ROOT / "catalog/models/dev").glob("*.json")}

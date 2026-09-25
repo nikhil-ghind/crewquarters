@@ -1,24 +1,25 @@
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import quote
+from uuid import UUID
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.chat_session_out import ChatSessionOut
 from ...models.error_response import ErrorResponse
-from ...models.model_out import ModelOut
 from ...types import Response
 
 
 def _get_kwargs(
-    model_id: str,
+    session_id: UUID,
 ) -> dict[str, Any]:
 
     _kwargs: dict[str, Any] = {
         "method": "post",
-        "url": "/api/v1/models/{model_id}/install".format(
-            model_id=quote(str(model_id), safe=""),
+        "url": "/api/v1/chat/sessions/{session_id}/disable".format(
+            session_id=quote(str(session_id), safe=""),
         ),
     }
 
@@ -27,11 +28,11 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> ErrorResponse | ModelOut | None:
-    if response.status_code == 202:
-        response_202 = ModelOut.from_dict(response.json())
+) -> ChatSessionOut | ErrorResponse | None:
+    if response.status_code == 200:
+        response_200 = ChatSessionOut.from_dict(response.json())
 
-        return response_202
+        return response_200
 
     if response.status_code == 404:
         response_404 = ErrorResponse.from_dict(response.json())
@@ -56,7 +57,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[ErrorResponse | ModelOut]:
+) -> Response[ChatSessionOut | ErrorResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -66,25 +67,25 @@ def _build_response(
 
 
 def sync_detailed(
-    model_id: str,
+    session_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> Response[ErrorResponse | ModelOut]:
-    """Download a model to disk
+) -> Response[ChatSessionOut | ErrorResponse]:
+    """Disable chat: releases the model lease; history is kept
 
     Args:
-        model_id (str):
+        session_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | ModelOut]
+        Response[ChatSessionOut | ErrorResponse]
     """
 
     kwargs = _get_kwargs(
-        model_id=model_id,
+        session_id=session_id,
     )
 
     response = client.get_httpx_client().request(
@@ -95,49 +96,49 @@ def sync_detailed(
 
 
 def sync(
-    model_id: str,
+    session_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> ErrorResponse | ModelOut | None:
-    """Download a model to disk
+) -> ChatSessionOut | ErrorResponse | None:
+    """Disable chat: releases the model lease; history is kept
 
     Args:
-        model_id (str):
+        session_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | ModelOut
+        ChatSessionOut | ErrorResponse
     """
 
     return sync_detailed(
-        model_id=model_id,
+        session_id=session_id,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
-    model_id: str,
+    session_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> Response[ErrorResponse | ModelOut]:
-    """Download a model to disk
+) -> Response[ChatSessionOut | ErrorResponse]:
+    """Disable chat: releases the model lease; history is kept
 
     Args:
-        model_id (str):
+        session_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | ModelOut]
+        Response[ChatSessionOut | ErrorResponse]
     """
 
     kwargs = _get_kwargs(
-        model_id=model_id,
+        session_id=session_id,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -146,26 +147,26 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    model_id: str,
+    session_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> ErrorResponse | ModelOut | None:
-    """Download a model to disk
+) -> ChatSessionOut | ErrorResponse | None:
+    """Disable chat: releases the model lease; history is kept
 
     Args:
-        model_id (str):
+        session_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | ModelOut
+        ChatSessionOut | ErrorResponse
     """
 
     return (
         await asyncio_detailed(
-            model_id=model_id,
+            session_id=session_id,
             client=client,
         )
     ).parsed

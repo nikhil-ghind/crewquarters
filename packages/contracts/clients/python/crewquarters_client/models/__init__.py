@@ -26,6 +26,16 @@ from .catalog_agent_out_source import CatalogAgentOutSource
 from .catalog_agent_out_truststatus import CatalogAgentOutTruststatus
 from .catalog_import_in import CatalogImportIn
 from .catalog_import_in_manifest import CatalogImportInManifest
+from .chat_message_in import ChatMessageIn
+from .chat_message_out import ChatMessageOut
+from .chat_message_out_citations_item import ChatMessageOutCitationsItem
+from .chat_message_out_role import ChatMessageOutRole
+from .chat_message_out_status import ChatMessageOutStatus
+from .chat_message_out_usage_type_0 import ChatMessageOutUsageType0
+from .chat_session_create_in import ChatSessionCreateIn
+from .chat_session_create_in_retrievalmode import ChatSessionCreateInRetrievalmode
+from .chat_session_detail_out import ChatSessionDetailOut
+from .chat_session_out import ChatSessionOut
 from .connection_out import ConnectionOut
 from .connection_out_provider import ConnectionOutProvider
 from .connection_out_status import ConnectionOutStatus
@@ -65,13 +75,23 @@ from .internal_run_out_permissions import InternalRunOutPermissions
 from .internal_run_out_state import InternalRunOutState
 from .list_runs_api_v1_runs_get_state_type_0_item import ListRunsApiV1RunsGetStateType0Item
 from .login_in import LoginIn
+from .memory_out import MemoryOut
+from .memory_out_models_item import MemoryOutModelsItem
+from .model_cancel_install_in import ModelCancelInstallIn
+from .model_download_out import ModelDownloadOut
+from .model_lease_out import ModelLeaseOut
+from .model_lease_out_holdertype import ModelLeaseOutHoldertype
 from .model_out import ModelOut
-from .model_out_active_leases_item import ModelOutActiveLeasesItem
+from .model_out_downloadstate import ModelOutDownloadstate
+from .model_out_error_type_0 import ModelOutErrorType0
 from .model_out_license_type_0 import ModelOutLicenseType0
+from .model_out_memorystate import ModelOutMemorystate
 from .model_state_in import ModelStateIn
+from .model_unload_in import ModelUnloadIn
 from .occurrence_out import OccurrenceOut
 from .page_audit_event_out import PageAuditEventOut
 from .page_catalog_agent_out import PageCatalogAgentOut
+from .page_chat_session_out import PageChatSessionOut
 from .page_connection_out import PageConnectionOut
 from .page_input_request_out import PageInputRequestOut
 from .page_installation_out import PageInstallationOut
@@ -147,6 +167,16 @@ __all__ = (
     "CatalogAgentOutTruststatus",
     "CatalogImportIn",
     "CatalogImportInManifest",
+    "ChatMessageIn",
+    "ChatMessageOut",
+    "ChatMessageOutCitationsItem",
+    "ChatMessageOutRole",
+    "ChatMessageOutStatus",
+    "ChatMessageOutUsageType0",
+    "ChatSessionCreateIn",
+    "ChatSessionCreateInRetrievalmode",
+    "ChatSessionDetailOut",
+    "ChatSessionOut",
     "ConnectionOut",
     "ConnectionOutProvider",
     "ConnectionOutStatus",
@@ -184,13 +214,23 @@ __all__ = (
     "InternalRunOutState",
     "ListRunsApiV1RunsGetStateType0Item",
     "LoginIn",
+    "MemoryOut",
+    "MemoryOutModelsItem",
+    "ModelCancelInstallIn",
+    "ModelDownloadOut",
+    "ModelLeaseOut",
+    "ModelLeaseOutHoldertype",
     "ModelOut",
-    "ModelOutActiveLeasesItem",
+    "ModelOutDownloadstate",
+    "ModelOutErrorType0",
     "ModelOutLicenseType0",
+    "ModelOutMemorystate",
     "ModelStateIn",
+    "ModelUnloadIn",
     "OccurrenceOut",
     "PageAuditEventOut",
     "PageCatalogAgentOut",
+    "PageChatSessionOut",
     "PageConnectionOut",
     "PageInputRequestOut",
     "PageInstallationOut",

@@ -375,15 +375,17 @@ docs/
 
 ## Development
 
-The control plane (contracts, database, auth, API, job queue, scheduler, and run lifecycle) is implemented; see [docs/control-plane.md](./docs/control-plane.md). With `uv`, Docker, and Node installed:
+The control plane ([docs/control-plane.md](./docs/control-plane.md)), the model gateway ([docs/model-gateway.md](./docs/model-gateway.md)), the runtime daemon ([docs/runtime-daemon.md](./docs/runtime-daemon.md)), and the appliance package ([docs/runbooks/dgx.md](./docs/runbooks/dgx.md)) are implemented. With `uv`, Docker, and Node installed:
 
 ```bash
 make sync            # install the Python workspace
-make dev-up          # PostgreSQL + control API + scheduler (fake runtime) on http://127.0.0.1:8080
+make dev-up          # PostgreSQL + control API + scheduler + model gateway (mock models) on :8080
+make integration-up  # adds the runtime daemon: real hardened agent and model containers (dev only)
 make dev-bootstrap   # print a one-time owner setup code
 make test-platform   # unit, integration, and contract tests
 make lint            # ruff + mypy (strict)
 make contracts       # regenerate packages/contracts/openapi.yaml and clients
+infra/debian/build-deb.sh 0.1.0 arm64   # appliance package (see docs/runbooks/dgx.md)
 ```
 
 Architecture decisions are recorded in [docs/adr](./docs/adr) and every `CQ_*` setting is listed in [docs/configuration.md](./docs/configuration.md).

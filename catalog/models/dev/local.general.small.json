@@ -1,0 +1,58 @@
+{
+  "id": "local.general.small",
+  "family": "local.general",
+  "displayName": "General (small) - mock",
+  "backend": "mock",
+  "source": {
+    "type": "bundled",
+    "files": [
+      {
+        "path": "mock_openai_server.py",
+        "from": "files/mock_openai_server.py",
+        "sha256": "2c16e9f68c5abde38eac2d12a84d0d9162f31221bc953fd05f2f7f8f1af12294",
+        "size": 5930
+      }
+    ]
+  },
+  "license": {
+    "name": "Apache-2.0",
+    "gated": false,
+    "url": null
+  },
+  "quantization": "none",
+  "launch": {
+    "image": "python@sha256:4c47124a8391cb7a9f571164147d154777cf012a4ece5f86097130d7a4478111",
+    "gpu": false,
+    "ipcHost": false,
+    "port": 8000,
+    "healthPath": "/v1/models",
+    "startupTimeoutSeconds": 60,
+    "user": "65532:65532",
+    "args": [
+      "python",
+      "{model_path}/mock_openai_server.py",
+      "--served-model-name",
+      "{served_model_name}",
+      "--port",
+      "{port}",
+      "--startup-delay",
+      "1.0"
+    ],
+    "env": {}
+  },
+  "memory": {
+    "weightBytes": 5930,
+    "startupPeakBytes": 2147483648,
+    "validated": true
+  },
+  "contextLimit": 8192,
+  "capabilities": [
+    "chat",
+    "structured_output",
+    "streaming"
+  ],
+  "validation": {
+    "status": "mock",
+    "note": "Deterministic mock for laptops and CI; no GPU."
+  }
+}

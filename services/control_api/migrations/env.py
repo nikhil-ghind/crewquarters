@@ -9,7 +9,8 @@ from __future__ import annotations
 from alembic import context
 from sqlalchemy import create_engine, pool, text
 
-import crewquarters_shared.db.models  # noqa: F401 - register tables
+import crewquarters_shared.db.models
+import crewquarters_shared.db.models_gateway  # noqa: F401 - register tables
 from crewquarters_shared.config import get_settings
 from crewquarters_shared.db.base import Base
 

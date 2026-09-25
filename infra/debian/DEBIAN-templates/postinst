@@ -1,0 +1,96 @@
+#!/bin/sh
+# Short and non-interactive (PLAN.md section 14.2): users, directories, secrets, units.
+# Passwords, API keys, OAuth and model downloads happen in the browser setup wizard.
+set -e
+[ "$1" = "configure" ] || exit 0
+VERSION="@VERSION@"
+
+getent group crewquarters >/dev/null || addgroup --system crewquarters >/dev/null
+getent passwd crewquarters-runtime >/dev/null || adduser --system --group --no-create-home \
+    --home /var/lib/crewquarters --shell /usr/sbin/nologin crewquarters-runtime >/dev/null
+adduser crewquarters-runtime crewquarters >/dev/null 2>&1 || true
+if getent group docker >/dev/null; then
+    adduser crewquarters-runtime docker >/dev/null 2>&1 || true
+fi
+
+install -d -m 0750 -o root -g crewquarters /etc/crewquarters
+install -d -m 0755 /var/lib/crewquarters
+install -d -m 0750 -o crewquarters-runtime -g crewquarters-runtime \
+    /var/lib/crewquarters/models /var/lib/crewquarters/runs
+install -d -m 0700 -o 999 -g 999 /var/lib/crewquarters/postgres
+install -d -m 0750 -o root -g crewquarters /var/lib/crewquarters/documents
+install -d -m 0700 /var/lib/crewquarters/backups
+install -d -m 0750 /var/log/crewquarters
+
+gen() { head -c 48 /dev/urandom | base64 | tr -d '=+/\n' | cut -c1-43; }
+# A purge that kept the data also kept its secrets (the database password and master key
+# must match the preserved data); restore them instead of generating new ones.
+RETAINED=/var/lib/crewquarters/.retained-config
+if [ ! -f /etc/crewquarters/secrets.env ] && [ -f "$RETAINED/secrets.env" ]; then
+    cp -p "$RETAINED/secrets.env" /etc/crewquarters/secrets.env
+    [ -f "$RETAINED/master.key" ] && cp -p "$RETAINED/master.key" /etc/crewquarters/master.key
+    rm -rf "$RETAINED"
+    echo "crewquarters: restored secrets retained with the data directory."
+elif [ ! -f /etc/crewquarters/secrets.env ] && [ -d /var/lib/crewquarters/postgres/base ]; then
+    echo "crewquarters: ERROR existing database found without its secrets." >&2
+    echo "  Restore /etc/crewquarters/secrets.env, or remove /var/lib/crewquarters/postgres." >&2
+    exit 1
+fi
+if [ ! -f /etc/crewquarters/secrets.env ]; then
+    old_umask=$(umask); umask 027
+    token=$(gen)
+    {
+        echo "# Generated at install. Do not share. Rotating these invalidates sessions/tokens."
+        echo "CQ_SECRET_KEY=$(gen)"
+        echo "CQ_CAPABILITY_SIGNING_KEY=$(gen)"
+        echo "CQ_INTERNAL_SERVICE_TOKEN=$token"
+        echo "POSTGRES_PASSWORD=$(gen)"
+        echo "CQ_CHAT_CLIENT_TOKEN=$(gen)"
+    } > /etc/crewquarters/secrets.env
+    umask "$old_umask"
+fi
+# Older installs: add the chat credential if missing.
+grep -q '^CQ_CHAT_CLIENT_TOKEN=' /etc/crewquarters/secrets.env \
+    || echo "CQ_CHAT_CLIENT_TOKEN=$(gen)" >> /etc/crewquarters/secrets.env
+# The daemon's token file always mirrors the service token (recreated if missing).
+( umask 077; sed -n 's/^CQ_INTERNAL_SERVICE_TOKEN=//p' /etc/crewquarters/secrets.env \
+    | tr -d '\n' > /etc/crewquarters/runtime-token )
+# The socket group id is recorded on every configure (the group may be recreated).
+sed -i '/^CQ_SOCKET_GID=/d' /etc/crewquarters/secrets.env
+echo "CQ_SOCKET_GID=$(getent group crewquarters | cut -d: -f3)" >> /etc/crewquarters/secrets.env
+chown root:crewquarters /etc/crewquarters/secrets.env && chmod 0640 /etc/crewquarters/secrets.env
+chown root:crewquarters-runtime /etc/crewquarters/runtime-token && chmod 0640 /etc/crewquarters/runtime-token
+# Device master key for the secret store (Nikhil Sajan Khaneja, Person 3). Never backed up
+# by default (PLAN.md section 10.2).
+if [ ! -f /etc/crewquarters/master.key ]; then
+    ( umask 077; head -c 32 /dev/urandom > /etc/crewquarters/master.key )
+fi
+chown root:crewquarters /etc/crewquarters/master.key && chmod 0640 /etc/crewquarters/master.key
+
+if command -v systemd-tmpfiles >/dev/null 2>&1; then
+    systemd-tmpfiles --create /usr/lib/tmpfiles.d/crewquarters.conf || true
+fi
+install -d -m 0750 -o root -g crewquarters /run/crewquarters
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload
+    systemctl enable crewquarters-netguard.service crewquarters-runtime.socket crewquarters.service >/dev/null 2>&1 || true
+    systemctl restart crewquarters-netguard.service || echo "crewquarters: WARNING netguard failed" >&2
+    systemctl restart crewquarters-runtime.socket || true
+    systemctl try-restart crewquarters-runtime.service || true
+    if docker image inspect "crewquarters/platform:$VERSION" >/dev/null 2>&1; then
+        systemctl restart --no-block crewquarters.service || true
+    else
+        echo "crewquarters: platform images are not loaded yet."
+        echo "  Offline bundle:  sudo crewquarters load-bundle crewquarters-offline_${VERSION}_*.tar.zst"
+        echo "  Then:            sudo systemctl start crewquarters.service"
+    fi
+fi
+
+PYTHONPATH=/usr/lib/crewquarters/python python3 -m crewquarters_runtime.cli preflight --appliance \
+    || echo "crewquarters: WARNING preflight reported problems (see above); setup will re-check." >&2
+
+echo
+echo "Crewquarters $VERSION installed."
+echo "  Open the setup UI:     http://localhost:8080/setup  (or the Crewquarters desktop launcher)"
+echo "  One-time owner code:   sudo crewquarters bootstrap-token"
+exit 0

@@ -16,7 +16,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from crewquarters_api import catalog, errors, security
 from crewquarters_api.deps import AppState
-from crewquarters_api.routers import agents, auth, internal, platform, runs, schedules
+from crewquarters_api.gateway_client import GatewayClient
+from crewquarters_api.routers import agents, auth, chat, internal, platform, runs, schedules
 from crewquarters_shared.clients import (
     ConnectionStatusClient,
     FakeConnectionStatusClient,
@@ -44,16 +45,25 @@ SECURITY_HEADERS = {
 
 
 def _status_clients(settings: Settings) -> tuple[ModelStatusClient, ConnectionStatusClient]:
-    """Only fakes exist until the model gateway and broker publish their internal APIs."""
-    for name, value in (
-        ("CQ_MODEL_GATEWAY_ADAPTER", settings.model_gateway_adapter),
-        ("CQ_BROKER_ADAPTER", settings.broker_adapter),
-    ):
-        if value != "fake":
-            raise RuntimeError(
-                f"{name}={value!r} is not available yet; only 'fake' is implemented."
-            )
-    return FakeModelStatusClient(), FakeConnectionStatusClient(settings.fake_connections)
+    """Model status comes from the model gateway. Connection status still uses the fake
+    until the capability broker (Nikhil Sajan Khaneja, Person 3) publishes its API."""
+    models: ModelStatusClient
+    if settings.model_gateway_adapter == "http":
+        models = GatewayClient(
+            settings.model_gateway_url,
+            settings.internal_service_token.get_secret_value(),
+            chat_token=settings.chat_client_token.get_secret_value(),
+        )
+    elif settings.model_gateway_adapter == "fake":
+        models = FakeModelStatusClient()
+    else:
+        raise RuntimeError(f"Unknown CQ_MODEL_GATEWAY_ADAPTER={settings.model_gateway_adapter!r}")
+    if settings.broker_adapter != "fake":
+        raise RuntimeError(
+            f"CQ_BROKER_ADAPTER={settings.broker_adapter!r} is not available yet; "
+            "only 'fake' is implemented."
+        )
+    return models, FakeConnectionStatusClient(settings.fake_connections)
 
 
 class BodySizeLimit:
@@ -159,6 +169,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         if runtime is not None:
             await runtime.close()
+        if isinstance(models, GatewayClient):
+            await models.close()
         await engine.dispose()
 
     app = FastAPI(
@@ -215,7 +227,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.headers.setdefault("Cache-Control", "no-store")
         return response
 
-    for router in (auth.router, agents.router, runs.router, schedules.router, platform.router):
+    for router in (
+        auth.router,
+        agents.router,
+        runs.router,
+        schedules.router,
+        platform.router,
+        chat.router,
+    ):
         app.include_router(router, prefix=API_PREFIX)
     app.include_router(internal.router, prefix=INTERNAL_PREFIX)
     app.add_middleware(BodySizeLimit, limit=settings.max_body_bytes)

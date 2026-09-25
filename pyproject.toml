@@ -7,18 +7,28 @@ dependencies = [
     "crewquarters-shared",
     "crewquarters-control-api",
     "crewquarters-scheduler",
+    "crewquarters-runtime",
+    "crewquarters-gateway",
 ]
 
 [tool.uv]
 package = false
 
 [tool.uv.workspace]
-members = ["packages/shared_python", "services/control_api", "services/scheduler"]
+members = [
+    "packages/shared_python",
+    "services/control_api",
+    "services/scheduler",
+    "services/runtime_daemon",
+    "services/model_gateway",
+]
 
 [tool.uv.sources]
 crewquarters-shared = { workspace = true }
 crewquarters-control-api = { workspace = true }
 crewquarters-scheduler = { workspace = true }
+crewquarters-runtime = { workspace = true }
+crewquarters-gateway = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -35,17 +45,28 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["packages/contracts/clients", "services/control_api/migrations/versions"]
+extend-exclude = [
+    "packages/contracts/clients",
+    "services/control_api/migrations/versions",
+    "catalog",  # bundled model files are pinned by SHA-256
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "SIM", "RUF"]
 ignore = ["S101", "B008", "RUF012", "UP046"]  # UP046: keep Generic[T] for pydantic models
 
 [tool.ruff.lint.isort]
-known-first-party = ["crewquarters_shared", "crewquarters_api", "crewquarters_scheduler", "conftest"]
+known-first-party = [
+    "crewquarters_shared",
+    "crewquarters_api",
+    "crewquarters_scheduler",
+    "crewquarters_runtime",
+    "crewquarters_gateway",
+    "conftest",
+]
 
 [tool.ruff.lint.per-file-ignores]
-"**/tests/**" = ["S105", "S106", "S311"]
+"**/tests/**" = ["S105", "S106", "S311", "S603", "S607", "E501"]
 "**/migrations/**" = ["E501"]
 
 [tool.mypy]
@@ -59,10 +80,32 @@ exclude = ["migrations/", "tests/"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
-markers = ["no_db: test does not need the database"]
-testpaths = ["packages/shared_python/tests", "services/control_api/tests", "services/scheduler/tests", "tests/contract"]
+markers = [
+    "no_db: test does not need the database",
+    "docker: test needs a local Docker engine",
+]
+testpaths = [
+    "packages/shared_python/tests",
+    "services/control_api/tests",
+    "services/scheduler/tests",
+    "services/runtime_daemon/tests",
+    "services/model_gateway/tests",
+    "tests/contract",
+    "tests/integration",
+]
 
 [tool.coverage.run]
 concurrency = ["greenlet", "thread"]
-source = ["crewquarters_shared", "crewquarters_api", "crewquarters_scheduler"]
-omit = ["*/crewquarters_api/admin.py", "*/crewquarters_scheduler/main.py", "*/crewquarters_api/main.py"]
+source = [
+    "crewquarters_shared",
+    "crewquarters_api",
+    "crewquarters_scheduler",
+    "crewquarters_runtime",
+    "crewquarters_gateway",
+]
+omit = [
+    "*/crewquarters_api/admin.py",
+    "*/crewquarters_scheduler/main.py",
+    "*/crewquarters_api/main.py",
+    "*/crewquarters_runtime/cli.py",  # exercised by the .deb install test and socket activation
+]

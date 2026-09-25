@@ -1,0 +1,14 @@
+Package: crewquarters
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: Crewquarters <crewquarters@localhost>
+Section: admin
+Priority: optional
+Depends: python3 (>= 3.10), adduser, iptables, curl, zstd
+Recommends: docker-ce | docker.io, docker-compose-plugin | docker-compose-v2
+Homepage: https://github.com/nikhil-ghind/crewquarters
+Description: Crewquarters - your own local AI crew
+ Local AI-agent platform for NVIDIA GB10 / DGX Spark-class appliances. Installs the
+ host runtime daemon (the only component with Docker access), the administration CLI,
+ systemd units, the appliance Compose stack, the pinned model catalog, and a desktop
+ launcher. Model downloads, credentials and agent setup happen in the browser.

@@ -134,3 +134,11 @@ The database itself enforces two rules: `agent_versions` rows are immutable, and
 
 - The internal run view (`GET /internal/v1/runs/{id}`) includes `capabilityTokenId`, the `jti` of the current attempt's token. The broker must reject any token whose `jti` differs from it, which revokes tokens from earlier attempts.
 - `POST /internal/v1/runs/{id}/input-requests` returns `403 PERMISSION_DENIED` unless the run's approved permissions include `userInput`. The control API enforces this in addition to the broker.
+
+## Real services behind the control API
+
+- **Models and chat.** `CQ_MODEL_GATEWAY_ADAPTER=http` (the default) sends every model route and the chat API to the model gateway (`crewquarters_api/gateway_client.py`). The fake exists only for control-API unit tests.
+  - Model routes: `GET/DELETE /api/v1/models/{id}`, `/install`, `/install/cancel`, `/load`, `/unload`, `/events`, and `/api/v1/system/memory`.
+  - Chat API: `/api/v1/chat/sessions...`.
+- **Agent runtime.** With `CQ_RUNTIME_ADAPTER=daemon`, the scheduler starts real hardened containers through the runtime daemon, and system status reads GPU and NVIDIA runtime checks from it. `make integration-up` runs this on a laptop.
+- **Connections.** Connection status still uses the fake until the capability broker (Nikhil Sajan Khaneja, Person 3) exists. `CQ_BROKER_ADAPTER` accepts only `fake`.

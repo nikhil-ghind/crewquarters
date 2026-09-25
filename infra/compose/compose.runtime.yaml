@@ -1,0 +1,74 @@
+# Laptop integration override: runs the runtime daemon in a container so the stack
+# starts real hardened agent containers and mock model-server containers.
+#
+# DEVELOPMENT ONLY. On the appliance the daemon is a host systemd service with a
+# dedicated user (infra/systemd); mounting the Docker socket into a container is
+# never done there.
+#
+# Model files are written by the daemon and bind-mounted into model containers by the
+# host's Docker engine, so CQ_DATA_DIR must be the same path inside and outside.
+services:
+  runtime-daemon:
+    image: crewquarters/platform:dev
+    command: ["crewquarters-runtime", "serve"]
+    user: "0:0"
+    environment:
+      CQ_INTERNAL_SERVICE_TOKEN: ${CQ_INTERNAL_SERVICE_TOKEN:-dev-insecure-internal-token-change-me-0000}
+      CQ_RUNTIME_SOCKET: /run/crewquarters/runtime.sock
+      CQ_RUNTIME_SOCKET_MODE: "0666"
+      CQ_RUNTIME_DATA_DIR: ${CQ_DATA_DIR:-/tmp/crewquarters-data}
+      CQ_RUNTIME_MODEL_PROFILES: /app/catalog/models/dev
+      CQ_RUNTIME_ISOLATE_MODEL_NETWORK: "true"
+      CQ_RUNTIME_DISK_RESERVE_BYTES: "1073741824"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${CQ_DATA_DIR:-/tmp/crewquarters-data}:${CQ_DATA_DIR:-/tmp/crewquarters-data}
+      - runtime-socket:/run/crewquarters
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/crewquarters/runtime.sock"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  control-api:
+    environment:
+      CQ_RUNTIME_ADAPTER: daemon
+      CQ_RUNTIME_SOCKET: /run/crewquarters/runtime.sock
+    volumes:
+      - runtime-socket:/run/crewquarters
+    depends_on:
+      runtime-daemon:
+        condition: service_healthy
+
+  scheduler:
+    environment:
+      CQ_RUNTIME_ADAPTER: daemon
+      CQ_RUNTIME_SOCKET: /run/crewquarters/runtime.sock
+    volumes:
+      - runtime-socket:/run/crewquarters
+    depends_on:
+      runtime-daemon:
+        condition: service_healthy
+
+  model-gateway:
+    environment:
+      CQ_GATEWAY_RUNTIME: daemon
+      CQ_GATEWAY_RUNTIME_SOCKET: /run/crewquarters/runtime.sock
+      CQ_GATEWAY_MODEL_ADDRESSING: name
+    volumes:
+      - runtime-socket:/run/crewquarters
+    networks:
+      - default
+      - models
+    depends_on:
+      runtime-daemon:
+        condition: service_healthy
+
+networks:
+  models:
+    # Created by the runtime daemon (internal + isolated gateway mode) and shared.
+    name: cq-models
+    external: true
+
+volumes:
+  runtime-socket:

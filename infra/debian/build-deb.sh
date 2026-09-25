@@ -1,0 +1,58 @@
+#!/bin/sh
+# Build the Crewquarters .deb.   usage: infra/debian/build-deb.sh [VERSION] [ARCH]
+# ARCH defaults to arm64 (the appliance). The package holds only architecture-independent
+# files (a stdlib-only Python daemon, shell scripts, YAML/JSON), so building arm64 on an
+# amd64 host is exact; amd64 builds exist for testing on laptops.
+set -eu
+VERSION="${1:-0.1.0}"
+ARCH="${2:-arm64}"
+ROOT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
+OUT="$ROOT_DIR/dist"
+PKG=$(mktemp -d)
+trap 'rm -rf "$PKG"' EXIT
+
+sub() { sed -e "s/@VERSION@/$VERSION/g" -e "s/@ARCH@/$ARCH/g" "$1"; }
+
+install -d "$PKG/DEBIAN" "$PKG/usr/bin" "$PKG/usr/lib/crewquarters/python" \
+    "$PKG/usr/share/crewquarters/compose" "$PKG/usr/share/crewquarters/catalog/models" \
+    "$PKG/usr/share/applications" "$PKG/usr/share/doc/crewquarters" \
+    "$PKG/lib/systemd/system" "$PKG/etc/crewquarters"
+
+for f in control conffiles preinst postinst prerm postrm; do
+    sub "$ROOT_DIR/infra/debian/DEBIAN-templates/$f" > "$PKG/DEBIAN/$f"
+done
+chmod 0755 "$PKG/DEBIAN/preinst" "$PKG/DEBIAN/postinst" "$PKG/DEBIAN/prerm" "$PKG/DEBIAN/postrm"
+
+cp -r "$ROOT_DIR/services/runtime_daemon/src/crewquarters_runtime" "$PKG/usr/lib/crewquarters/python/"
+find "$PKG/usr/lib/crewquarters/python" -name '__pycache__' -prune -exec rm -rf {} +
+install -m 0755 "$ROOT_DIR/infra/debian/bin/netguard.sh" "$PKG/usr/lib/crewquarters/netguard.sh"
+install -m 0755 "$ROOT_DIR/infra/debian/bin/crewquarters" "$PKG/usr/bin/crewquarters"
+cat > "$PKG/usr/bin/crewquarters-runtime" <<'WRAP'
+#!/bin/sh
+PYTHONPATH=/usr/lib/crewquarters/python exec python3 -m crewquarters_runtime.cli "$@"
+WRAP
+chmod 0755 "$PKG/usr/bin/crewquarters-runtime"
+install -m 0644 "$ROOT_DIR/infra/compose/compose.appliance.yaml" "$PKG/usr/share/crewquarters/compose/"
+install -m 0644 "$ROOT_DIR"/catalog/models/dgx/*.json "$PKG/usr/share/crewquarters/catalog/models/"
+install -m 0755 "$ROOT_DIR/infra/debian/bin/launch.sh" "$PKG/usr/share/crewquarters/launch.sh"
+echo "$VERSION" > "$PKG/usr/share/crewquarters/VERSION"
+install -m 0644 "$ROOT_DIR/infra/debian/crewquarters.desktop" "$PKG/usr/share/applications/"
+install -m 0644 "$ROOT_DIR"/infra/systemd/*.service "$ROOT_DIR"/infra/systemd/*.socket "$PKG/lib/systemd/system/"
+install -d "$PKG/usr/lib/tmpfiles.d"
+install -m 0644 "$ROOT_DIR/infra/systemd/crewquarters.tmpfiles" "$PKG/usr/lib/tmpfiles.d/crewquarters.conf"
+sub "$ROOT_DIR/infra/debian/crewquarters.env" > "$PKG/etc/crewquarters/crewquarters.env"
+chmod 0644 "$PKG/etc/crewquarters/crewquarters.env"
+install -m 0644 "$ROOT_DIR/docs/runbooks/dgx.md" "$PKG/usr/share/doc/crewquarters/dgx-runbook.md"
+printf 'Crewquarters\nSee https://github.com/nikhil-ghind/crewquarters for license information.\n' \
+    > "$PKG/usr/share/doc/crewquarters/copyright"
+
+# Normalize permissions regardless of the builder's umask.
+find "$PKG" -type d -exec chmod 0755 {} +
+find "$PKG" -type f -perm /u+x -exec chmod 0755 {} +
+find "$PKG" -type f ! -perm /u+x -exec chmod 0644 {} +
+SIZE=$(du -sk "$PKG" | cut -f1)
+echo "Installed-Size: $SIZE" >> "$PKG/DEBIAN/control"
+mkdir -p "$OUT"
+DEB="$OUT/crewquarters_${VERSION}_${ARCH}.deb"
+dpkg-deb --root-owner-group -Zxz --build "$PKG" "$DEB" >/dev/null
+echo "$DEB"

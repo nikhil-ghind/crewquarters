@@ -1,0 +1,30 @@
+#!/bin/sh
+# Data under /var/lib/crewquarters is preserved on remove AND on purge unless the operator
+# explicitly sets CREWQUARTERS_PURGE_DATA=yes (PLAN.md section 14.2).
+set -e
+case "$1" in
+    purge)
+        if [ "${CREWQUARTERS_PURGE_DATA:-no}" = "yes" ]; then
+            rm -rf /var/lib/crewquarters /var/log/crewquarters
+            echo "crewquarters: data directory removed."
+        elif [ -d /var/lib/crewquarters ]; then
+            # Kept data is useless without its secrets (database password, master key):
+            # keep them with the data so a reinstall restores them.
+            install -d -m 0700 /var/lib/crewquarters/.retained-config
+            for f in secrets.env master.key; do
+                [ -f "/etc/crewquarters/$f" ] && cp -p "/etc/crewquarters/$f" /var/lib/crewquarters/.retained-config/
+            done
+            echo "crewquarters: /var/lib/crewquarters preserved with its secrets (set CREWQUARTERS_PURGE_DATA=yes to delete)."
+        fi
+        rm -f /etc/crewquarters/secrets.env /etc/crewquarters/runtime-token /etc/crewquarters/master.key
+        rmdir /etc/crewquarters 2>/dev/null || true
+        if getent passwd crewquarters-runtime >/dev/null; then deluser --system crewquarters-runtime >/dev/null 2>&1 || true; fi
+        if getent group crewquarters-runtime >/dev/null; then delgroup --system crewquarters-runtime >/dev/null 2>&1 || true; fi
+        if getent group crewquarters >/dev/null; then delgroup --system crewquarters >/dev/null 2>&1 || true; fi
+        ;;
+    remove)
+        echo "crewquarters: /var/lib/crewquarters preserved."
+        ;;
+esac
+[ -d /run/systemd/system ] && systemctl daemon-reload >/dev/null 2>&1 || true
+exit 0

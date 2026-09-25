@@ -8,12 +8,16 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
 from ...models.model_out import ModelOut
-from ...types import Response
+from ...models.model_unload_in import ModelUnloadIn
+from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
     model_id: str,
+    *,
+    body: ModelUnloadIn | None | Unset = UNSET,
 ) -> dict[str, Any]:
+    headers: dict[str, Any] = {}
 
     _kwargs: dict[str, Any] = {
         "method": "post",
@@ -22,6 +26,14 @@ def _get_kwargs(
         ),
     }
 
+    if isinstance(body, ModelUnloadIn):
+        _kwargs["json"] = body.to_dict()
+    else:
+        _kwargs["json"] = body
+
+    headers["Content-Type"] = "application/json"
+
+    _kwargs["headers"] = headers
     return _kwargs
 
 
@@ -69,11 +81,13 @@ def sync_detailed(
     model_id: str,
     *,
     client: AuthenticatedClient | Client,
+    body: ModelUnloadIn | None | Unset = UNSET,
 ) -> Response[ErrorResponse | ModelOut]:
-    """Unload a model from memory
+    """Unload a model; refuses while leases are held unless force is set
 
     Args:
         model_id (str):
+        body (ModelUnloadIn | None | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -85,6 +99,7 @@ def sync_detailed(
 
     kwargs = _get_kwargs(
         model_id=model_id,
+        body=body,
     )
 
     response = client.get_httpx_client().request(
@@ -98,11 +113,13 @@ def sync(
     model_id: str,
     *,
     client: AuthenticatedClient | Client,
+    body: ModelUnloadIn | None | Unset = UNSET,
 ) -> ErrorResponse | ModelOut | None:
-    """Unload a model from memory
+    """Unload a model; refuses while leases are held unless force is set
 
     Args:
         model_id (str):
+        body (ModelUnloadIn | None | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -115,6 +132,7 @@ def sync(
     return sync_detailed(
         model_id=model_id,
         client=client,
+        body=body,
     ).parsed
 
 
@@ -122,11 +140,13 @@ async def asyncio_detailed(
     model_id: str,
     *,
     client: AuthenticatedClient | Client,
+    body: ModelUnloadIn | None | Unset = UNSET,
 ) -> Response[ErrorResponse | ModelOut]:
-    """Unload a model from memory
+    """Unload a model; refuses while leases are held unless force is set
 
     Args:
         model_id (str):
+        body (ModelUnloadIn | None | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -138,6 +158,7 @@ async def asyncio_detailed(
 
     kwargs = _get_kwargs(
         model_id=model_id,
+        body=body,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -149,11 +170,13 @@ async def asyncio(
     model_id: str,
     *,
     client: AuthenticatedClient | Client,
+    body: ModelUnloadIn | None | Unset = UNSET,
 ) -> ErrorResponse | ModelOut | None:
-    """Unload a model from memory
+    """Unload a model; refuses while leases are held unless force is set
 
     Args:
         model_id (str):
+        body (ModelUnloadIn | None | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -167,5 +190,6 @@ async def asyncio(
         await asyncio_detailed(
             model_id=model_id,
             client=client,
+            body=body,
         )
     ).parsed

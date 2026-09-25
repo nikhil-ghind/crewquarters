@@ -23,6 +23,9 @@ CRITICAL = [
     "crewquarters_api/idempotency.py",
     "crewquarters_scheduler/scheduler.py",
     "crewquarters_scheduler/reconciler.py",
+    "crewquarters_gateway/manager.py",
+    "crewquarters_gateway/inference.py",
+    "crewquarters_runtime/specs.py",
 ]
 
 

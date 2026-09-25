@@ -1,0 +1,16 @@
+[Unit]
+Description=Crewquarters host firewall guard for agent/model bridges
+Documentation=file:/usr/share/doc/crewquarters/dgx-runbook.md
+# Defense in depth for Docker engines without isolated gateway mode (< 28): drop any
+# traffic from the agent (cqa-*) and model (cqm-*) bridges addressed to the host itself.
+After=network-pre.target
+Before=crewquarters-runtime.service docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/crewquarters/netguard.sh apply
+ExecStop=/usr/lib/crewquarters/netguard.sh remove
+
+[Install]
+WantedBy=multi-user.target

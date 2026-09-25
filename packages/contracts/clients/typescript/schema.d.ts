@@ -430,7 +430,8 @@ export interface paths {
         get: operations["get_model_api_v1_models__model_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete an installed model's files (it must not be loaded) */
+        delete: operations["delete_model_api_v1_models__model_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -445,8 +446,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Download a model to disk */
-        post: operations["install_model_api_v1_models__model_id__install_post"];
+        /** Download a pinned model to disk (resumable) */
+        post: operations["model_install_api_v1_models__model_id__install_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -463,7 +464,24 @@ export interface paths {
         get?: never;
         put?: never;
         /** Load a model into memory (admission control applies) */
-        post: operations["load_model_api_v1_models__model_id__load_post"];
+        post: operations["model_load_api_v1_models__model_id__load_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{model_id}/install/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a download; optionally delete the partial files */
+        post: operations["cancel_model_install_api_v1_models__model_id__install_cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -479,8 +497,42 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Unload a model from memory */
+        /** Unload a model; refuses while leases are held unless force is set */
         post: operations["unload_model_api_v1_models__model_id__unload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{model_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream model download/load progress (SSE) */
+        get: operations["model_events_api_v1_models__model_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unified memory: system reserve, model reservations, available */
+        get: operations["system_memory_api_v1_system_memory_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -584,6 +636,93 @@ export interface paths {
         get: operations["list_audit_events_api_v1_audit_events_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chat sessions */
+        get: operations["list_sessions_api_v1_chat_sessions_get"];
+        put?: never;
+        /** Create a chat session (disabled until enabled) */
+        post: operations["create_session_api_v1_chat_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a chat session with its recent messages */
+        get: operations["get_session_api_v1_chat_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete a chat session */
+        delete: operations["delete_session_api_v1_chat_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/sessions/{session_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable local chat: leases the model (it loads if cold) */
+        post: operations["enable_session_api_v1_chat_sessions__session_id__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/sessions/{session_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable chat: releases the model lease; history is kept */
+        post: operations["disable_session_api_v1_chat_sessions__session_id__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/sessions/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a message; the reply streams back (SSE) */
+        post: operations["send_message_api_v1_chat_sessions__session_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1000,6 +1139,152 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** ChatMessageIn */
+        ChatMessageIn: {
+            /** Content */
+            content: string;
+        };
+        /** ChatMessageOut */
+        ChatMessageOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Content */
+            content: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "streaming" | "complete" | "stopped" | "failed";
+            /** Citations */
+            citations: {
+                [key: string]: unknown;
+            }[];
+            /** Model */
+            model: string | null;
+            /** Provider */
+            provider: string | null;
+            /** Usage */
+            usage: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** ChatSessionCreateIn */
+        ChatSessionCreateIn: {
+            /** Title */
+            title?: string | null;
+            /**
+             * Modelprofile
+             * @description Local model variant.
+             * @default local.general.small
+             */
+            modelProfile: string;
+            /**
+             * Knowledgebaseid
+             * @description Requires the knowledge service (Nikhil Sajan Khaneja, Person 3).
+             */
+            knowledgeBaseId?: string | null;
+            /**
+             * Retrievalmode
+             * @default when_relevant
+             * @enum {string}
+             */
+            retrievalMode: "when_relevant" | "only_knowledge";
+        };
+        /** ChatSessionDetailOut */
+        ChatSessionDetailOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Modelprofile */
+            modelProfile: string;
+            /** Knowledgebaseid */
+            knowledgeBaseId: string | null;
+            /** Retrievalmode */
+            retrievalMode: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Holdsmodellease */
+            holdsModelLease: boolean;
+            /**
+             * Local
+             * @description Chat never leaves the device.
+             * @default true
+             */
+            local: boolean;
+            /** Version */
+            version: number;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+            /** Lastmessageat */
+            lastMessageAt: string | null;
+            /** Messages */
+            messages: components["schemas"]["ChatMessageOut"][];
+        };
+        /** ChatSessionOut */
+        ChatSessionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Modelprofile */
+            modelProfile: string;
+            /** Knowledgebaseid */
+            knowledgeBaseId: string | null;
+            /** Retrievalmode */
+            retrievalMode: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Holdsmodellease */
+            holdsModelLease: boolean;
+            /**
+             * Local
+             * @description Chat never leaves the device.
+             * @default true
+             */
+            local: boolean;
+            /** Version */
+            version: number;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+            /** Lastmessageat */
+            lastMessageAt: string | null;
+        };
         /** ConnectionOut */
         ConnectionOut: {
             /**
@@ -1286,7 +1571,77 @@ export interface components {
             /** Password */
             password: string;
         };
-        /** ModelOut */
+        /**
+         * MemoryOut
+         * @description Unified-memory breakdown for the top-bar resource popover (PLAN.md section 13.3).
+         */
+        MemoryOut: {
+            /** Totalbytes */
+            totalBytes: number | null;
+            /** Availablebytes */
+            availableBytes: number | null;
+            /** Systemreservebytes */
+            systemReserveBytes: number;
+            /** Maxservingbytes */
+            maxServingBytes: number;
+            /** Safetymarginbytes */
+            safetyMarginBytes: number;
+            /** Reservedbytes */
+            reservedBytes: number;
+            /** Models */
+            models: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** ModelCancelInstallIn */
+        ModelCancelInstallIn: {
+            /**
+             * Clear
+             * @description Also delete partially downloaded files.
+             * @default false
+             */
+            clear: boolean;
+        };
+        /** ModelDownloadOut */
+        ModelDownloadOut: {
+            /**
+             * Bytesdone
+             * @default 0
+             */
+            bytesDone: number;
+            /** Bytestotal */
+            bytesTotal?: number | null;
+            /** Currentfile */
+            currentFile?: string | null;
+            /** Revision */
+            revision?: string | null;
+        };
+        /** ModelLeaseOut */
+        ModelLeaseOut: {
+            /** Id */
+            id: string;
+            /**
+             * Holdertype
+             * @enum {string}
+             */
+            holderType: "run" | "chat" | "manual";
+            /** Holderid */
+            holderId: string;
+            /**
+             * Label
+             * @description Friendly holder name, e.g. 'Chat: Contracts' or 'Run 01a0d4c2'.
+             */
+            label: string;
+            /**
+             * Expiresat
+             * Format: date-time
+             */
+            expiresAt: string;
+        };
+        /**
+         * ModelOut
+         * @description Installed-on-disk and loaded-in-memory are separate fields (PLAN.md section 13.8).
+         */
         ModelOut: {
             /** Id */
             id: string;
@@ -1294,14 +1649,36 @@ export interface components {
             displayName: string;
             /** Family */
             family: string;
-            /** Downloadstate */
-            downloadState: string;
-            /** Memorystate */
-            memoryState: string;
+            /**
+             * Backend
+             * @default vllm
+             */
+            backend: string;
+            /**
+             * Downloadstate
+             * @enum {string}
+             */
+            downloadState: "NOT_INSTALLED" | "DOWNLOADING" | "INSTALLED" | "DOWNLOAD_ERROR" | "DELETING";
+            /**
+             * Memorystate
+             * @enum {string}
+             */
+            memoryState: "NOT_LOADED" | "LOADING" | "READY" | "DRAINING" | "LOAD_ERROR" | "ERROR";
+            /**
+             * Stage
+             * @description Current load stage, e.g. 'Loading weights'.
+             */
+            stage?: string | null;
             /** Diskbytes */
             diskBytes?: number | null;
+            download?: components["schemas"]["ModelDownloadOut"];
             /** Expectedmemorybytes */
             expectedMemoryBytes?: number | null;
+            /**
+             * Reservedbytes
+             * @default 0
+             */
+            reservedBytes: number;
             /** Contextlimit */
             contextLimit?: number | null;
             /** Capabilities */
@@ -1312,10 +1689,18 @@ export interface components {
             license?: {
                 [key: string]: unknown;
             } | null;
-            /** Activeleases */
-            activeLeases?: {
+            /** Error */
+            error?: {
                 [key: string]: unknown;
-            }[];
+            } | null;
+            /** Loadstartedat */
+            loadStartedAt?: string | null;
+            /** Readyat */
+            readyAt?: string | null;
+            /** Idleunloadat */
+            idleUnloadAt?: string | null;
+            /** Activeleases */
+            activeLeases?: components["schemas"]["ModelLeaseOut"][];
         };
         /** ModelStateIn */
         ModelStateIn: {
@@ -1325,6 +1710,15 @@ export interface components {
             loading: boolean;
             /** Model */
             model?: string | null;
+        };
+        /** ModelUnloadIn */
+        ModelUnloadIn: {
+            /**
+             * Force
+             * @description Unload even while runs or chats hold leases.
+             * @default false
+             */
+            force: boolean;
         };
         /** OccurrenceOut */
         OccurrenceOut: {
@@ -1356,6 +1750,16 @@ export interface components {
         Page_CatalogAgentOut_: {
             /** Items */
             items: components["schemas"]["CatalogAgentOut"][];
+            /**
+             * Nextcursor
+             * @description Opaque cursor for the next page; null on the last page.
+             */
+            nextCursor?: string | null;
+        };
+        /** Page[ChatSessionOut] */
+        Page_ChatSessionOut_: {
+            /** Items */
+            items: components["schemas"]["ChatSessionOut"][];
             /**
              * Nextcursor
              * @description Opaque cursor for the next page; null on the last page.
@@ -3254,7 +3658,56 @@ export interface operations {
             };
         };
     };
-    install_model_api_v1_models__model_id__install_post: {
+    delete_model_api_v1_models__model_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    model_install_api_v1_models__model_id__install_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3303,7 +3756,7 @@ export interface operations {
             };
         };
     };
-    load_model_api_v1_models__model_id__load_post: {
+    model_load_api_v1_models__model_id__load_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3316,6 +3769,59 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_model_install_api_v1_models__model_id__install_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelCancelInstallIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3361,7 +3867,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ModelUnloadIn"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {
@@ -3397,6 +3907,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    model_events_api_v1_models__model_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-sent events: event=model.state, data=Model JSON, sent whenever download or load progress changes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    system_memory_api_v1_system_memory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryOut"];
                 };
             };
         };
@@ -3608,6 +4188,337 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sessions_api_v1_chat_sessions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ChatSessionOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_session_api_v1_chat_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatSessionCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_session_api_v1_chat_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionDetailOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_session_api_v1_chat_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    enable_session_api_v1_chat_sessions__session_id__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    disable_session_api_v1_chat_sessions__session_id__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    send_message_api_v1_chat_sessions__session_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatMessageIn"];
+            };
+        };
+        responses: {
+            /** @description Server-sent events: 'message' (stored user message and the assistant message id), 'delta' ({text}), 'done' (the completed assistant message), or 'error'. Closing the connection stops generation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

@@ -1,0 +1,17 @@
+[Unit]
+Description=Crewquarters platform (Compose stack)
+Documentation=file:/usr/share/doc/crewquarters/dgx-runbook.md
+Requires=docker.service crewquarters-runtime.socket
+After=docker.service crewquarters-runtime.socket network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/bin/crewquarters wait-runtime
+ExecStart=/usr/bin/crewquarters up
+ExecStop=/usr/bin/crewquarters down
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

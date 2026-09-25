@@ -308,19 +308,68 @@ class ScheduleOut(ApiModel):
 # --- Models and connections (read through owning services) ------------------------
 
 
+class ModelLeaseOut(ApiModel):
+    id: str
+    holder_type: Literal["run", "chat", "manual"]
+    holder_id: str
+    label: str = Field(
+        description="Friendly holder name, e.g. 'Chat: Contracts' or 'Run 01a0d4c2'."
+    )
+    expires_at: datetime
+
+
+class ModelDownloadOut(ApiModel):
+    bytes_done: int = 0
+    bytes_total: int | None = None
+    current_file: str | None = None
+    revision: str | None = None
+
+
 class ModelOut(ApiModel):
+    """Installed-on-disk and loaded-in-memory are separate fields (PLAN.md section 13.8)."""
+
     id: str
     display_name: str
     family: str
-    download_state: str
-    memory_state: str
+    backend: str = "vllm"
+    download_state: Literal[
+        "NOT_INSTALLED", "DOWNLOADING", "INSTALLED", "DOWNLOAD_ERROR", "DELETING"
+    ]
+    memory_state: Literal["NOT_LOADED", "LOADING", "READY", "DRAINING", "LOAD_ERROR", "ERROR"]
+    stage: str | None = Field(None, description="Current load stage, e.g. 'Loading weights'.")
     disk_bytes: int | None = None
+    download: ModelDownloadOut = Field(default_factory=ModelDownloadOut)
     expected_memory_bytes: int | None = None
+    reserved_bytes: int = 0
     context_limit: int | None = None
     capabilities: list[str] = Field(default_factory=list)
     validation: str | None = None
     license: dict[str, Any] | None = None
-    active_leases: list[dict[str, Any]] = Field(default_factory=list)
+    error: dict[str, Any] | None = None
+    load_started_at: datetime | None = None
+    ready_at: datetime | None = None
+    idle_unload_at: datetime | None = None
+    active_leases: list[ModelLeaseOut] = Field(default_factory=list)
+
+
+class ModelUnloadIn(ApiModel):
+    force: bool = Field(False, description="Unload even while runs or chats hold leases.")
+
+
+class ModelCancelInstallIn(ApiModel):
+    clear: bool = Field(False, description="Also delete partially downloaded files.")
+
+
+class MemoryOut(ApiModel):
+    """Unified-memory breakdown for the top-bar resource popover (PLAN.md section 13.3)."""
+
+    total_bytes: int | None
+    available_bytes: int | None
+    system_reserve_bytes: int
+    max_serving_bytes: int
+    safety_margin_bytes: int
+    reserved_bytes: int
+    models: list[dict[str, Any]]
 
 
 class ConnectionOut(ApiModel):
@@ -466,3 +515,50 @@ class AttentionItem(ApiModel):
 class AttentionOut(ApiModel):
     count: int = Field(description="Activity badge value: items that need the owner.")
     items: list[AttentionItem]
+
+
+# --- Chat -------------------------------------------------------------------------------
+
+
+class ChatSessionCreateIn(ApiModel):
+    title: str | None = Field(None, max_length=200)
+    model_profile: str = Field("local.general.small", description="Local model variant.")
+    knowledge_base_id: uuid.UUID | None = Field(
+        None, description="Requires the knowledge service (Nikhil Sajan Khaneja, Person 3)."
+    )
+    retrieval_mode: Literal["when_relevant", "only_knowledge"] = "when_relevant"
+
+
+class ChatMessageIn(ApiModel):
+    content: str = Field(min_length=1, max_length=20_000)
+
+
+class ChatMessageOut(ApiModel):
+    id: uuid.UUID
+    role: Literal["user", "assistant"]
+    content: str
+    status: Literal["streaming", "complete", "stopped", "failed"]
+    citations: list[dict[str, Any]]
+    model: str | None
+    provider: str | None
+    usage: dict[str, Any] | None
+    created_at: datetime
+
+
+class ChatSessionOut(ApiModel):
+    id: uuid.UUID
+    title: str
+    model_profile: str
+    knowledge_base_id: uuid.UUID | None
+    retrieval_mode: str
+    enabled: bool
+    holds_model_lease: bool
+    local: bool = Field(True, description="Chat never leaves the device.")
+    version: int
+    created_at: datetime
+    updated_at: datetime
+    last_message_at: datetime | None
+
+
+class ChatSessionDetailOut(ChatSessionOut):
+    messages: list[ChatMessageOut]

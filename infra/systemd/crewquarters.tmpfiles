@@ -1,0 +1,3 @@
+# /run/crewquarters holds the runtime daemon socket. The directory is group-accessible
+# so platform containers (running with the crewquarters group) can reach the socket.
+d /run/crewquarters 0750 root crewquarters -

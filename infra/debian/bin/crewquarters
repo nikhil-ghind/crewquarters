@@ -1,0 +1,61 @@
+#!/bin/sh
+# Crewquarters administration CLI (installed by the .deb).
+set -eu
+SHARE=/usr/share/crewquarters
+ETC=/etc/crewquarters
+COMPOSE_FILE="$SHARE/compose/compose.appliance.yaml"
+export PYTHONPATH=/usr/lib/crewquarters/python
+
+compose() {
+    docker compose -p crewquarters -f "$COMPOSE_FILE" \
+        --env-file "$ETC/crewquarters.env" --env-file "$ETC/secrets.env" "$@"
+}
+
+usage() {
+    cat <<USAGE
+Usage: crewquarters <command>
+  preflight [--gpu-test]   check architecture, Docker, NVIDIA runtime, memory, disk
+  up | down | restart      start or stop the platform stack
+  status                   service health and runtime checks
+  logs [service]           follow logs
+  bootstrap-token          print a one-time owner setup code
+  load-bundle FILE         import images from an offline bundle (.tar.zst)
+  wait-runtime             wait until the runtime daemon socket exists (systemd)
+  open                     open the setup UI in a browser
+  version
+USAGE
+}
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift
+case "$cmd" in
+    preflight) exec python3 -m crewquarters_runtime.cli preflight --appliance "$@" ;;
+    up)
+        if ! docker network inspect cq-models >/dev/null 2>&1; then
+            echo "Waiting for the runtime daemon to create its networks..."
+            curl -s --unix-socket /run/crewquarters/runtime.sock http://runtime/ >/dev/null 2>&1 || true
+            sleep 2
+        fi
+        compose up -d --wait ;;
+    down) compose down ;;
+    restart) compose down && compose up -d --wait ;;
+    status)
+        compose ps
+        python3 -m crewquarters_runtime.cli preflight --appliance || true ;;
+    logs) compose logs -f "$@" ;;
+    bootstrap-token) compose exec -T control-api cq-admin bootstrap-token ;;
+    load-bundle)
+        file="${1:?bundle file required}"
+        tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+        tar --zstd -xf "$file" -C "$tmp"
+        (cd "$tmp" && sha256sum -c SHA256SUMS)
+        docker load -i "$tmp/images.tar" ;;
+    wait-runtime)
+        i=0
+        while [ ! -S /run/crewquarters/runtime.sock ] && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done
+        [ -S /run/crewquarters/runtime.sock ] ;;
+    open) exec /usr/share/crewquarters/launch.sh ;;
+    version) cat "$SHARE/VERSION" ;;
+    help|-h|--help) usage ;;
+    *) usage; exit 2 ;;
+esac

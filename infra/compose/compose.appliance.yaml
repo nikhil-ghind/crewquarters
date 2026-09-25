@@ -1,0 +1,122 @@
+# Crewquarters appliance stack (GB10 / DGX OS). Installed by the .deb to
+# /usr/share/crewquarters/compose and started by crewquarters.service:
+#   docker compose -p crewquarters -f compose.appliance.yaml \
+#     --env-file /etc/crewquarters/crewquarters.env --env-file /etc/crewquarters/secrets.env up -d
+# Owner: Akshay Sunil Navani (Person 2).
+#
+# The runtime daemon runs on the host (systemd, Unix socket); these services reach it
+# through the bind-mounted socket and the crewquarters group. Model-serving and agent
+# containers are started by the daemon, not by Compose.
+name: crewquarters
+
+x-platform: &platform
+  image: ${CQ_PLATFORM_IMAGE:-crewquarters/platform}:${CQ_VERSION:?set in crewquarters.env}
+  pull_policy: missing
+  restart: unless-stopped
+  group_add:
+    - "${CQ_SOCKET_GID:?set by the installer}"
+  volumes:
+    - /run/crewquarters:/run/crewquarters
+    - /usr/share/crewquarters/catalog:/usr/share/crewquarters/catalog:ro
+  environment: &platform-env
+    CQ_PROFILE: dgx
+    CQ_DATABASE_URL: postgresql+psycopg://crewquarters:${POSTGRES_PASSWORD}@postgres:5432/crewquarters
+    CQ_SECRET_KEY: ${CQ_SECRET_KEY:?}
+    CQ_CAPABILITY_SIGNING_KEY: ${CQ_CAPABILITY_SIGNING_KEY:?}
+    CQ_INTERNAL_SERVICE_TOKEN: ${CQ_INTERNAL_SERVICE_TOKEN:?}
+    CQ_PUBLIC_ORIGINS: ${CQ_PUBLIC_ORIGINS:-["http://localhost:8080","http://127.0.0.1:8080"]}
+    CQ_COOKIE_SECURE: ${CQ_COOKIE_SECURE:-false}
+    CQ_CATALOG_DIR: /app/catalog/dev
+    CQ_RUNTIME_ADAPTER: daemon
+    CQ_RUNTIME_SOCKET: /run/crewquarters/runtime.sock
+    CQ_MODEL_GATEWAY_URL: http://model-gateway:8090
+    CQ_CHAT_CLIENT_TOKEN: ${CQ_CHAT_CLIENT_TOKEN:?}
+
+services:
+  postgres:
+    image: pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crewquarters
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: crewquarters
+    volumes:
+      - /var/lib/crewquarters/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crewquarters -d crewquarters"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  migrate:
+    <<: *platform
+    restart: "no"
+    command: ["alembic", "-c", "services/control_api/alembic.ini", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  control-api:
+    <<: *platform
+    command: ["cq-api"]
+    environment:
+      <<: *platform-env
+      CQ_API_HOST: 0.0.0.0
+    ports:
+      - "${CQ_BIND_ADDRESS:-127.0.0.1}:8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/api/v1/health/ready')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  model-gateway:
+    <<: *platform
+    command: ["cq-gateway"]
+    environment:
+      <<: *platform-env
+      CQ_GATEWAY_HOST: 0.0.0.0
+      CQ_GATEWAY_RUNTIME: daemon
+      CQ_GATEWAY_RUNTIME_SOCKET: /run/crewquarters/runtime.sock
+      CQ_GATEWAY_MODEL_ADDRESSING: name
+      CQ_GATEWAY_CATALOG_DIR: /usr/share/crewquarters/catalog/models
+      CQ_GATEWAY_CONTROL_API_URL: http://control-api:8080
+      CQ_GATEWAY_SYSTEM_RESERVE_BYTES: ${CQ_GATEWAY_SYSTEM_RESERVE_BYTES:-25769803776}
+      CQ_GATEWAY_MAX_SERVING_BYTES: ${CQ_GATEWAY_MAX_SERVING_BYTES:-103079215104}
+      CQ_GATEWAY_LOAD_SAFETY_MARGIN_BYTES: ${CQ_GATEWAY_LOAD_SAFETY_MARGIN_BYTES:-8589934592}
+      CQ_GATEWAY_IDLE_UNLOAD_SECONDS: ${CQ_GATEWAY_IDLE_UNLOAD_SECONDS:-600}
+    networks:
+      - default
+      - models
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8090/internal/v1/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  scheduler:
+    <<: *platform
+    command: ["cq-scheduler"]
+    environment:
+      <<: *platform-env
+      CQ_SCHEDULER_METRICS_HOST: 0.0.0.0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:9101/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+networks:
+  models:
+    # Created at boot by the host runtime daemon (internal, isolated gateway mode).
+    name: cq-models
+    external: true

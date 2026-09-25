@@ -1268,12 +1268,49 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: Unprocessable Entity
+    delete:
+      tags:
+      - models
+      summary: Delete an installed model's files (it must not be loaded)
+      operationId: delete_model_api_v1_models__model_id__delete
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Model Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
   /api/v1/models/{model_id}/install:
     post:
       tags:
       - models
-      summary: Download a model to disk
-      operationId: install_model_api_v1_models__model_id__install_post
+      summary: Download a pinned model to disk (resumable)
+      operationId: model_install_api_v1_models__model_id__install_post
       parameters:
       - name: model_id
         in: path
@@ -1311,7 +1348,7 @@ paths:
       tags:
       - models
       summary: Load a model into memory (admission control applies)
-      operationId: load_model_api_v1_models__model_id__load_post
+      operationId: model_load_api_v1_models__model_id__load_post
       parameters:
       - name: model_id
         in: path
@@ -1321,6 +1358,50 @@ paths:
           title: Model Id
       responses:
         '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/models/{model_id}/install/cancel:
+    post:
+      tags:
+      - models
+      summary: Cancel a download; optionally delete the partial files
+      operationId: cancel_model_install_api_v1_models__model_id__install_cancel_post
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Model Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelCancelInstallIn'
+      responses:
+        '200':
           description: Successful Response
           content:
             application/json:
@@ -1348,7 +1429,7 @@ paths:
     post:
       tags:
       - models
-      summary: Unload a model from memory
+      summary: Unload a model; refuses while leases are held unless force is set
       operationId: unload_model_api_v1_models__model_id__unload_post
       parameters:
       - name: model_id
@@ -1357,6 +1438,14 @@ paths:
         schema:
           type: string
           title: Model Id
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/ModelUnloadIn'
+              - type: 'null'
+              title: Body
       responses:
         '202':
           description: Successful Response
@@ -1382,6 +1471,60 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: Unprocessable Entity
+  /api/v1/models/{model_id}/events:
+    get:
+      tags:
+      - models
+      summary: Stream model download/load progress (SSE)
+      operationId: model_events_api_v1_models__model_id__events_get
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Model Id
+      responses:
+        '200':
+          description: 'Server-sent events: event=model.state, data=Model JSON, sent whenever download
+            or load progress changes.'
+          content:
+            application/json:
+              schema: {}
+            text/event-stream:
+              schema:
+                type: string
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/system/memory:
+    get:
+      tags:
+      - system
+      summary: 'Unified memory: system reserve, model reservations, available'
+      operationId: system_memory_api_v1_system_memory_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryOut'
   /api/v1/connections:
     get:
       tags:
@@ -1603,6 +1746,279 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/chat/sessions:
+    post:
+      tags:
+      - chat
+      summary: Create a chat session (disabled until enabled)
+      operationId: create_session_api_v1_chat_sessions_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatSessionCreateIn'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+    get:
+      tags:
+      - chat
+      summary: List chat sessions
+      operationId: list_sessions_api_v1_chat_sessions_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_ChatSessionOut_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/chat/sessions/{session_id}:
+    get:
+      tags:
+      - chat
+      summary: Get a chat session with its recent messages
+      operationId: get_session_api_v1_chat_sessions__session_id__get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionDetailOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+    delete:
+      tags:
+      - chat
+      summary: Delete a chat session
+      operationId: delete_session_api_v1_chat_sessions__session_id__delete
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/chat/sessions/{session_id}/enable:
+    post:
+      tags:
+      - chat
+      summary: 'Enable local chat: leases the model (it loads if cold)'
+      operationId: enable_session_api_v1_chat_sessions__session_id__enable_post
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/chat/sessions/{session_id}/disable:
+    post:
+      tags:
+      - chat
+      summary: 'Disable chat: releases the model lease; history is kept'
+      operationId: disable_session_api_v1_chat_sessions__session_id__disable_post
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionOut'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
+  /api/v1/chat/sessions/{session_id}/messages:
+    post:
+      tags:
+      - chat
+      summary: Send a message; the reply streams back (SSE)
+      operationId: send_message_api_v1_chat_sessions__session_id__messages_post
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatMessageIn'
+      responses:
+        '200':
+          description: 'Server-sent events: ''message'' (stored user message and the assistant message
+            id), ''delta'' ({text}), ''done'' (the completed assistant message), or ''error''. Closing
+            the connection stops generation.'
+          content:
+            application/json:
+              schema: {}
+            text/event-stream:
+              schema:
+                type: string
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
   /internal/v1/runs/{run_id}:
     get:
       tags:
@@ -2542,6 +2958,239 @@ components:
       required:
       - manifest
       title: CatalogImportIn
+    ChatMessageIn:
+      properties:
+        content:
+          type: string
+          maxLength: 20000
+          minLength: 1
+          title: Content
+      type: object
+      required:
+      - content
+      title: ChatMessageIn
+    ChatMessageOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        role:
+          type: string
+          enum:
+          - user
+          - assistant
+          title: Role
+        content:
+          type: string
+          title: Content
+        status:
+          type: string
+          enum:
+          - streaming
+          - complete
+          - stopped
+          - failed
+          title: Status
+        citations:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Citations
+        model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider
+        usage:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Usage
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+      type: object
+      required:
+      - id
+      - role
+      - content
+      - status
+      - citations
+      - model
+      - provider
+      - usage
+      - createdAt
+      title: ChatMessageOut
+    ChatSessionCreateIn:
+      properties:
+        title:
+          anyOf:
+          - type: string
+            maxLength: 200
+          - type: 'null'
+          title: Title
+        modelProfile:
+          type: string
+          title: Modelprofile
+          description: Local model variant.
+          default: local.general.small
+        knowledgeBaseId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Knowledgebaseid
+          description: Requires the knowledge service (Nikhil Sajan Khaneja, Person 3).
+        retrievalMode:
+          type: string
+          enum:
+          - when_relevant
+          - only_knowledge
+          title: Retrievalmode
+          default: when_relevant
+      type: object
+      title: ChatSessionCreateIn
+    ChatSessionDetailOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        title:
+          type: string
+          title: Title
+        modelProfile:
+          type: string
+          title: Modelprofile
+        knowledgeBaseId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Knowledgebaseid
+        retrievalMode:
+          type: string
+          title: Retrievalmode
+        enabled:
+          type: boolean
+          title: Enabled
+        holdsModelLease:
+          type: boolean
+          title: Holdsmodellease
+        local:
+          type: boolean
+          title: Local
+          description: Chat never leaves the device.
+          default: true
+        version:
+          type: integer
+          title: Version
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        updatedAt:
+          type: string
+          format: date-time
+          title: Updatedat
+        lastMessageAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Lastmessageat
+        messages:
+          items:
+            $ref: '#/components/schemas/ChatMessageOut'
+          type: array
+          title: Messages
+      type: object
+      required:
+      - id
+      - title
+      - modelProfile
+      - knowledgeBaseId
+      - retrievalMode
+      - enabled
+      - holdsModelLease
+      - version
+      - createdAt
+      - updatedAt
+      - lastMessageAt
+      - messages
+      title: ChatSessionDetailOut
+    ChatSessionOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        title:
+          type: string
+          title: Title
+        modelProfile:
+          type: string
+          title: Modelprofile
+        knowledgeBaseId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Knowledgebaseid
+        retrievalMode:
+          type: string
+          title: Retrievalmode
+        enabled:
+          type: boolean
+          title: Enabled
+        holdsModelLease:
+          type: boolean
+          title: Holdsmodellease
+        local:
+          type: boolean
+          title: Local
+          description: Chat never leaves the device.
+          default: true
+        version:
+          type: integer
+          title: Version
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        updatedAt:
+          type: string
+          format: date-time
+          title: Updatedat
+        lastMessageAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Lastmessageat
+      type: object
+      required:
+      - id
+      - title
+      - modelProfile
+      - knowledgeBaseId
+      - retrievalMode
+      - enabled
+      - holdsModelLease
+      - version
+      - createdAt
+      - updatedAt
+      - lastMessageAt
+      title: ChatSessionOut
     ConnectionOut:
       properties:
         provider:
@@ -2991,6 +3640,110 @@ components:
       - username
       - password
       title: LoginIn
+    MemoryOut:
+      properties:
+        totalBytes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Totalbytes
+        availableBytes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Availablebytes
+        systemReserveBytes:
+          type: integer
+          title: Systemreservebytes
+        maxServingBytes:
+          type: integer
+          title: Maxservingbytes
+        safetyMarginBytes:
+          type: integer
+          title: Safetymarginbytes
+        reservedBytes:
+          type: integer
+          title: Reservedbytes
+        models:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Models
+      type: object
+      required:
+      - totalBytes
+      - availableBytes
+      - systemReserveBytes
+      - maxServingBytes
+      - safetyMarginBytes
+      - reservedBytes
+      - models
+      title: MemoryOut
+      description: Unified-memory breakdown for the top-bar resource popover (PLAN.md section 13.3).
+    ModelCancelInstallIn:
+      properties:
+        clear:
+          type: boolean
+          title: Clear
+          description: Also delete partially downloaded files.
+          default: false
+      type: object
+      title: ModelCancelInstallIn
+    ModelDownloadOut:
+      properties:
+        bytesDone:
+          type: integer
+          title: Bytesdone
+          default: 0
+        bytesTotal:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Bytestotal
+        currentFile:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Currentfile
+        revision:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Revision
+      type: object
+      title: ModelDownloadOut
+    ModelLeaseOut:
+      properties:
+        id:
+          type: string
+          title: Id
+        holderType:
+          type: string
+          enum:
+          - run
+          - chat
+          - manual
+          title: Holdertype
+        holderId:
+          type: string
+          title: Holderid
+        label:
+          type: string
+          title: Label
+          description: 'Friendly holder name, e.g. ''Chat: Contracts'' or ''Run 01a0d4c2''.'
+        expiresAt:
+          type: string
+          format: date-time
+          title: Expiresat
+      type: object
+      required:
+      - id
+      - holderType
+      - holderId
+      - label
+      - expiresAt
+      title: ModelLeaseOut
     ModelOut:
       properties:
         id:
@@ -3002,22 +3755,51 @@ components:
         family:
           type: string
           title: Family
+        backend:
+          type: string
+          title: Backend
+          default: vllm
         downloadState:
           type: string
+          enum:
+          - NOT_INSTALLED
+          - DOWNLOADING
+          - INSTALLED
+          - DOWNLOAD_ERROR
+          - DELETING
           title: Downloadstate
         memoryState:
           type: string
+          enum:
+          - NOT_LOADED
+          - LOADING
+          - READY
+          - DRAINING
+          - LOAD_ERROR
+          - ERROR
           title: Memorystate
+        stage:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Stage
+          description: Current load stage, e.g. 'Loading weights'.
         diskBytes:
           anyOf:
           - type: integer
           - type: 'null'
           title: Diskbytes
+        download:
+          $ref: '#/components/schemas/ModelDownloadOut'
         expectedMemoryBytes:
           anyOf:
           - type: integer
           - type: 'null'
           title: Expectedmemorybytes
+        reservedBytes:
+          type: integer
+          title: Reservedbytes
+          default: 0
         contextLimit:
           anyOf:
           - type: integer
@@ -3039,10 +3821,33 @@ components:
             type: object
           - type: 'null'
           title: License
+        error:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Error
+        loadStartedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Loadstartedat
+        readyAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Readyat
+        idleUnloadAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Idleunloadat
         activeLeases:
           items:
-            additionalProperties: true
-            type: object
+            $ref: '#/components/schemas/ModelLeaseOut'
           type: array
           title: Activeleases
       type: object
@@ -3053,6 +3858,7 @@ components:
       - downloadState
       - memoryState
       title: ModelOut
+      description: Installed-on-disk and loaded-in-memory are separate fields (PLAN.md section 13.8).
     ModelStateIn:
       properties:
         attempt:
@@ -3072,6 +3878,15 @@ components:
       - attempt
       - loading
       title: ModelStateIn
+    ModelUnloadIn:
+      properties:
+        force:
+          type: boolean
+          title: Force
+          description: Unload even while runs or chats hold leases.
+          default: false
+      type: object
+      title: ModelUnloadIn
     OccurrenceOut:
       properties:
         at:
@@ -3126,6 +3941,23 @@ components:
       required:
       - items
       title: Page[CatalogAgentOut]
+    Page_ChatSessionOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ChatSessionOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+      type: object
+      required:
+      - items
+      title: Page[ChatSessionOut]
     Page_ConnectionOut_:
       properties:
         items:

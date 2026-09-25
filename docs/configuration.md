@@ -42,3 +42,22 @@ Profiles: **dev** = laptop Compose with fakes; **demo-cpu** = laptop end-to-end;
 | `CQ_SCHEDULER_METRICS_PORT` | int | `9101` | no | all | Port of the scheduler's `/metrics` and `/health` endpoint |
 | `CQ_LOG_FORMAT` | string | `json` | no | all | `json` (structured, redacted) or `text` for local reading |
 | `CQ_LOG_LEVEL` | string | `INFO` | no | all | Root log level |
+| `CQ_MODEL_GATEWAY_URL` | string | `http://model-gateway:8090` | no | all | Model gateway base URL used by the control API |
+| `CQ_GATEWAY_RUNTIME` | string | `daemon` | no | dev: `inprocess` | `daemon` (model servers via the runtime daemon) or `inprocess` (mock, no Docker) |
+| `CQ_GATEWAY_RUNTIME_SOCKET` | path | `/run/crewquarters/runtime.sock` | no | all | Runtime daemon socket |
+| `CQ_GATEWAY_MODEL_ADDRESSING` | string | `name` | no | all | Reach model containers by name (Compose) or `ip` (host-side gateway, tests) |
+| `CQ_GATEWAY_CATALOG_DIR` | path | repo `catalog/models/dev` | no | dgx: `/usr/share/crewquarters/catalog/models` | Model profile JSON directory |
+| `CQ_GATEWAY_CONTROL_API_URL` | string | `http://control-api:8080` | no | all | Control API for run checks and `LOADING_MODEL` signals |
+| `CQ_GATEWAY_SYSTEM_RESERVE_BYTES` | int | 24 GiB | no | dev: 2 GiB | Memory kept free for the OS, database, agents |
+| `CQ_GATEWAY_MAX_SERVING_BYTES` | int | 96 GiB | no | dev: 8 GiB | Cap on total model reservations |
+| `CQ_GATEWAY_LOAD_SAFETY_MARGIN_BYTES` | int | 8 GiB | no | dev: 1 GiB | Extra margin per load |
+| `CQ_GATEWAY_ONE_GENERATIVE_MODEL` | bool | `true` | no | all | Allow only one resident generative model |
+| `CQ_GATEWAY_IDLE_UNLOAD_SECONDS` | int | `600` | no | all | Idle grace before unloading |
+| `CQ_GATEWAY_RUN_LEASE_TTL_SECONDS` / `CQ_GATEWAY_CHAT_LEASE_TTL_SECONDS` | int | `300` / `43200` | no | all | Lease lifetimes |
+| `CQ_GATEWAY_PER_RUN_TOKEN_LIMIT` | int | `200000` | no | all | Tokens per run across all calls |
+| `CQ_GATEWAY_DAILY_CLOUD_TOKEN_BUDGET` | int | `0` (off) | no | all | Daily cloud tokens per provider |
+| `CQ_GATEWAY_ANTHROPIC_DEFAULT_MODEL` | string | `claude-opus-5` | no | all | Model for `anthropic.default` |
+| `CQ_GATEWAY_ANTHROPIC_FALLBACKS` | bool | `true` | no | all | Anthropic server-side refusal fallback |
+| `CQ_GATEWAY_OPENAI_MODELS` / `CQ_GATEWAY_ANTHROPIC_MODELS` | JSON | `{}` | no | all | Cloud profile name to model id |
+| `CQ_GATEWAY_HOST` / `CQ_GATEWAY_PORT` | string / int | `127.0.0.1` / `8090` | no | Compose: `0.0.0.0` | Gateway listen address |
+| `CQ_RUNTIME_*` | | | token: yes | host | Runtime daemon settings; see docs/runtime-daemon.md |

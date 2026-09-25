@@ -6,11 +6,11 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-T = TypeVar("T", bound="ModelOutActiveLeasesItem")
+T = TypeVar("T", bound="ModelOutErrorType0")
 
 
 @_attrs_define
-class ModelOutActiveLeasesItem:
+class ModelOutErrorType0:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -23,10 +23,10 @@ class ModelOutActiveLeasesItem:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        model_out_active_leases_item = cls()
+        model_out_error_type_0 = cls()
 
-        model_out_active_leases_item.additional_properties = d
-        return model_out_active_leases_item
+        model_out_error_type_0.additional_properties = d
+        return model_out_error_type_0
 
     @property
     def additional_keys(self) -> list[str]:

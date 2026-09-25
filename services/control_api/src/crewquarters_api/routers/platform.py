@@ -3,13 +3,15 @@ system status, and audit history."""
 
 from __future__ import annotations
 
+import json
 import shutil
 import uuid
+from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -88,13 +90,18 @@ async def _model_action(
     auth: AuthContext,
     state: AppState,
     db: AsyncSession,
+    *,
+    force: bool = False,
+    status_code: int = 202,
 ) -> Response:
     idem = await idempotency.begin(
-        db, request, auth.user.id, {"modelId": model_id, "action": action}
+        db, request, auth.user.id, {"modelId": model_id, "action": action, "force": force}
     )
     if idem.replay:
         return idem.replay
-    model = await state.models.request_action(model_id, action)
+    model = await state.models.request_action(
+        model_id, action, force=force, actor=str(auth.user.id)
+    )
     audit.record(
         db,
         action=f"model.{action}",
@@ -103,44 +110,57 @@ async def _model_action(
         target_type="model",
         target_id=model_id,
         request_id=request_id(request),
+        metadata={"force": force} if force else None,
     )
-    return await idempotency.finish(db, idem, 202, schemas.ModelOut.model_validate(model))
+    return await idempotency.finish(db, idem, status_code, schemas.ModelOut.model_validate(model))
+
+
+def _model_route(path: str, action: str, summary: str, status_code: int = 202) -> None:
+    @router.post(
+        path,
+        response_model=schemas.ModelOut,
+        status_code=status_code,
+        tags=["models"],
+        responses=ERRORS,
+        summary=summary,
+        name=f"model_{action}",
+    )
+    async def handler(
+        model_id: str,
+        request: Request,
+        auth: AuthContext = Depends(require_owner),
+        state: AppState = Depends(app_state),
+        db: AsyncSession = Depends(get_db),
+    ) -> Response:
+        return await _model_action(
+            model_id, action, request, auth, state, db, status_code=status_code
+        )
+
+
+_model_route("/models/{model_id}/install", "install", "Download a pinned model to disk (resumable)")
+_model_route(
+    "/models/{model_id}/load", "load", "Load a model into memory (admission control applies)"
+)
 
 
 @router.post(
-    "/models/{model_id}/install",
+    "/models/{model_id}/install/cancel",
     response_model=schemas.ModelOut,
-    status_code=202,
     tags=["models"],
     responses=ERRORS,
-    summary="Download a model to disk",
+    summary="Cancel a download; optionally delete the partial files",
 )
-async def install_model(
+async def cancel_model_install(
     model_id: str,
+    body: schemas.ModelCancelInstallIn,
     request: Request,
     auth: AuthContext = Depends(require_owner),
     state: AppState = Depends(app_state),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    return await _model_action(model_id, "install", request, auth, state, db)
-
-
-@router.post(
-    "/models/{model_id}/load",
-    response_model=schemas.ModelOut,
-    status_code=202,
-    tags=["models"],
-    responses=ERRORS,
-    summary="Load a model into memory (admission control applies)",
-)
-async def load_model(
-    model_id: str,
-    request: Request,
-    auth: AuthContext = Depends(require_owner),
-    state: AppState = Depends(app_state),
-    db: AsyncSession = Depends(get_db),
-) -> Response:
-    return await _model_action(model_id, "load", request, auth, state, db)
+    return await _model_action(
+        model_id, "cancel_install", request, auth, state, db, force=body.clear, status_code=200
+    )
 
 
 @router.post(
@@ -149,16 +169,86 @@ async def load_model(
     status_code=202,
     tags=["models"],
     responses=ERRORS,
-    summary="Unload a model from memory",
+    summary="Unload a model; refuses while leases are held unless force is set",
 )
 async def unload_model(
+    model_id: str,
+    request: Request,
+    body: schemas.ModelUnloadIn | None = None,
+    auth: AuthContext = Depends(require_owner),
+    state: AppState = Depends(app_state),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    force = bool(body and body.force)
+    return await _model_action(model_id, "unload", request, auth, state, db, force=force)
+
+
+@router.delete(
+    "/models/{model_id}",
+    response_model=schemas.ModelOut,
+    tags=["models"],
+    responses=ERRORS,
+    summary="Delete an installed model's files (it must not be loaded)",
+)
+async def delete_model(
     model_id: str,
     request: Request,
     auth: AuthContext = Depends(require_owner),
     state: AppState = Depends(app_state),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    return await _model_action(model_id, "unload", request, auth, state, db)
+    return await _model_action(model_id, "delete", request, auth, state, db, status_code=200)
+
+
+@router.get(
+    "/models/{model_id}/events",
+    tags=["models"],
+    responses={
+        200: {
+            "description": "Server-sent events: event=model.state, data=Model JSON, sent "
+            "whenever download or load progress changes.",
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+        },
+        **ERRORS,
+    },
+    summary="Stream model download/load progress (SSE)",
+)
+async def model_events(
+    model_id: str,
+    _: AuthContext = Depends(current_auth),
+    state: AppState = Depends(app_state),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    if await state.models.get_model(model_id) is None:
+        raise not_found("Model", model_id)
+    await db.close()
+    events = getattr(state.models, "model_events", None)
+
+    async def relay() -> AsyncIterator[str]:
+        if events is None:  # fake client: one snapshot
+            model = await state.models.get_model(model_id)
+            yield f"id: 1\nevent: model.state\ndata: {json.dumps(model)}\n\n"
+            return
+        async for line in events(model_id):
+            yield line + "\n"
+
+    return StreamingResponse(
+        relay(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get(
+    "/system/memory",
+    response_model=schemas.MemoryOut,
+    tags=["system"],
+    summary="Unified memory: system reserve, model reservations, available",
+)
+async def system_memory(
+    _: AuthContext = Depends(current_auth), state: AppState = Depends(app_state)
+) -> schemas.MemoryOut:
+    return schemas.MemoryOut.model_validate(await state.models.memory())
 
 
 # --- Connections ------------------------------------------------------------------------
@@ -377,12 +467,14 @@ async def system_status(
             runtime["capacity"] = capacity
             checks.append(_check("runtime", "runtime daemon", True, "Reachable"))
             gpu = capacity.get("gpu") or {}
+            appliance = state.settings.profile == "dgx"
             checks.append(
                 _check(
                     "models",
                     "gpu",
                     bool(gpu.get("available")),
                     str(gpu.get("name") or ("Available" if gpu.get("available") else "No GPU")),
+                    warn=not appliance,
                 )
             )
             docker = capacity.get("docker") or {}
@@ -390,8 +482,9 @@ async def system_status(
                 _check(
                     "runtime",
                     "nvidia container runtime",
-                    bool(docker.get("nvidiaRuntime", docker.get("available"))),
+                    bool(docker.get("nvidiaRuntime") or docker.get("cdi")),
                     str(docker.get("detail", "")) or "Checked by the runtime daemon",
+                    warn=not appliance,
                 )
             )
         except Exception as exc:

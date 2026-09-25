@@ -1,0 +1,50 @@
+[Unit]
+Description=Crewquarters runtime daemon (the only component with Docker access)
+Documentation=file:/usr/share/doc/crewquarters/dgx-runbook.md
+Requires=crewquarters-runtime.socket docker.service
+After=crewquarters-runtime.socket docker.service crewquarters-netguard.service
+Wants=crewquarters-netguard.service
+
+[Service]
+Type=simple
+User=crewquarters-runtime
+Group=crewquarters-runtime
+SupplementaryGroups=docker
+EnvironmentFile=/etc/crewquarters/crewquarters.env
+Environment=CQ_RUNTIME_TOKEN_FILE=/etc/crewquarters/runtime-token
+Environment=CQ_RUNTIME_DATA_DIR=/var/lib/crewquarters
+Environment=CQ_RUNTIME_MODEL_PROFILES=/usr/share/crewquarters/catalog/models
+Environment=PYTHONPATH=/usr/lib/crewquarters/python
+ExecStart=/usr/bin/python3 -m crewquarters_runtime.cli serve
+Restart=on-failure
+RestartSec=3
+
+# Hardening: the daemon needs the Docker socket, its data directory, and outbound HTTPS
+# for model downloads. Nothing else.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+# No PrivateDevices: nvidia-smi needs /dev/nvidia* for the GPU capacity checks.
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/crewquarters/models /var/lib/crewquarters/runs
+ReadOnlyPaths=/etc/crewquarters/runtime-token /usr/share/crewquarters
+# Model weights must be readable by capability-less serving containers (not secrets).
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target
