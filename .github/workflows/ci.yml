@@ -151,11 +151,23 @@ jobs:
           tags: crewquarters/platform:ci
           cache-from: type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+      - name: Build proxy image (nginx + web UI)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/proxy.Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: crewquarters/proxy:ci
+          cache-from: type=gha,scope=proxy-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=proxy-${{ matrix.platform }}
       - name: Smoke test (emulated on arm64)
         run: |
           docker run --rm --platform ${{ matrix.platform }} crewquarters/platform:ci \
             python -c "import platform, crewquarters_api.main, crewquarters_scheduler.main; print(platform.machine())"
           docker run --rm --platform ${{ matrix.platform }} crewquarters/platform:ci cq-admin --help
+          docker run --rm --platform ${{ matrix.platform }} --entrypoint sh crewquarters/proxy:ci \
+            -c 'test -f /usr/share/crewquarters/ui/index.html && ls /usr/share/crewquarters/ui/assets/*.js >/dev/null'
       - name: SBOM (SPDX)
         if: matrix.platform == 'linux/amd64'
         uses: anchore/sbom-action@v0.24.2

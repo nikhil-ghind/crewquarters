@@ -5,7 +5,10 @@
 **/.mypy_cache
 **/.ruff_cache
 **/node_modules
-packages/contracts/clients
+packages/contracts/clients/python
+**/dist
+**/test-results
+**/playwright-report
 docs
 tests
 **/tests
