@@ -47,10 +47,20 @@ class Settings(BaseSettings):
     runtime_socket: Path = Path("/run/crewquarters/runtime.sock")
     model_gateway_adapter: str = Field("http", description="http (model gateway) | fake (tests)")
     model_gateway_url: str = "http://model-gateway:8090"
-    broker_adapter: str = "fake"
+    broker_adapter: str | None = Field(
+        None,
+        description="http (capability broker) | fake (dev profile only). "
+        "Unset: fake in the dev profile, http otherwise.",
+    )
     fake_connections: list[str] = ["google", "twilio", "openai", "anthropic"]
 
     broker_url: str = "http://capability-broker:8000"
+    knowledge_url: str = "http://knowledge:8000"
+    # The one public origin for OAuth redirects and Twilio callbacks. The broker builds
+    # every callback URL from it; the control API reports it read-only in /settings.
+    public_base_url: str = "http://localhost:8080"
+    # Per-document upload limit, shared with the knowledge service (CQ_MAX_UPLOAD_BYTES).
+    max_upload_bytes: int = 25 * 1024 * 1024
     heartbeat_timeout_seconds: int = 30
     prepare_timeout_seconds: int = 600
 
@@ -61,6 +71,19 @@ class Settings(BaseSettings):
     reconciler_interval_seconds: float = 2.0
     scheduler_metrics_host: str = "127.0.0.1"
     scheduler_metrics_port: int = 9101
+
+    def effective_broker_adapter(self) -> str:
+        """The connection-status adapter. The fake reports every provider connected, so it
+        is refused outside the ``dev`` profile."""
+        adapter = self.broker_adapter or ("fake" if self.profile == "dev" else "http")
+        if adapter not in ("fake", "http"):
+            raise RuntimeError(f"Unknown CQ_BROKER_ADAPTER={adapter!r}; use http or fake.")
+        if adapter == "fake" and self.profile != "dev":
+            raise RuntimeError(
+                "CQ_BROKER_ADAPTER=fake is only allowed in the dev profile; "
+                f"CQ_PROFILE={self.profile!r} must use the capability broker (http)."
+            )
+        return adapter
 
 
 @lru_cache

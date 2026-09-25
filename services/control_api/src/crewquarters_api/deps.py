@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crewquarters_api import security
+from crewquarters_api.upstream import BrokerClient, ServiceClient
 from crewquarters_shared.clients import ConnectionStatusClient, ModelStatusClient
 from crewquarters_shared.config import Settings
 from crewquarters_shared.db.models import Session, User
@@ -32,6 +33,9 @@ class AppState:
     connections: ConnectionStatusClient
     auth_limiter: security.RateLimiter
     metrics: ApiMetrics
+    broker: BrokerClient
+    knowledge: ServiceClient
+    gateway_admin: ServiceClient
     runtime: RuntimeAdapter | None = None
 
 

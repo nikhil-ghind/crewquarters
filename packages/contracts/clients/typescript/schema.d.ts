@@ -729,6 +729,308 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chat/sessions/{session_id}/messages/{message_id}/citations/{citation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve a citation chip: the cited passage and its document's current state
+         * @description Only citations stored on your own chat messages resolve. ``documentAvailable`` is
+         *     false once the document (or its knowledge base) was deleted.
+         */
+        get: operations["resolve_citation_api_v1_chat_sessions__session_id__messages__message_id__citations__citation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connections/google/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Begin Google consent: returns the authorization URL and sets the binding cookie
+         * @description Not replayable: every call starts a new single-use consent with a new browser binding,
+         *     so an ``Idempotency-Key`` is ignored here.
+         */
+        post: operations["google_start_api_v1_connections_google_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connections/google/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Google access now; an expired grant becomes NEEDS_ATTENTION */
+        post: operations["google_test_api_v1_connections_google_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connections/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Disconnect Google: revoke at Google, then delete the connection and its secret */
+        delete: operations["google_disconnect_api_v1_connections_google_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connections/twilio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save (or replace) Twilio credentials, then validate them without calling */
+        put: operations["twilio_save_api_v1_connections_twilio_put"];
+        post?: never;
+        /** Delete the Twilio credentials */
+        delete: operations["twilio_delete_api_v1_connections_twilio_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connections/twilio/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Twilio credentials without placing a call */
+        post: operations["twilio_test_api_v1_connections_twilio_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connections/twilio/test-call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Place one live test call (the owner must confirm; at most one a minute)
+         * @description A retry with the same ``Idempotency-Key`` replays the first result and never dials
+         *     twice.
+         */
+        post: operations["twilio_test_call_api_v1_connections_twilio_test_call_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/provider-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cloud provider profiles (API keys are never returned) */
+        get: operations["list_provider_profiles_api_v1_provider_profiles_get"];
+        put?: never;
+        /** Store an OpenAI or Anthropic API key (encrypted by the broker) */
+        post: operations["create_provider_profile_api_v1_provider_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/provider-profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a provider profile and its key */
+        delete: operations["delete_provider_profile_api_v1_provider_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/provider-profiles/{profile_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test a provider key with the smallest useful request (content leaves the device)
+         * @description The model gateway decrypts the key and calls the provider; the control API never
+         *     holds the key.
+         */
+        post: operations["test_provider_profile_api_v1_provider_profiles__profile_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your knowledge bases */
+        get: operations["list_knowledge_bases_api_v1_knowledge_bases_get"];
+        put?: never;
+        /** Create a knowledge base (the embedding profile is fixed at creation) */
+        post: operations["create_knowledge_base_api_v1_knowledge_bases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{kb_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One knowledge base */
+        get: operations["get_knowledge_base_api_v1_knowledge_bases__kb_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete a knowledge base; its files are securely purged */
+        delete: operations["delete_knowledge_base_api_v1_knowledge_bases__kb_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{kb_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Documents with their per-file ingestion state and errors */
+        get: operations["list_documents_api_v1_knowledge_bases__kb_id__documents_get"];
+        put?: never;
+        /**
+         * Upload one document (multipart `file`); indexing is asynchronous
+         * @description The body limit is ``CQ_MAX_UPLOAD_BYTES`` (25 MiB) rather than the global 2 MiB; the
+         *     knowledge service validates type, name, size, and duplicates. Not replayable: a retry
+         *     of the same bytes returns ``409 DUPLICATE_DOCUMENT`` with the existing document id.
+         */
+        post: operations["upload_document_api_v1_knowledge_bases__kb_id__documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{kb_id}/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One document */
+        get: operations["get_document_api_v1_knowledge_bases__kb_id__documents__document_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete a document; its passages stop appearing in chat and searches */
+        delete: operations["delete_document_api_v1_knowledge_bases__kb_id__documents__document_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{kb_id}/documents/{document_id}/reindex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-index a document (for example after a failure or a profile change) */
+        post: operations["reindex_document_api_v1_knowledge_bases__kb_id__documents__document_id__reindex_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{kb_id}/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test retrieval: cited passages from this knowledge base only
+         * @description Read-only, so no idempotency record. Passages are untrusted document text.
+         */
+        post: operations["query_knowledge_base_api_v1_knowledge_bases__kb_id__query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/v1/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -791,6 +1093,30 @@ export interface paths {
         put?: never;
         /** Append a log/progress/metric/artifact event */
         post: operations["agent_event_internal_v1_runs__run_id__events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/v1/runs/{run_id}/event-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append a batch of agent events atomically, deduplicated by clientEventId
+         * @description Every event is validated first (type, size, and the run-event schema); if any is
+         *     invalid nothing is stored and ``422 INVALID_EVENT`` lists each rejected event as
+         *     ``details.rejected[] = {index, clientEventId, code, errors}``. Otherwise all new events
+         *     are inserted in one transaction, and a ``clientEventId`` already stored for the run is
+         *     skipped, so a retried batch never duplicates events.
+         */
+        post: operations["agent_event_batch_internal_v1_runs__run_id__event_batches_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -874,7 +1200,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** ctx.idempotency: claim an external action key */
+        /**
+         * ctx.idempotency: claim an external action key
+         * @description A repeat with the same ``claimToken`` from the same attempt (a retry after a lost
+         *     response) returns the original ``claimed``; any other repeat of an uncompleted key is
+         *     ``in_doubt``.
+         */
         post: operations["claim_action_internal_v1_runs__run_id__actions__key__claim_post"];
         delete?: never;
         options?: never;
@@ -920,6 +1251,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActionClaimIn */
+        ActionClaimIn: {
+            /** Attempt */
+            attempt: number;
+            /**
+             * Claimtoken
+             * @description Random per claim() call, reused on its retries. A repeat with the same token from the same attempt returns the original result.
+             */
+            claimToken?: string | null;
+        };
         /** ActionCompleteIn */
         ActionCompleteIn: {
             /** Attempt */
@@ -1087,6 +1428,30 @@ export interface components {
              */
             createdAt: string;
         };
+        /** BatchEvent */
+        BatchEvent: {
+            /** Clienteventid */
+            clientEventId: string;
+            /**
+             * Type
+             * @description run.log, run.progress, run.metric, or run.artifact.
+             */
+            type: string;
+            /** Occurredat */
+            occurredAt?: string | null;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        /** Body_upload_document_api_v1_knowledge_bases__kb_id__documents_post */
+        Body_upload_document_api_v1_knowledge_bases__kb_id__documents_post: {
+            /**
+             * File
+             * @description .txt, .md, .csv, text .pdf, or .docx
+             */
+            file: string;
+        };
         /** BootstrapIn */
         BootstrapIn: {
             /**
@@ -1193,11 +1558,12 @@ export interface components {
             modelProfile: string;
             /**
              * Knowledgebaseid
-             * @description Requires the knowledge service (Nikhil Sajan Khaneja, Person 3).
+             * @description One of your knowledge bases; answers cite its passages.
              */
             knowledgeBaseId?: string | null;
             /**
              * Retrievalmode
+             * @description only_knowledge answers only from retrieved passages and says so, without calling the model, when nothing is found.
              * @default when_relevant
              * @enum {string}
              */
@@ -1285,6 +1651,42 @@ export interface components {
             /** Lastmessageat */
             lastMessageAt: string | null;
         };
+        /**
+         * CitationOut
+         * @description A citation stored on an assistant message, with the document's current state.
+         */
+        CitationOut: {
+            /** Index */
+            index: number;
+            /** Citationid */
+            citationId: string;
+            /**
+             * Text
+             * @description The passage as retrieved; untrusted, render escaped.
+             */
+            text: string;
+            /** Score */
+            score?: number | null;
+            document: components["schemas"]["PassageDocument"];
+            /** Locator */
+            locator: {
+                [key: string]: unknown;
+            };
+            /** Location */
+            location: string;
+            /**
+             * Knowledgebaseid
+             * Format: uuid
+             */
+            knowledgeBaseId: string;
+            /**
+             * Documentavailable
+             * @description False once the document was deleted: its chunks no longer appear in chat.
+             */
+            documentAvailable: boolean;
+            /** Documentstate */
+            documentState?: string | null;
+        };
         /** ConnectionOut */
         ConnectionOut: {
             /**
@@ -1296,13 +1698,71 @@ export interface components {
             displayName: string;
             /**
              * Status
+             * @description UNKNOWN: the capability broker could not be reached; nothing is assumed.
              * @enum {string}
              */
-            status: "NOT_CONNECTED" | "CONNECTED" | "NEEDS_ATTENTION" | "DISABLED";
+            status: "NOT_CONNECTED" | "CONNECTED" | "NEEDS_ATTENTION" | "DISABLED" | "UNKNOWN";
             /** Grantedcapabilities */
             grantedCapabilities: string[];
             /** Lastcheckedat */
             lastCheckedAt: string | null;
+            /**
+             * Account
+             * @description Masked account label, when connected.
+             */
+            account?: string | null;
+            /** Detail */
+            detail?: string | null;
+        };
+        /** DocumentOut */
+        DocumentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Knowledgebaseid
+             * Format: uuid
+             */
+            knowledgeBaseId: string;
+            /** Name */
+            name: string;
+            /** Mime */
+            mime: string;
+            /** Bytes */
+            bytes: number;
+            /** Sha256 */
+            sha256: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "PENDING" | "PROCESSING" | "READY" | "FAILED";
+            /**
+             * Extracted
+             * @description Extraction summary.
+             */
+            extracted?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Error
+             * @description {code, message} when FAILED.
+             */
+            error?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
         };
         /** ErrorDetail */
         ErrorDetail: {
@@ -1320,6 +1780,47 @@ export interface components {
         /** ErrorResponse */
         ErrorResponse: {
             error: components["schemas"]["ErrorDetail"];
+        };
+        /** EventBatchIn */
+        EventBatchIn: {
+            /** Attempt */
+            attempt: number;
+            /** Events */
+            events: components["schemas"]["BatchEvent"][];
+        };
+        /** EventBatchOut */
+        EventBatchOut: {
+            /**
+             * Accepted
+             * @description Events stored by this call (duplicates excluded).
+             */
+            accepted: number;
+            /**
+             * Duplicates
+             * @description clientEventIds already stored for this run.
+             */
+            duplicates: number;
+            /**
+             * Lastsequence
+             * @description Highest event sequence of the run.
+             */
+            lastSequence: number;
+        };
+        /** GoogleStartIn */
+        GoogleStartIn: {
+            /**
+             * Capabilities
+             * @description Consent is requested separately per capability.
+             */
+            capabilities: ("gmail.readonly" | "spreadsheets")[];
+        };
+        /** GoogleStartOut */
+        GoogleStartOut: {
+            /**
+             * Authorizationurl
+             * @description Navigate the browser here. The response also sets the HttpOnly `cq_oauth_binding` cookie that the callback requires.
+             */
+            authorizationUrl: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1544,6 +2045,47 @@ export interface components {
              * Format: uuid
              */
             installationId: string;
+            /**
+             * Trigger
+             * @enum {string}
+             */
+            trigger: "manual" | "schedule";
+            /** Scheduledfor */
+            scheduledFor: string | null;
+            /**
+             * Agentid
+             * @description Manifest agent id.
+             */
+            agentId: string;
+            /**
+             * Agentversion
+             * @description Manifest version (semver).
+             */
+            agentVersion: string;
+            /**
+             * Agentversionid
+             * Format: uuid
+             */
+            agentVersionId: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Activetimeoutseconds
+             * @description Active-time limit per attempt.
+             */
+            activeTimeoutSeconds: number;
+            /** Activesecondsremaining */
+            activeSecondsRemaining: number;
+            /** Maxinputwaitseconds */
+            maxInputWaitSeconds: number;
+            /**
+             * Inputwaitremainingseconds
+             * @description Remaining input-wait budget.
+             */
+            inputWaitRemainingSeconds: number;
             /** Cancelrequested */
             cancelRequested: boolean;
             /**
@@ -1563,6 +2105,61 @@ export interface components {
             config: {
                 [key: string]: unknown;
             };
+        };
+        /** KnowledgeBaseCreateIn */
+        KnowledgeBaseCreateIn: {
+            /** Name */
+            name: string;
+        };
+        /** KnowledgeBaseOut */
+        KnowledgeBaseOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Embeddingprofile */
+            embeddingProfile: string;
+            /** Embeddingdimension */
+            embeddingDimension: number;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** KnowledgeFilters */
+        KnowledgeFilters: {
+            /** Documentids */
+            documentIds?: string[];
+        };
+        /** KnowledgeQueryIn */
+        KnowledgeQueryIn: {
+            /** Query */
+            query: string;
+            /**
+             * Topk
+             * @default 8
+             */
+            topK: number;
+            /**
+             * Maxcontexttokens
+             * @default 5000
+             */
+            maxContextTokens: number;
+            filters?: components["schemas"]["KnowledgeFilters"];
+        };
+        /** KnowledgeQueryOut */
+        KnowledgeQueryOut: {
+            /**
+             * Knowledgebaseid
+             * Format: uuid
+             */
+            knowledgeBaseId: string;
+            /** Passages */
+            passages: components["schemas"]["PassageOut"][];
         };
         /** LoginIn */
         LoginIn: {
@@ -1776,6 +2373,16 @@ export interface components {
              */
             nextCursor?: string | null;
         };
+        /** Page[DocumentOut] */
+        Page_DocumentOut_: {
+            /** Items */
+            items: components["schemas"]["DocumentOut"][];
+            /**
+             * Nextcursor
+             * @description Opaque cursor for the next page; null on the last page.
+             */
+            nextCursor?: string | null;
+        };
         /** Page[InputRequestOut] */
         Page_InputRequestOut_: {
             /** Items */
@@ -1796,10 +2403,30 @@ export interface components {
              */
             nextCursor?: string | null;
         };
+        /** Page[KnowledgeBaseOut] */
+        Page_KnowledgeBaseOut_: {
+            /** Items */
+            items: components["schemas"]["KnowledgeBaseOut"][];
+            /**
+             * Nextcursor
+             * @description Opaque cursor for the next page; null on the last page.
+             */
+            nextCursor?: string | null;
+        };
         /** Page[ModelOut] */
         Page_ModelOut_: {
             /** Items */
             items: components["schemas"]["ModelOut"][];
+            /**
+             * Nextcursor
+             * @description Opaque cursor for the next page; null on the last page.
+             */
+            nextCursor?: string | null;
+        };
+        /** Page[ProviderProfileOut] */
+        Page_ProviderProfileOut_: {
+            /** Items */
+            items: components["schemas"]["ProviderProfileOut"][];
             /**
              * Nextcursor
              * @description Opaque cursor for the next page; null on the last page.
@@ -1825,6 +2452,103 @@ export interface components {
              * @description Opaque cursor for the next page; null on the last page.
              */
             nextCursor?: string | null;
+        };
+        /** PassageDocument */
+        PassageDocument: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** PassageOut */
+        PassageOut: {
+            /** Citationid */
+            citationId: string;
+            /**
+             * Text
+             * @description Untrusted document text; render escaped.
+             */
+            text: string;
+            /** Score */
+            score: number;
+            document: components["schemas"]["PassageDocument"];
+            /** Locator */
+            locator: {
+                [key: string]: unknown;
+            };
+            /** Location */
+            location: string;
+        };
+        /** ProviderProfileCreateIn */
+        ProviderProfileCreateIn: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "openai" | "anthropic";
+            /** Displayname */
+            displayName: string;
+            /**
+             * Apikey
+             * @description Stored; never returned.
+             */
+            apiKey: string;
+            /** Allowedmodels */
+            allowedModels?: string[];
+            /** Budgets */
+            budgets?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /** ProviderProfileOut */
+        ProviderProfileOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "openai" | "anthropic";
+            /** Displayname */
+            displayName: string;
+            /** Allowedmodels */
+            allowedModels: string[];
+            /** Budgets */
+            budgets: {
+                [key: string]: unknown;
+            };
+            /** Enabled */
+            enabled: boolean;
+            /** Status */
+            status: string;
+            /** Lastcheckedat */
+            lastCheckedAt: string | null;
+        };
+        /** ProviderProfileTestOut */
+        ProviderProfileTestOut: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "CONNECTED" | "ERROR";
+            /** Detail */
+            detail?: string | null;
+            /**
+             * Checkedat
+             * Format: date-time
+             */
+            checkedAt: string;
         };
         /** Readiness */
         Readiness: {
@@ -1880,6 +2604,11 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+            /**
+             * Occurredat
+             * @description When the agent emitted the event (agent events only).
+             */
+            occurredAt?: string | null;
         };
         /** RunOut */
         RunOut: {
@@ -2115,8 +2844,18 @@ export interface components {
             timezone: string;
             /** Idleunloadseconds */
             idleUnloadSeconds: number;
-            /** Callbackbaseurl */
-            callbackBaseUrl: string | null;
+            /**
+             * Callbackbaseurl
+             * @description Read-only: set by CQ_PUBLIC_BASE_URL, the single source the capability broker uses for the OAuth redirect and Twilio callbacks.
+             */
+            callbackBaseUrl: string;
+            /**
+             * Callbackurls
+             * @description Exact URLs to register: googleRedirectUri, twilioCallbackBase.
+             */
+            callbackUrls: {
+                [key: string]: string;
+            };
             /** Setupcompleted */
             setupCompleted: boolean;
             /**
@@ -2140,7 +2879,11 @@ export interface components {
             timezone?: string | null;
             /** Idleunloadseconds */
             idleUnloadSeconds?: number | null;
-            /** Callbackbaseurl */
+            /**
+             * Callbackbaseurl
+             * @deprecated
+             * @description Read-only; set CQ_PUBLIC_BASE_URL instead. Sending it returns 422 SETTING_READ_ONLY.
+             */
             callbackBaseUrl?: string | null;
             /** Setupcompleted */
             setupCompleted?: boolean | null;
@@ -2197,6 +2940,40 @@ export interface components {
             runtime: {
                 [key: string]: unknown;
             };
+        };
+        /** TwilioCredentialsIn */
+        TwilioCredentialsIn: {
+            /** Accountsid */
+            accountSid: string;
+            /**
+             * Authtoken
+             * @description Stored; never returned.
+             */
+            authToken: string;
+            /** Fromnumber */
+            fromNumber: string;
+        };
+        /** TwilioTestCallIn */
+        TwilioTestCallIn: {
+            /** To */
+            to: string;
+            /**
+             * Confirm
+             * @description Must be true: the owner confirmed a live call.
+             */
+            confirm: boolean;
+        };
+        /** TwilioTestCallOut */
+        TwilioTestCallOut: {
+            /** Placed */
+            placed: boolean;
+            /**
+             * To
+             * @description Masked destination.
+             */
+            to: string;
+            /** Status */
+            status?: string | null;
         };
         /** UserOut */
         UserOut: {
@@ -4523,6 +5300,1490 @@ export interface operations {
             };
         };
     };
+    resolve_citation_api_v1_chat_sessions__session_id__messages__message_id__citations__citation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                message_id: string;
+                citation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CitationOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    google_start_api_v1_connections_google_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleStartIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleStartOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    google_test_api_v1_connections_google_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    google_disconnect_api_v1_connections_google_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    twilio_save_api_v1_connections_twilio_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwilioCredentialsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    twilio_delete_api_v1_connections_twilio_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    twilio_test_api_v1_connections_twilio_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    twilio_test_call_api_v1_connections_twilio_test_call_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwilioTestCallIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TwilioTestCallOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_provider_profiles_api_v1_provider_profiles_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ProviderProfileOut_"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_provider_profile_api_v1_provider_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderProfileCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderProfileOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_provider_profile_api_v1_provider_profiles__profile_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    test_provider_profile_api_v1_provider_profiles__profile_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderProfileTestOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_knowledge_bases_api_v1_knowledge_bases_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_KnowledgeBaseOut_"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_knowledge_base_api_v1_knowledge_bases_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnowledgeBaseCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeBaseOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_knowledge_base_api_v1_knowledge_bases__kb_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kb_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeBaseOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_knowledge_base_api_v1_knowledge_bases__kb_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kb_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_documents_api_v1_knowledge_bases__kb_id__documents_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                kb_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_DocumentOut_"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upload_document_api_v1_knowledge_bases__kb_id__documents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kb_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_document_api_v1_knowledge_bases__kb_id__documents_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_document_api_v1_knowledge_bases__kb_id__documents__document_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kb_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_document_api_v1_knowledge_bases__kb_id__documents__document_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kb_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reindex_document_api_v1_knowledge_bases__kb_id__documents__document_id__reindex_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kb_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    query_knowledge_base_api_v1_knowledge_bases__kb_id__query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kb_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnowledgeQueryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeQueryOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     internal_run_internal_v1_runs__run_id__get: {
         parameters: {
             query?: never;
@@ -4727,6 +6988,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunEventOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    agent_event_batch_internal_v1_runs__run_id__event_batches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventBatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventBatchOut"];
                 };
             };
             /** @description Unauthorized */
@@ -5026,7 +7349,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AttemptIn"];
+                "application/json": components["schemas"]["ActionClaimIn"];
             };
         };
         responses: {

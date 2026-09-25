@@ -2,9 +2,14 @@
 
 Enabling a session takes a model lease through the gateway (the model loads if it is
 cold); disabling releases it so the idle timer can unload the model. Messages stream
-from the gateway over SSE and are stored with their status. Knowledge-grounded answers
-need the knowledge service (Nikhil Sajan Khaneja, Person 3); until it exists a session
-with a knowledge base is refused rather than silently answered without sources.
+from the gateway over SSE and are stored with their status.
+
+A session may name one of the user's knowledge bases (PLAN.md sections 8.4, 9). Each message
+then queries it through the knowledge service first; the passages go into the user message
+as delimited, untrusted evidence (``crewquarters_api.evidence``), and the assistant message
+stores them as citations. ``only_knowledge`` answers "not found" without calling the model
+when nothing is retrieved. A retrieval failure fails the message rather than answering
+without sources.
 """
 
 from __future__ import annotations
@@ -19,9 +24,11 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from crewquarters_api import evidence as rag
 from crewquarters_api import idempotency, schemas
 from crewquarters_api.deps import AppState, AuthContext, app_state, current_auth, get_db, request_id
 from crewquarters_api.pagination import clamp_limit, decode_cursor, encode_cursor
+from crewquarters_api.upstream import require_knowledge_base
 from crewquarters_shared import audit
 from crewquarters_shared.db.models_gateway import ChatMessage, ChatSession
 from crewquarters_shared.errors import PlatformError, conflict, not_found
@@ -99,14 +106,12 @@ async def create_session(
     if await state.models.get_model(body.model_profile) is None:
         raise not_found("Model", body.model_profile)
     if body.knowledge_base_id is not None:
-        raise conflict(
-            "KNOWLEDGE_UNAVAILABLE",
-            "Knowledge-grounded chat needs the knowledge service, which is not installed yet.",
-        )
+        await require_knowledge_base(db, body.knowledge_base_id, auth.user.id)
     session = ChatSession(
         user_id=auth.user.id,
         title=body.title or "New chat",
         model_profile=body.model_profile,
+        knowledge_base_id=body.knowledge_base_id,
         retrieval_mode=body.retrieval_mode,
         enabled=False,
     )
@@ -299,6 +304,22 @@ async def send_message(
     session = await _owned(db, session_id, auth.user.id, lock=True)
     if not session.enabled:
         raise conflict("CHAT_DISABLED", "Enable chat before sending messages.")
+    grounding: rag.Evidence | None = None
+    citations: list[dict[str, Any]] = []
+    if session.knowledge_base_id is not None:
+        grounding = await rag.retrieve(
+            state.knowledge,
+            db,
+            session.knowledge_base_id,
+            auth.user.id,
+            session.retrieval_mode,
+            body.content,
+        )
+        citations = grounding.citations(session.knowledge_base_id)
+    # only_knowledge with nothing retrieved: answer without calling the model.
+    answer_locally = (
+        grounding is not None and grounding.mode == "only_knowledge" and not grounding.found
+    )
     history = list(
         (
             await db.scalars(
@@ -317,8 +338,9 @@ async def send_message(
         role="assistant",
         content="",
         status="streaming",
-        model=session.model_profile,
-        provider="local",
+        citations=citations,
+        model=None if answer_locally else session.model_profile,
+        provider=None if answer_locally else "local",
     )
     db.add_all([user_message])
     await db.flush()
@@ -335,12 +357,18 @@ async def send_message(
         if budget < 0:
             break
         messages.append({"role": message.role, "content": message.content})
+    system = SYSTEM_PROMPT
+    question = body.content
+    if grounding is not None:
+        # Evidence goes in the user message, never in the system instruction (PLAN 9.3).
+        system = f"{SYSTEM_PROMPT}\n\n{grounding.system_instruction()}"
+        question = grounding.user_message(body.content)
     request_body = {
         "profile": session.model_profile,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system},
             *reversed(messages),
-            {"role": "user", "content": body.content},
+            {"role": "user", "content": question},
         ],
         "maxOutputTokens": 1024,
         "holder": {"type": "chat", "id": str(session.id), "label": session.title},
@@ -355,7 +383,19 @@ async def send_message(
         parts: list[str] = []
         status, usage, final_text = "failed", None, None
         error: dict[str, Any] | None = None
-        yield _sse("message", {"userMessage": user_out, "assistantMessageId": str(assistant_id)})
+        yield _sse(
+            "message",
+            {
+                "userMessage": user_out,
+                "assistantMessageId": str(assistant_id),
+                "citations": citations,
+            },
+        )
+        if answer_locally:
+            yield _sse("delta", {"text": rag.NOT_FOUND_ANSWER})
+            saved = await _finish(state, assistant_id, rag.NOT_FOUND_ANSWER, "complete", None)
+            yield _sse("done", saved)
+            return
         try:
             async for event in gateway.chat_stream(request_body):
                 if event["type"] == "delta":
@@ -386,6 +426,62 @@ async def send_message(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get(
+    "/chat/sessions/{session_id}/messages/{message_id}/citations/{citation_id}",
+    response_model=schemas.CitationOut,
+    responses=ERRORS,
+    summary="Resolve a citation chip: the cited passage and its document's current state",
+)
+async def resolve_citation(
+    session_id: uuid.UUID,
+    message_id: uuid.UUID,
+    citation_id: str,
+    auth: AuthContext = Depends(current_auth),
+    state: AppState = Depends(app_state),
+    db: AsyncSession = Depends(get_db),
+) -> schemas.CitationOut:
+    """Only citations stored on your own chat messages resolve. ``documentAvailable`` is
+    false once the document (or its knowledge base) was deleted."""
+    session = await _owned(db, session_id, auth.user.id)
+    message = await db.scalar(
+        select(ChatMessage).where(
+            ChatMessage.id == message_id, ChatMessage.session_id == session.id
+        )
+    )
+    cited = next(
+        (c for c in (message.citations if message else []) if c.get("citationId") == citation_id),
+        None,
+    )
+    if cited is None:
+        raise not_found("Citation", citation_id)
+    document: dict[str, Any] | None = None
+    owner_ok = await _owns_kb(db, cited.get("knowledgeBaseId"), auth.user.id)
+    if owner_ok:
+        try:
+            document = await state.knowledge.request("GET", f"/documents/{cited['document']['id']}")
+        except PlatformError as exc:
+            if exc.status_code != 404:
+                raise
+    available = document is not None and document.get("knowledgeBaseId") == cited.get(
+        "knowledgeBaseId"
+    )
+    return schemas.CitationOut.model_validate(
+        {
+            **cited,
+            "documentAvailable": available,
+            "documentState": document.get("state") if available and document else None,
+        }
+    )
+
+
+async def _owns_kb(db: AsyncSession, kb_id: Any, user_id: uuid.UUID) -> bool:
+    try:
+        await require_knowledge_base(db, uuid.UUID(str(kb_id)), user_id)
+    except (PlatformError, ValueError):
+        return False
+    return True
 
 
 async def _finish(

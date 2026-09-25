@@ -19,10 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from crewquarters_api import schemas, views
 from crewquarters_api.deps import AppState, app_state, get_db, internal_auth
-from crewquarters_shared.db.models import AgentRun, InputRequest
+from crewquarters_shared.db.models import AgentRun, AgentVersion, InputRequest
 from crewquarters_shared.errors import not_found
 from crewquarters_shared.metrics import CONTENT_TYPE
 from crewquarters_shared.runs import service
+from crewquarters_shared.runs.events import event_validator
+from crewquarters_shared.timeutil import utcnow
 
 router = APIRouter(dependencies=[Depends(internal_auth)], tags=["internal"])
 
@@ -48,12 +50,29 @@ async def internal_run(
     if run is None:
         raise not_found("Run", run_id)
     attempt = await service.get_attempt(db, run.id, run.current_attempt)
+    version = await db.get(AgentVersion, run.agent_version_id)
+    assert version is not None
+    now = utcnow()
     return schemas.InternalRunOut(
         capability_token_id=attempt.capability_token_id if attempt else None,
         id=run.id,
         state=run.state,
         current_attempt=run.current_attempt,
         installation_id=run.installation_id,
+        trigger=run.trigger,
+        scheduled_for=run.scheduled_for,
+        agent_id=version.agent_id,
+        agent_version=version.version,
+        agent_version_id=version.id,
+        created_at=run.created_at,
+        active_timeout_seconds=run.active_timeout_seconds,
+        active_seconds_remaining=round(
+            max(0.0, run.active_timeout_seconds - service.active_seconds(run, now)), 3
+        ),
+        max_input_wait_seconds=run.max_input_wait_seconds,
+        input_wait_remaining_seconds=round(
+            max(0.0, run.max_input_wait_seconds - service.wait_seconds(run, now)), 3
+        ),
         cancel_requested=run.cancel_requested_at is not None,
         permissions=run.permissions_snapshot,
         model_bindings=run.model_bindings,
@@ -114,6 +133,44 @@ async def agent_event(
     event = await service.record_agent_event(db, run_id, body.attempt, body.type, body.payload)
     await db.commit()
     return schemas.RunEventOut.model_validate(event)
+
+
+@router.post(
+    "/runs/{run_id}/event-batches",
+    response_model=schemas.EventBatchOut,
+    responses=ERRORS,
+    summary="Append a batch of agent events atomically, deduplicated by clientEventId",
+)
+async def agent_event_batch(
+    run_id: uuid.UUID,
+    body: schemas.EventBatchIn,
+    state: AppState = Depends(app_state),
+    db: AsyncSession = Depends(get_db),
+) -> schemas.EventBatchOut:
+    """Every event is validated first (type, size, and the run-event schema); if any is
+    invalid nothing is stored and ``422 INVALID_EVENT`` lists each rejected event as
+    ``details.rejected[] = {index, clientEventId, code, errors}``. Otherwise all new events
+    are inserted in one transaction, and a ``clientEventId`` already stored for the run is
+    skipped, so a retried batch never duplicates events."""
+    result = await service.record_agent_event_batch(
+        db,
+        run_id,
+        body.attempt,
+        [
+            service.AgentEventInput(
+                client_event_id=e.client_event_id,
+                type=e.type,
+                payload=e.payload,
+                occurred_at=e.occurred_at,
+            )
+            for e in body.events
+        ],
+        validator=event_validator(state.settings.contracts_dir),
+    )
+    await db.commit()
+    return schemas.EventBatchOut(
+        accepted=result.accepted, duplicates=result.duplicates, last_sequence=result.last_sequence
+    )
 
 
 @router.post(
@@ -206,9 +263,12 @@ async def poll_input(
     summary="ctx.idempotency: claim an external action key",
 )
 async def claim_action(
-    run_id: uuid.UUID, key: str, body: schemas.AttemptIn, db: AsyncSession = Depends(get_db)
+    run_id: uuid.UUID, key: str, body: schemas.ActionClaimIn, db: AsyncSession = Depends(get_db)
 ) -> schemas.ActionOut:
-    result = await service.claim_action(db, run_id, body.attempt, key)
+    """A repeat with the same ``claimToken`` from the same attempt (a retry after a lost
+    response) returns the original ``claimed``; any other repeat of an uncompleted key is
+    ``in_doubt``."""
+    result = await service.claim_action(db, run_id, body.attempt, key, body.claim_token)
     await db.commit()
     return schemas.ActionOut.model_validate(result)
 

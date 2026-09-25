@@ -43,12 +43,15 @@ def person3_broker_tables(database_url: str) -> None:
 
 @pytest.fixture
 def broker_settings(settings: Settings) -> BrokerSettings:
+    # A merged dict: the shared settings also define public_base_url and knowledge_url.
     return BrokerSettings(
-        **settings.model_dump(),
-        provider_mode="fake",
-        public_base_url=PUBLIC,
-        google_client_id="client-id.apps.example.com",
-        google_client_secret="client-secret-value",
+        **{
+            **settings.model_dump(),
+            "provider_mode": "fake",
+            "public_base_url": PUBLIC,
+            "google_client_id": "client-id.apps.example.com",
+            "google_client_secret": "client-secret-value",
+        }
     )
 
 
@@ -68,6 +71,7 @@ class Harness:
         self.run: dict[str, Any] = {}
         self.knowledge_requests: list[dict[str, Any]] = []
         self.control_requests: list[dict[str, Any]] = []
+        self.event_ids: set[str] = set()
         self.gateway_requests: list[httpx.Request] = []
         self.gateway_error: tuple[int, dict[str, Any]] | None = None
         self.app = create_app(
@@ -93,6 +97,19 @@ class Harness:
             self.control_requests.append({"path": request.url.path, "body": body})
             if request.url.path.endswith("/events"):
                 return httpx.Response(201, json={"sequence": len(self.control_requests)})
+            if request.url.path.endswith("/event-batches"):
+                # Mirrors the control API: dedupe by clientEventId across batches.
+                fresh = [e for e in body["events"] if e["clientEventId"] not in self.event_ids]
+                fresh = list({e["clientEventId"]: e for e in fresh}.values())
+                self.event_ids.update(e["clientEventId"] for e in fresh)
+                return httpx.Response(
+                    200,
+                    json={
+                        "accepted": len(fresh),
+                        "duplicates": len(body["events"]) - len(fresh),
+                        "lastSequence": len(self.event_ids),
+                    },
+                )
             if "/actions/" in request.url.path:
                 key = request.url.path.split("/actions/")[1].split("/")[0]
                 return httpx.Response(200, json={"key": key, "status": "claimed", "result": None})

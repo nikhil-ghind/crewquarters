@@ -6,6 +6,7 @@ class ConnectionOutStatus(StrEnum):
     DISABLED = "DISABLED"
     NEEDS_ATTENTION = "NEEDS_ATTENTION"
     NOT_CONNECTED = "NOT_CONNECTED"
+    UNKNOWN = "UNKNOWN"
 
     def __str__(self) -> str:
         return str(self.value)

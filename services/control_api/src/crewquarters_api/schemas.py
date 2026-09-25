@@ -220,6 +220,9 @@ class RunEventOut(ApiModel):
     type: str
     payload: dict[str, Any]
     created_at: datetime
+    occurred_at: datetime | None = Field(
+        None, description="When the agent emitted the event (agent events only)."
+    )
 
 
 # --- Input requests ---------------------------------------------------------------
@@ -375,9 +378,150 @@ class MemoryOut(ApiModel):
 class ConnectionOut(ApiModel):
     provider: Literal["google", "twilio", "openai", "anthropic"]
     display_name: str
-    status: Literal["NOT_CONNECTED", "CONNECTED", "NEEDS_ATTENTION", "DISABLED"]
+    status: Literal["NOT_CONNECTED", "CONNECTED", "NEEDS_ATTENTION", "DISABLED", "UNKNOWN"] = Field(
+        description="UNKNOWN: the capability broker could not be reached; nothing is assumed."
+    )
     granted_capabilities: list[str]
     last_checked_at: datetime | None
+    account: str | None = Field(None, description="Masked account label, when connected.")
+    detail: str | None = None
+
+
+# --- Connection management (proxied to the capability broker) ---------------------------
+
+E164 = r"^\+[1-9][0-9]{7,14}$"
+
+
+class GoogleStartIn(ApiModel):
+    capabilities: list[Literal["gmail.readonly", "spreadsheets"]] = Field(
+        min_length=1, description="Consent is requested separately per capability."
+    )
+
+
+class GoogleStartOut(ApiModel):
+    authorization_url: str = Field(
+        description="Navigate the browser here. The response also sets the HttpOnly "
+        "`cq_oauth_binding` cookie that the callback requires."
+    )
+
+
+class TwilioCredentialsIn(ApiModel):
+    account_sid: str = Field(pattern=r"^AC[0-9a-fA-F]{32}$")
+    auth_token: str = Field(min_length=16, max_length=128, description="Stored; never returned.")
+    from_number: str = Field(pattern=E164)
+
+
+class TwilioTestCallIn(ApiModel):
+    to: str = Field(pattern=E164)
+    confirm: bool = Field(description="Must be true: the owner confirmed a live call.")
+
+
+class TwilioTestCallOut(ApiModel):
+    placed: bool
+    to: str = Field(description="Masked destination.")
+    status: str | None = None
+
+
+class ProviderProfileCreateIn(ApiModel):
+    provider: Literal["openai", "anthropic"]
+    display_name: str = Field(min_length=1, max_length=100)
+    api_key: str = Field(min_length=8, max_length=512, description="Stored; never returned.")
+    allowed_models: list[str] = Field(default_factory=list, max_length=50)
+    budgets: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class ProviderProfileOut(ApiModel):
+    id: uuid.UUID
+    provider: Literal["openai", "anthropic"]
+    display_name: str
+    allowed_models: list[str]
+    budgets: dict[str, Any]
+    enabled: bool
+    status: str
+    last_checked_at: datetime | None
+
+
+class ProviderProfileTestOut(ApiModel):
+    status: Literal["CONNECTED", "ERROR"]
+    detail: str | None = None
+    checked_at: datetime
+
+
+# --- Knowledge (proxied to the knowledge service) ----------------------------------------
+
+
+class KnowledgeBaseCreateIn(ApiModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class KnowledgeBaseOut(ApiModel):
+    id: uuid.UUID
+    name: str
+    embedding_profile: str
+    embedding_dimension: int
+    created_at: datetime
+
+
+class DocumentOut(ApiModel):
+    id: uuid.UUID
+    knowledge_base_id: uuid.UUID
+    name: str
+    mime: str
+    bytes: int
+    sha256: str
+    state: Literal["PENDING", "PROCESSING", "READY", "FAILED"]
+    extracted: dict[str, Any] | None = Field(None, description="Extraction summary.")
+    error: dict[str, Any] | None = Field(None, description="{code, message} when FAILED.")
+    created_at: datetime
+    updated_at: datetime
+
+
+class KnowledgeFilters(ApiModel):
+    document_ids: list[uuid.UUID] = Field(default_factory=list, max_length=100)
+
+
+class KnowledgeQueryIn(ApiModel):
+    query: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(8, ge=1, le=50)
+    max_context_tokens: int = Field(5000, ge=100, le=20000)
+    filters: KnowledgeFilters = Field(default_factory=KnowledgeFilters)
+
+
+class PassageDocument(ApiModel):
+    id: uuid.UUID
+    name: str
+
+
+class PassageOut(ApiModel):
+    citation_id: str
+    text: str = Field(description="Untrusted document text; render escaped.")
+    score: float
+    document: PassageDocument
+    locator: dict[str, Any]
+    location: str
+
+
+class KnowledgeQueryOut(ApiModel):
+    knowledge_base_id: uuid.UUID
+    passages: list[PassageOut]
+
+
+class CitationOut(ApiModel):
+    """A citation stored on an assistant message, with the document's current state."""
+
+    index: int
+    citation_id: str
+    text: str = Field(description="The passage as retrieved; untrusted, render escaped.")
+    score: float | None = None
+    document: PassageDocument
+    locator: dict[str, Any]
+    location: str
+    knowledge_base_id: uuid.UUID
+    document_available: bool = Field(
+        description="False once the document was deleted: its chunks no longer appear in chat."
+    )
+    document_state: str | None = None
 
 
 # --- Settings, system, audit ------------------------------------------------------
@@ -386,7 +530,13 @@ class ConnectionOut(ApiModel):
 class SettingsOut(ApiModel):
     timezone: str
     idle_unload_seconds: int
-    callback_base_url: str | None
+    callback_base_url: str = Field(
+        description="Read-only: set by CQ_PUBLIC_BASE_URL, the single source the capability "
+        "broker uses for the OAuth redirect and Twilio callbacks."
+    )
+    callback_urls: dict[str, str] = Field(
+        description="Exact URLs to register: googleRedirectUri, twilioCallbackBase."
+    )
     setup_completed: bool
     setup_state: dict[str, Any] = Field(
         description="Server-side first-run wizard progress (resumes after refresh/OAuth)."
@@ -397,7 +547,12 @@ class SettingsOut(ApiModel):
 class SettingsPatchIn(ApiModel):
     timezone: str | None = None
     idle_unload_seconds: int | None = Field(None, ge=60, le=86_400)
-    callback_base_url: str | None = Field(None, pattern=r"^https://[^\s/$.?#].[^\s]*$")
+    callback_base_url: str | None = Field(
+        None,
+        deprecated=True,
+        description="Read-only; set CQ_PUBLIC_BASE_URL instead. Sending it returns 422 "
+        "SETTING_READ_ONLY.",
+    )
     setup_completed: bool | None = None
     setup_state: dict[str, Any] | None = None
     versions: dict[str, int] = Field(
@@ -452,6 +607,23 @@ class AgentEventIn(AttemptIn):
     payload: dict[str, Any]
 
 
+class BatchEvent(ApiModel):
+    client_event_id: str = Field(min_length=1, max_length=64)
+    type: str = Field(description="run.log, run.progress, run.metric, or run.artifact.")
+    occurred_at: datetime | None = None
+    payload: dict[str, Any]
+
+
+class EventBatchIn(AttemptIn):
+    events: list[BatchEvent] = Field(max_length=200)
+
+
+class EventBatchOut(ApiModel):
+    accepted: int = Field(description="Events stored by this call (duplicates excluded).")
+    duplicates: int = Field(description="clientEventIds already stored for this run.")
+    last_sequence: int = Field(description="Highest event sequence of the run.")
+
+
 class ModelStateIn(AttemptIn):
     loading: bool
     model: str | None = None
@@ -486,6 +658,16 @@ class InternalRunOut(ApiModel):
     state: RunStateLiteral
     current_attempt: int
     installation_id: uuid.UUID
+    trigger: Literal["manual", "schedule"]
+    scheduled_for: datetime | None
+    agent_id: str = Field(description="Manifest agent id.")
+    agent_version: str = Field(description="Manifest version (semver).")
+    agent_version_id: uuid.UUID
+    created_at: datetime
+    active_timeout_seconds: int = Field(description="Active-time limit per attempt.")
+    active_seconds_remaining: float
+    max_input_wait_seconds: int
+    input_wait_remaining_seconds: float = Field(description="Remaining input-wait budget.")
     cancel_requested: bool
     capability_token_id: str | None = Field(
         description="jti of the current attempt's capability token; reject any other."
@@ -493,6 +675,16 @@ class InternalRunOut(ApiModel):
     permissions: dict[str, Any]
     model_bindings: dict[str, str]
     config: dict[str, Any]
+
+
+class ActionClaimIn(AttemptIn):
+    claim_token: str | None = Field(
+        None,
+        min_length=8,
+        max_length=128,
+        description="Random per claim() call, reused on its retries. A repeat with the same "
+        "token from the same attempt returns the original result.",
+    )
 
 
 class ActionOut(ApiModel):
@@ -524,9 +716,13 @@ class ChatSessionCreateIn(ApiModel):
     title: str | None = Field(None, max_length=200)
     model_profile: str = Field("local.general.small", description="Local model variant.")
     knowledge_base_id: uuid.UUID | None = Field(
-        None, description="Requires the knowledge service (Nikhil Sajan Khaneja, Person 3)."
+        None, description="One of your knowledge bases; answers cite its passages."
     )
-    retrieval_mode: Literal["when_relevant", "only_knowledge"] = "when_relevant"
+    retrieval_mode: Literal["when_relevant", "only_knowledge"] = Field(
+        "when_relevant",
+        description="only_knowledge answers only from retrieved passages and says so, without "
+        "calling the model, when nothing is found.",
+    )
 
 
 class ChatMessageIn(ApiModel):

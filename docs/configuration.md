@@ -23,10 +23,13 @@ Profiles: **dev** = laptop Compose with fakes; **demo-cpu** = laptop end-to-end;
 | `CQ_CATALOG_DIR` | path | unset | no | all | Bundled agent manifests loaded at API startup |
 | `CQ_RUNTIME_ADAPTER` | `fake` \| `daemon` | `fake` | no | dgx (`daemon`) | Worker runtime backend |
 | `CQ_RUNTIME_SOCKET` | path | `/run/crewquarters/runtime.sock` | no | dgx | Runtime daemon Unix socket |
-| `CQ_MODEL_GATEWAY_ADAPTER` | string | `fake` | no | dev | Model status client. Only `fake` exists today; any other value stops the API at startup until Akshay Sunil Navani (Person 2) adds the HTTP client |
-| `CQ_BROKER_ADAPTER` | string | `fake` | no | dev | Connection status client. Only `fake` exists today; any other value stops the API at startup until Nikhil Sajan Khaneja (Person 3) adds the HTTP client |
+| `CQ_MODEL_GATEWAY_ADAPTER` | string | `http` | no | tests: `fake` | Model status and chat client: `http` (the model gateway) or `fake` (control-API unit tests only) |
+| `CQ_BROKER_ADAPTER` | `http` \| `fake` | unset: `fake` in `dev`, `http` otherwise | no | demo-cpu, dgx: leave unset | Connection status client. `http` reads `GET /internal/v1/connections` from the capability broker; when the broker is unreachable every provider reports `UNKNOWN`, never `CONNECTED`. `fake` reports the `CQ_FAKE_CONNECTIONS` providers as connected and is **refused outside the `dev` profile** (the API does not start) |
 | `CQ_FAKE_CONNECTIONS` | list[string] | `["google","twilio","openai","anthropic"]` | no | dev | Providers the fake connection client reports as connected |
-| `CQ_BROKER_URL` | string | `http://capability-broker:8000` | no | all | Passed to agents as `PLATFORM_BROKER_URL` |
+| `CQ_BROKER_URL` | string | `http://capability-broker:8000` | no | all | Capability broker base URL: the control API's connection status and management calls (`/internal/v1/connections*`, `/internal/v1/provider-profiles*`), and passed to agents as `PLATFORM_BROKER_URL` |
+| `CQ_KNOWLEDGE_URL` | string | `http://knowledge:8000` | no | all | Knowledge service base URL: the control API's knowledge-base, document, retrieval and grounded-chat calls. The broker reads the same variable |
+| `CQ_PUBLIC_BASE_URL` | URL | `http://localhost:8080` | no | demo-cpu, dgx (the HTTPS demo hostname) | The single callback origin. The broker builds the Google redirect URI (`…/api/v1/connections/google/callback`) and Twilio callback URLs (`…/api/v1/callbacks/twilio/*`) from it; the control API reports it read-only as `callbackBaseUrl` in `GET /api/v1/settings` (ADR 0009). Set the same value on the control API and the broker |
+| `CQ_MAX_UPLOAD_BYTES` | int | `26214400` (25 MiB) | no | all | Per-document upload limit. The control API applies it (plus 64 KiB of multipart framing) to `POST /api/v1/knowledge-bases/{id}/documents` instead of `CQ_MAX_BODY_BYTES`; the knowledge service enforces the same variable. Set it on both, and allow at least this body size at the reverse proxy for that path |
 | `CQ_HEARTBEAT_TIMEOUT_SECONDS` | int | `30` | no | — | Attempt heartbeat lease after handshake |
 | `CQ_PREPARE_TIMEOUT_SECONDS` | int | `600` | no | — | Lease before handshake (image pull, container start) |
 | `CQ_SCHEDULER_TICK_SECONDS` | float | `1.0` | no | — | Scheduler evaluation interval |
@@ -37,12 +40,12 @@ Profiles: **dev** = laptop Compose with fakes; **demo-cpu** = laptop end-to-end;
 | `CQ_API_HOST` | string | `127.0.0.1` | no | Compose (`0.0.0.0`) | Control API bind address (read in `crewquarters_api/main.py`) |
 | `CQ_API_PORT` | int | `8080` | no | — | Control API port |
 | `CQ_TEST_ADMIN_URL` | string | dev Compose database URL | no | tests/CI | PostgreSQL server where tests create throwaway databases |
-| `CQ_MAX_BODY_BYTES` | int | `2097152` | no | all | Largest accepted request body; larger bodies get `413 PAYLOAD_TOO_LARGE` |
+| `CQ_MAX_BODY_BYTES` | int | `2097152` | no | all | Largest accepted request body; larger bodies get `413 PAYLOAD_TOO_LARGE`. Document uploads use `CQ_MAX_UPLOAD_BYTES` instead |
 | `CQ_SCHEDULER_METRICS_HOST` | string | `127.0.0.1` | no | all (`0.0.0.0` inside Compose) | Bind address of the scheduler's `/metrics` and `/health` endpoint |
 | `CQ_SCHEDULER_METRICS_PORT` | int | `9101` | no | all | Port of the scheduler's `/metrics` and `/health` endpoint |
 | `CQ_LOG_FORMAT` | string | `json` | no | all | `json` (structured, redacted) or `text` for local reading |
 | `CQ_LOG_LEVEL` | string | `INFO` | no | all | Root log level |
-| `CQ_MODEL_GATEWAY_URL` | string | `http://model-gateway:8090` | no | all | Model gateway base URL used by the control API |
+| `CQ_MODEL_GATEWAY_URL` | string | `http://model-gateway:8090` | no | all | Model gateway base URL used by the control API (model status and actions, chat, and provider-key tests `POST /internal/v1/provider-profiles/{id}/test`) |
 | `CQ_GATEWAY_RUNTIME` | string | `daemon` | no | dev: `inprocess` | `daemon` (model servers via the runtime daemon) or `inprocess` (mock, no Docker) |
 | `CQ_GATEWAY_RUNTIME_SOCKET` | path | `/run/crewquarters/runtime.sock` | no | all | Runtime daemon socket |
 | `CQ_GATEWAY_MODEL_ADDRESSING` | string | `name` | no | all | Reach model containers by name (Compose) or `ip` (host-side gateway, tests) |

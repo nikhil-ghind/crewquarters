@@ -133,7 +133,14 @@ async def readiness(
         connected = conn is not None and conn["status"] == "CONNECTED"
         granted = set(conn["grantedCapabilities"]) if conn else set()
         missing_scopes = [s for s in scopes if s not in granted]
-        if not connected:
+        if conn is not None and conn["status"] == "UNKNOWN":
+            add(
+                "connection",
+                False,
+                f"Cannot check {provider.title()}: the capability broker is unavailable.",
+                provider,
+            )
+        elif not connected:
             add(
                 "connection",
                 False,

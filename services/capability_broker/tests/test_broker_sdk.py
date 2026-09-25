@@ -84,7 +84,7 @@ async def test_handshake_rejects_other_protocols(harness: Any) -> None:
     assert harness.control_requests == []
 
 
-async def test_event_batch_is_forwarded_once_per_client_id(harness: Any) -> None:
+async def test_event_batch_is_forwarded_whole_and_deduplicated(harness: Any) -> None:
     headers = harness.agent(["events.write"])
 
     def event(cid: str) -> dict[str, Any]:
@@ -99,10 +99,16 @@ async def test_event_batch_is_forwarded_once_per_client_id(harness: Any) -> None
         f"{SDK}/events", headers=headers, json={"events": [event("a"), event("b"), event("a")]}
     )
     assert resp.json() == {"accepted": 2, "lastSequence": 2}
-    assert [r["body"] for r in harness.control_requests] == [
-        {"attempt": 1, "type": "run.progress", "payload": {"percent": 10, "message": "a"}},
-        {"attempt": 1, "type": "run.progress", "payload": {"percent": 10, "message": "b"}},
-    ]
+    [sent] = harness.control_requests
+    assert sent["path"].endswith("/event-batches")
+    assert sent["body"]["attempt"] == 1
+    assert [e["clientEventId"] for e in sent["body"]["events"]] == ["a", "b", "a"]
+    assert sent["body"]["events"][0] == {
+        "clientEventId": "a",
+        "type": "run.progress",
+        "occurredAt": "2026-09-25T10:00:00+00:00",
+        "payload": {"percent": 10, "message": "a"},
+    }
 
 
 async def test_llm_chat_forwards_token_to_gateway(harness: Any) -> None:

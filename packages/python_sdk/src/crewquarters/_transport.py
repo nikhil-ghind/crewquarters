@@ -63,7 +63,9 @@ class BrokerClient:
         json: Any = None,
         params: dict[str, Any] | None = None,
         read_timeout: float | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Any:
+        """``headers`` are sent unchanged on every retry (for example ``X-Claim-Token``)."""
         attempt = 0
         while True:
             attempt += 1
@@ -74,7 +76,7 @@ class BrokerClient:
                     self._base + path,
                     json=json,
                     params=params,
-                    headers=self._headers(request_id),
+                    headers={**(headers or {}), **self._headers(request_id)},
                     timeout=self._timeout(read_timeout),
                 )
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:

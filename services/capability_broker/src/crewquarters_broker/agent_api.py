@@ -17,11 +17,11 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 import httpx
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import Field
 
-from crewquarters_broker.auth import Grant
+from crewquarters_broker.auth import Grant, authorize, bearer
 from crewquarters_broker.deps import ApiModel, BrokerState, agent_grant, broker_state
 from crewquarters_broker.errors import permission_denied
 from crewquarters_broker.twilio import DISCLOSURE
@@ -31,6 +31,8 @@ router = APIRouter(prefix="/internal/v1/sdk")
 
 PROTOCOL = "v1alpha1"
 KEY_PATTERN = r"^[A-Za-z0-9_.:-]{1,200}$"
+CLAIM_TOKEN_HEADER = "X-Claim-Token"  # noqa: S105 - a header name
+CLAIM_TOKEN_PATTERN = r"[A-Za-z0-9_-]{8,128}"  # noqa: S105 - a pattern
 Cell = str | int | float | bool | None
 _MAX_NAME = 100
 _NAME = rf"[^\x00-\x1f<>{{}}]{{0,{_MAX_NAME}}}"
@@ -125,6 +127,18 @@ def _attempt(grant: Grant, **fields: Any) -> dict[str, Any]:
     return {"attempt": grant.attempt, **fields}
 
 
+async def finished_run_grant(request: Request, state: BrokerState = Depends(broker_state)) -> Grant:
+    """Like ``agent_grant``, but a run that already ended still authorizes (same token,
+    attempt, and ``jti``). Heartbeat and result use it so an agent whose run timed out or
+    was cancelled hears ``cancelRequested: true`` and can report, as the contract says."""
+    return await authorize(
+        bearer(request),
+        state.settings.capability_signing_key.get_secret_value(),
+        state.control,
+        allow_finished=True,
+    )
+
+
 # --- Run lifecycle (forwarded to the control API with the token's attempt) ----------------
 
 
@@ -161,8 +175,9 @@ async def handshake(
     await state.control.request("POST", f"/runs/{grant.run_id}/handshake", json=_attempt(grant))
     run, claims = grant.run, grant.claims
     now = datetime.now(UTC)
-    # Fields the control API's run view does not expose yet fall back to what the token
-    # proves (docs/capability-broker.md, "Handshake").
+    # The control API's run view supplies the trigger, schedule slot, manifest id and
+    # semver, creation time, and time limits. The token-derived fallbacks only cover an
+    # older control API that lacks those fields.
     token_seconds = max(0, int((claims.expires_at - now).total_seconds()))
     return {
         "run": {
@@ -189,8 +204,9 @@ async def handshake(
 
 @router.post("/heartbeat", summary="Extend the attempt lease; returns cancelRequested")
 async def heartbeat(
-    grant: Grant = Depends(agent_grant), state: BrokerState = Depends(broker_state)
+    grant: Grant = Depends(finished_run_grant), state: BrokerState = Depends(broker_state)
 ) -> Any:
+    """For a run that already ended, the control API answers ``cancelRequested: true``."""
     return await state.control.request(
         "POST", f"/runs/{grant.run_id}/heartbeat", json=_attempt(grant)
     )
@@ -200,28 +216,35 @@ async def heartbeat(
 async def events(
     body: EventsIn, grant: Grant = Depends(agent_grant), state: BrokerState = Depends(broker_state)
 ) -> dict[str, int]:
-    """Duplicate ``clientEventId`` values within a batch are dropped. Across retries they
-    are not yet: that needs the control API to store the id (handoff request)."""
+    """The whole batch goes to the control API in one call, which validates every event
+    first and stores all or none, skipping ``clientEventId`` values already stored for the
+    run. A rejected batch returns 422 with ``details.rejected[]`` (index, clientEventId,
+    code) and stores nothing, so the SDK's event-by-event resend never duplicates."""
     grant.require("events.write", baseline=True)
-    seen: set[str] = set()
-    accepted, last = 0, 0
-    for event in body.events:
-        if event.client_event_id in seen:
-            continue
-        seen.add(event.client_event_id)
-        out = await state.control.request(
-            "POST",
-            f"/runs/{grant.run_id}/events",
-            json=_attempt(grant, type=event.type, payload=event.payload),
-        )
-        accepted += 1
-        last = max(last, int(out.get("sequence") or 0))
-    return {"accepted": accepted, "lastSequence": last}
+    out = await state.control.request(
+        "POST",
+        f"/runs/{grant.run_id}/event-batches",
+        json=_attempt(
+            grant,
+            events=[
+                {
+                    "clientEventId": e.client_event_id,
+                    "type": e.type,
+                    "occurredAt": e.occurred_at.isoformat(),
+                    "payload": e.payload,
+                }
+                for e in body.events
+            ],
+        ),
+    )
+    return {"accepted": int(out["accepted"]), "lastSequence": int(out["lastSequence"])}
 
 
 @router.post("/result", summary="Post the final result; the first result wins")
 async def result(
-    body: ResultIn, grant: Grant = Depends(agent_grant), state: BrokerState = Depends(broker_state)
+    body: ResultIn,
+    grant: Grant = Depends(finished_run_grant),
+    state: BrokerState = Depends(broker_state),
 ) -> Any:
     return await state.control.request(
         "POST", f"/runs/{grant.run_id}/result", json=_attempt(grant, **body.model_dump())
@@ -258,13 +281,22 @@ async def poll_input(
 
 @router.post("/actions/{key}/claim", summary="Claim an idempotent action key")
 async def claim(
+    request: Request,
     key: str = Path(pattern=KEY_PATTERN),
     grant: Grant = Depends(agent_grant),
     state: BrokerState = Depends(broker_state),
 ) -> Any:
+    """``X-Claim-Token`` (random per SDK ``claim()`` call, reused on its retries) lets a
+    retry after a lost response get its original ``claimed`` instead of ``in_doubt``."""
     grant.require("idempotency", baseline=True)
+    body = _attempt(grant)
+    token = request.headers.get(CLAIM_TOKEN_HEADER)
+    if token is not None:
+        if not re.fullmatch(CLAIM_TOKEN_PATTERN, token):
+            raise PlatformError("INVALID_REQUEST", f"{CLAIM_TOKEN_HEADER} is malformed.", 422)
+        body["claimToken"] = token
     return await state.control.request(
-        "POST", f"/runs/{grant.run_id}/actions/{key}/claim", json=_attempt(grant)
+        "POST", f"/runs/{grant.run_id}/actions/{key}/claim", json=body
     )
 
 

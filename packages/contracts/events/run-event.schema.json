@@ -26,7 +26,12 @@
       ]
     },
     "payload": {"type": "object"},
-    "createdAt": {"type": "string", "format": "date-time"}
+    "createdAt": {"type": "string", "format": "date-time"},
+    "occurredAt": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Agent events only: when the agent emitted the event (the SDK's occurredAt). createdAt is when the platform stored it."
+    }
   },
   "allOf": [
     {"if": {"properties": {"type": {"const": "run.state_changed"}}},

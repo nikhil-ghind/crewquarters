@@ -7,8 +7,8 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.action_claim_in import ActionClaimIn
 from ...models.action_out import ActionOut
-from ...models.attempt_in import AttemptIn
 from ...models.error_response import ErrorResponse
 from ...types import Response
 
@@ -17,7 +17,7 @@ def _get_kwargs(
     run_id: UUID,
     key: str,
     *,
-    body: AttemptIn,
+    body: ActionClaimIn,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
 
@@ -87,14 +87,18 @@ def sync_detailed(
     key: str,
     *,
     client: AuthenticatedClient | Client,
-    body: AttemptIn,
+    body: ActionClaimIn,
 ) -> Response[ActionOut | ErrorResponse]:
     """ctx.idempotency: claim an external action key
+
+     A repeat with the same ``claimToken`` from the same attempt (a retry after a lost
+    response) returns the original ``claimed``; any other repeat of an uncompleted key is
+    ``in_doubt``.
 
     Args:
         run_id (UUID):
         key (str):
-        body (AttemptIn):
+        body (ActionClaimIn):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -122,14 +126,18 @@ def sync(
     key: str,
     *,
     client: AuthenticatedClient | Client,
-    body: AttemptIn,
+    body: ActionClaimIn,
 ) -> ActionOut | ErrorResponse | None:
     """ctx.idempotency: claim an external action key
+
+     A repeat with the same ``claimToken`` from the same attempt (a retry after a lost
+    response) returns the original ``claimed``; any other repeat of an uncompleted key is
+    ``in_doubt``.
 
     Args:
         run_id (UUID):
         key (str):
-        body (AttemptIn):
+        body (ActionClaimIn):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -152,14 +160,18 @@ async def asyncio_detailed(
     key: str,
     *,
     client: AuthenticatedClient | Client,
-    body: AttemptIn,
+    body: ActionClaimIn,
 ) -> Response[ActionOut | ErrorResponse]:
     """ctx.idempotency: claim an external action key
+
+     A repeat with the same ``claimToken`` from the same attempt (a retry after a lost
+    response) returns the original ``claimed``; any other repeat of an uncompleted key is
+    ``in_doubt``.
 
     Args:
         run_id (UUID):
         key (str):
-        body (AttemptIn):
+        body (ActionClaimIn):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -185,14 +197,18 @@ async def asyncio(
     key: str,
     *,
     client: AuthenticatedClient | Client,
-    body: AttemptIn,
+    body: ActionClaimIn,
 ) -> ActionOut | ErrorResponse | None:
     """ctx.idempotency: claim an external action key
+
+     A repeat with the same ``claimToken`` from the same attempt (a retry after a lost
+    response) returns the original ``claimed``; any other repeat of an uncompleted key is
+    ``in_doubt``.
 
     Args:
         run_id (UUID):
         key (str):
-        body (AttemptIn):
+        body (ActionClaimIn):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
