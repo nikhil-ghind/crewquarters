@@ -49,7 +49,9 @@ EMB="$WORK/embedding-models"
 mkdir -p "$EMB"; chmod 0777 "$EMB"
 if timeout 60 docker run --rm --platform "linux/$ARCH" "crewquarters/platform:$VERSION" \
         cq-knowledge fetch-model --help >/dev/null 2>&1; then
-    docker run --rm --platform "linux/$ARCH" -v "$EMB:/models" \
+    # As the invoking user, so the files it writes can be packed and cleaned up here.
+    docker run --rm --platform "linux/$ARCH" --user "$(id -u):$(id -g)" -e HOME=/tmp \
+        -v "$EMB:/models" \
         -e CQ_EMBEDDING_MODE=local -e CQ_EMBEDDING_MODEL_DIR=/models -e CQ_EMBEDDING_CACHE_DIR=/models \
         "crewquarters/platform:$VERSION" cq-knowledge fetch-model
     chmod 0755 "$EMB"
