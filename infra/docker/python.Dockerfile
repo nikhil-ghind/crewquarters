@@ -4,8 +4,8 @@
 # .deb; the laptop integration profile runs it in a container).
 # One image, different commands (README "Services and ownership boundaries").
 # Builds for linux/amd64 and linux/arm64.
-FROM python:3.12-slim-bookworm AS build
-COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
+FROM python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e AS build
+COPY --from=ghcr.io/astral-sh/uv:0.5.11@sha256:0ac957607303916420297a4c9c213bb33fbd3c888f9cd7f4f7273596ebf42b85 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
@@ -40,14 +40,16 @@ COPY services/capability_broker services/capability_broker
 COPY services/knowledge services/knowledge
 RUN uv sync --frozen --no-dev --no-editable
 
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e
 # The knowledge service's data directories exist in the image, owned by the service user,
 # so a fresh named volume mounted there (laptop Compose) starts out writable. The
 # appliance bind-mounts host directories instead (group crewquarters, setgid).
 RUN groupadd --system --gid 10001 crewquarters \
     && useradd --system --uid 10001 --gid crewquarters --no-create-home crewquarters \
     && install -d -o 10001 -g 10001 -m 0750 /var/lib/crewquarters/documents \
-        /var/lib/crewquarters/embedding-models
+        /var/lib/crewquarters/embedding-models \
+    # No setuid/setgid binaries: the services never change user (su, passwd, mount, ...).
+    && find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY packages/contracts packages/contracts
