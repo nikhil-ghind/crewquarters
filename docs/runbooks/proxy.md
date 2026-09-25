@@ -38,12 +38,7 @@ nginx picks the most specific match. The upstream is resolved at request time th
 
 ## Web UI
 
-The proxy image bakes in the static UI build:
-
-- **When `apps/web/dist` exists at build time**, the image serves it. Build the UI first, then run `make image`, or let `docker compose ... up --build` build the image.
-- **Otherwise**, the image serves a one-page placeholder (`infra/proxy/placeholder/index.html`) that links to `/api/v1/docs`.
-
-`apps/web/dist` is copied with the glob `app[s]/we[b]/dis[t]`, so a missing directory is not a build error. The desktop launcher opens `http://localhost:8080/setup`, a UI route that the SPA fallback serves.
+The proxy image builds the web UI (`apps/web`, `npm ci` and `npm run build` in a Node stage) and serves the result, so every image carries the UI that matches its source tree. `make image` or `docker compose ... up --build` is enough; no separate UI build step is needed. The desktop launcher opens `http://localhost:8080/setup`, a UI route that the SPA fallback serves.
 
 ## Callback exposure (profile `callbacks`)
 

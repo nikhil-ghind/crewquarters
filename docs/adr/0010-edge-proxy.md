@@ -23,7 +23,7 @@ PLAN.md sections 4.1, 4.2 and 14.3 require:
 
 - **Proxy.** One nginx container (`nginxinc/nginx-unprivileged`, digest-pinned, uid 101, read-only root filesystem, all capabilities dropped) is the only published HTTP port in both the laptop and appliance stacks. The routing table is in docs/runbooks/proxy.md.
 - **Why nginx over Caddy.** nginx has per-location body limits and per-IP request rate limiting built in, and needs no plugins. Upstreams are resolved per request through Docker DNS, so the proxy starts before its backends.
-- **UI.** The web UI's static build is baked into the proxy image (`apps/web/dist` when present at build time, otherwise a placeholder page). The UI is versioned with the proxy image and needs no host bind mount.
+- **UI.** The web UI is built in a Node stage of the proxy image and its static output is served by nginx. The UI is versioned with the proxy image and needs no host bind mount.
 - **Callbacks site.** A second server block on port 8081 serves only the callback paths. The `callbacks` Compose profile's Cloudflare tunnel (digest-pinned) shares a network with the proxy and nothing else.
 - **Master key.** The key is a bind mount (appliance) or a named volume (laptop), read-only, mounted into the broker and the gateway only. They read it through a supplementary group, because the containers run as uid 10001 and the file is `root:crewquarters 0640`.
 
