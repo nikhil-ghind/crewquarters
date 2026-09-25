@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import logging
@@ -14,8 +15,9 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from crewquarters_broker import google
+from crewquarters_broker import fakes, google
 from crewquarters_broker.models import OAuthConnection
+from crewquarters_secret_store import Keyring
 from crewquarters_secret_store.db import EncryptedSecret
 from crewquarters_shared.db.models import AuditEvent
 
@@ -147,7 +149,7 @@ async def test_partial_grant_and_reconnect_replaces(
     await _callback(harness, binding, state=state, code="fake-code:gmail.readonly")
     headers = harness.agent(["google.spreadsheets"])
     resp = await harness.client.post(
-        f"{SDK}/google/sheets/values:get", headers=headers, json=_range(harness, "A1")
+        f"{SDK}/google/sheets/values:get", headers=headers, json=_range(harness, "Contacts!A2:D")
     )
     assert resp.status_code == 409 and resp.json()["error"]["code"] == "NEEDS_CONNECTION"
 
@@ -213,6 +215,95 @@ async def test_test_and_disconnect_revokes(
     assert resp.json()["error"]["code"] == "NEEDS_CONNECTION"
 
 
+async def test_concurrent_refreshes_are_single_flight_and_hold_no_connection(
+    harness: Any, user_id: uuid.UUID
+) -> None:
+    await harness.connect_google(user_id)
+    state = harness.app.state.broker
+    connector = state.google
+    pool = state.sessions.kw["bind"].pool
+    connector._access.clear()
+    harness.google.token_requests.clear()
+    refreshing, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_token_endpoint(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "oauth2.googleapis.com" and request.url.path == "/token":
+            refreshing.set()
+            await release.wait()
+        return harness.google.handle(request)
+
+    real_http = connector.http
+    connector.http = httpx.AsyncClient(transport=httpx.MockTransport(slow_token_endpoint))
+    try:
+        headers = harness.agent(["google.gmail.readonly"])
+        calls = [asyncio.create_task(harness.client.get(GMAIL, headers=headers)) for _ in range(5)]
+        await asyncio.wait_for(refreshing.wait(), 5)
+        await asyncio.sleep(0.1)  # the other four queue up behind the refresh
+        held_while_waiting = pool.checkedout()
+        release.set()
+        responses = await asyncio.gather(*calls)
+    finally:
+        await connector.http.aclose()
+        connector.http = real_http
+    assert [r.status_code for r in responses] == [200] * 5
+    assert [r["grant_type"] for r in harness.google.token_requests] == ["refresh_token"]
+    assert held_while_waiting == 0  # neither the refresh nor the four waiting hold one
+
+
+async def test_disconnect_works_when_the_secret_cannot_be_decrypted(
+    harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    """E.g. the master key version that encrypted it is no longer in the keyring."""
+    await harness.connect_google(user_id)
+    connector = harness.app.state.broker.google
+    connector.keyring = Keyring({2: bytes(range(32))})
+    connector._access.clear()
+    headers = harness.agent(["google.gmail.readonly"])
+    resp = await harness.client.get(GMAIL, headers=headers)
+    assert resp.status_code == 409 and resp.json()["error"]["code"] == "NEEDS_CONNECTION"
+    resp = await harness.client.delete(
+        "/internal/v1/connections/google",
+        params={"userId": str(user_id)},
+        headers=harness.service_headers,
+    )
+    assert resp.status_code == 204, resp.text
+    async with sessions() as db:
+        assert (await db.scalars(select(OAuthConnection))).all() == []
+        assert (await db.scalars(select(EncryptedSecret))).all() == []
+
+
+def _google_answers(h: Any, path: str, response: httpx.Response) -> None:
+    handle = h.google.handle
+
+    def patched(request: httpx.Request) -> httpx.Response:
+        return response if request.url.path.endswith(path) else handle(request)
+
+    h.google.handle = patched
+
+
+async def test_callback_with_unusable_tokens_redirects_with_an_error(
+    harness: Any, user_id: uuid.UUID
+) -> None:
+    _google_answers(harness, "/gmail/v1/users/me/profile", httpx.Response(401))
+    state, binding, _ = await _start(harness, user_id, ["gmail.readonly"])
+    location = await _callback(harness, binding, state=state, code="fake-code")
+    assert location.endswith("result=error&code=OAUTH_TOKEN_INVALID"), location
+
+    harness.google.handle = fakes.FakeGoogle(extra_messages=0).handle
+    no_access = {"refresh_token": "r", "scope": google.SCOPES["gmail.readonly"]}
+    _google_answers(harness, "/token", httpx.Response(200, json=no_access))
+    state, binding, _ = await _start(harness, user_id, ["gmail.readonly"])
+    location = await _callback(harness, binding, state=state, code="fake-code")
+    assert location.endswith("result=error&code=OAUTH_TOKEN_INVALID"), location
+
+
+async def test_second_401_is_a_provider_error(harness: Any, user_id: uuid.UUID) -> None:
+    await harness.connect_google(user_id)
+    _google_answers(harness, "/gmail/v1/users/me/messages", httpx.Response(401))
+    resp = await harness.client.get(GMAIL, headers=harness.agent(["google.gmail.readonly"]))
+    assert resp.status_code == 502 and resp.json()["error"]["code"] == "PROVIDER_ERROR"
+
+
 async def test_gmail_list_paginates_and_get_passes_through(
     harness: Any, user_id: uuid.UUID
 ) -> None:
@@ -270,10 +361,11 @@ async def test_sheets_use_configured_spreadsheet_only(harness: Any, user_id: uui
         json=_range(harness, "Results!A1", [["done"]]),
     )
     assert update.status_code == 200 and rows[0] == ["done"]
+    harness.google.sheets[harness.SPREADSHEET]["Contacts"] = [["name"], ["Asha"]]
     read = await harness.client.post(
-        f"{SDK}/google/sheets/values:get", headers=headers, json=_range(harness, "Results!A1:D")
+        f"{SDK}/google/sheets/values:get", headers=headers, json=_range(harness, "Contacts!A2:D")
     )
-    assert read.json()["values"] == [["done"]]
+    assert read.json()["values"] == [["Asha"]]
 
     other = await harness.client.post(
         f"{SDK}/google/sheets/values:append",
@@ -282,6 +374,71 @@ async def test_sheets_use_configured_spreadsheet_only(harness: Any, user_id: uui
     )
     assert other.status_code == 403 and other.json()["error"]["code"] == "PERMISSION_DENIED"
     assert set(harness.google.sheets) == {harness.SPREADSHEET}
+
+
+@pytest.mark.parametrize(
+    ("operation", "cells", "allowed"),
+    [
+        ("get", "Contacts!A2:D", True),
+        ("get", "Contacts!B5:C9", True),
+        ("get", "contacts!a2:d2", True),  # A1 tab names and columns ignore case
+        ("get", "Contacts!A1:D", False),  # the header row is outside inputRange
+        ("get", "Contacts!A2:E", False),
+        ("get", "Contacts", False),
+        ("get", "Results!A2:D", False),  # reads never leave inputRange
+        ("get", "'Other tab'!A2:D", False),
+        ("update", "Results!A1:H1", True),
+        ("update", "Results!A7:H7", True),
+        ("update", "Results!H3", True),
+        ("update", "Results!A1:I1", False),
+        ("update", "Contacts!A2:D2", False),  # writes never touch the contacts
+        ("update", "Results", False),
+        ("append", "Results!A:H", True),
+        ("append", "Results!A:Z", False),
+        ("append", "Contacts!A:D", False),
+    ],
+)
+async def test_sheets_are_scoped_to_the_configured_ranges(
+    harness: Any, user_id: uuid.UUID, operation: str, cells: str, allowed: bool
+) -> None:
+    await harness.connect_google(user_id)
+    headers = harness.agent(["google.spreadsheets"])
+    values = None if operation == "get" else [["x"]]
+    resp = await harness.client.post(
+        f"{SDK}/google/sheets/values:{operation}",
+        headers=headers,
+        json=_range(harness, cells, values),
+    )
+    if allowed:
+        assert resp.status_code == 200, resp.text
+    else:
+        assert resp.status_code == 403 and resp.json()["error"]["code"] == "PERMISSION_DENIED"
+        assert resp.json()["error"]["details"]["key"] in ("inputRange", "resultRange")
+
+
+@pytest.mark.parametrize("cells", ["A1", "A2:D", "Contacts!A2:D!B", "Contacts!2A", "'x!A1"])
+async def test_sheets_ranges_must_be_a1_with_a_tab(
+    harness: Any, user_id: uuid.UUID, cells: str
+) -> None:
+    await harness.connect_google(user_id)
+    headers = harness.agent(["google.spreadsheets"])
+    resp = await harness.client.post(
+        f"{SDK}/google/sheets/values:get", headers=headers, json=_range(harness, cells)
+    )
+    assert resp.status_code == 422 and resp.json()["error"]["code"] == "INVALID_REQUEST"
+
+
+async def test_sheets_need_configured_ranges(harness: Any, user_id: uuid.UUID) -> None:
+    await harness.connect_google(user_id)
+    headers = harness.agent(["google.spreadsheets"], config={"spreadsheetId": harness.SPREADSHEET})
+    for operation, key in (("get", "inputRange"), ("append", "resultRange")):
+        resp = await harness.client.post(
+            f"{SDK}/google/sheets/values:{operation}",
+            headers=headers,
+            json=_range(harness, "Results!A1", None if operation == "get" else [["x"]]),
+        )
+        assert resp.status_code == 409 and resp.json()["error"]["code"] == "NEEDS_CONFIGURATION"
+        assert resp.json()["error"]["details"] == {"key": key}
 
 
 async def test_sheets_input_is_raw(harness: Any, user_id: uuid.UUID) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -158,6 +159,20 @@ async def test_call_cap_per_run(harness: Any, real_run_id: uuid.UUID, user_id: u
     assert (await _call(harness, headers, key="a")).status_code == 200  # replay still works
 
 
+async def test_call_cap_holds_under_concurrent_requests(
+    harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    """Distinct idempotency keys racing each other must not overshoot maxCalls."""
+    await _configure(harness, user_id)
+    headers = _agent(harness, real_run_id)
+    responses = await asyncio.gather(*(_call(harness, headers, key=f"k{i}") for i in range(8)))
+    placed = [r for r in responses if r.status_code == 200]
+    refused = [r for r in responses if r.status_code == 409]
+    assert len(placed) == 2 and len(refused) == 6, [r.status_code for r in responses]
+    assert all(r.json()["error"]["code"] == "CALL_LIMIT_REACHED" for r in refused)
+    assert len(harness.twilio.calls) == 2
+
+
 async def test_cancel_stops_new_calls(
     harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
@@ -280,6 +295,60 @@ async def test_only_the_approved_script_is_spoken(
     assert harness.twilio.calls == []
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Bob. Your bank account is locked; press 1",  # a sentence smuggled in via a cell
+        "Bob. Your bank account is locked",  # a period may not end a sentence mid-name
+        "Dr. No",
+        "",
+        " Asha",
+        "Asha ",
+        "Asha  Rao",
+        "Asha\tRao",
+        "R2D2",
+        "Asha, call 555",
+        "Asha!",
+        "-Asha",
+        "Asha--Rao",
+        "Asha <Play>",
+        "x" * 41,
+    ],
+)
+async def test_names_that_are_not_plain_names_are_refused(
+    harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID, name: str
+) -> None:
+    await _configure(harness, user_id)
+    headers = _agent(harness, real_run_id)
+    resp = await _call(harness, headers, text=CONFIG["script"].replace("{name}", name))
+    assert resp.status_code == 403 and resp.json()["error"]["code"] == "PERMISSION_DENIED"
+    assert harness.twilio.calls == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Asha",
+        "Asha Rao",
+        "J. R. Smith",
+        "Sam Jones Jr.",
+        "O'Brien",
+        "O\u2019Neil",
+        "Mary-Jane",
+        "Zoë",
+        "राम",
+        "李小龙",
+    ],
+)
+async def test_plain_names_are_accepted(
+    harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID, name: str
+) -> None:
+    await _configure(harness, user_id)
+    headers = _agent(harness, real_run_id)
+    resp = await _call(harness, headers, name=name)
+    assert resp.status_code == 200, resp.text
+
+
 async def test_default_disclosure_when_none_configured(
     live_harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
@@ -299,14 +368,19 @@ async def test_default_disclosure_when_none_configured(
 async def test_voice_twiml_is_fixed_and_escaped(
     live_harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
-    call_id, sid, _ = await _placed(live_harness, real_run_id, user_id, name="O'Brien & Co")
+    await _configure(live_harness, user_id)
+    script = "Hi {name} & <friends>, can you attend?"
+    headers = _agent(live_harness, real_run_id, script=script)
+    text = script.replace("{name}", "Zoë O'Brien")
+    call_id = (await _call(live_harness, headers, text=text)).json()["id"]
+    sid = live_harness.twilio.calls[-1]["sid"]
     resp = await _signed(
         live_harness, f"/api/v1/callbacks/twilio/voice/{call_id}", {"CallSid": sid}
     )
     assert resp.status_code == 200 and resp.headers["content-type"] == "application/xml"
     xml = resp.text
     assert xml.index(DISCLOSED) < xml.index("<Gather")
-    assert "Hi O'Brien &amp; Co, can you attend on Friday, O'Brien &amp; Co?" in xml
+    assert "Hi Zoë O'Brien &amp; &lt;friends&gt;, can you attend?" in xml
     assert 'timeout="7"' in xml and 'input="speech"' in xml
     assert f'action="{live_harness.PUBLIC}/api/v1/callbacks/twilio/gather/{call_id}"' in xml
 
@@ -333,7 +407,98 @@ async def test_callback_signature_required(
                 select(AuditEvent).where(AuditEvent.action == "callback.twilio.rejected")
             )
         ).all()
-        assert len(rejected) == 3
+    # One row per reason and minute: the wrong-URL signature is counted in the next row.
+    assert sorted(e.metadata_["reason"] for e in rejected) == [
+        "bad_signature",
+        "missing_signature",
+    ]
+
+
+async def test_forged_callback_flood_is_cheap_and_aggregated(
+    live_harness: Any,
+    real_run_id: uuid.UUID,
+    user_id: uuid.UUID,
+    sessions: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_id, sid, _ = await _placed(live_harness, real_run_id, user_id)
+    telephony = live_harness.app.state.broker.telephony
+    decrypts = 0
+    real_credentials = telephony._credentials
+
+    async def counted() -> dict[str, str]:
+        nonlocal decrypts
+        decrypts += 1
+        return dict(await real_credentials())
+
+    monkeypatch.setattr(telephony, "_credentials", counted)
+    path = f"/api/v1/callbacks/twilio/status/{call_id}"
+    params = {"CallSid": sid, "CallStatus": "completed"}
+    for _ in range(5):
+        assert (await live_harness.client.post(path, data=params)).status_code == 403
+        junk = await live_harness.client.post(
+            path, data=params, headers={"x-twilio-signature": "not-base64!"}
+        )
+        assert junk.status_code == 403
+    assert decrypts == 0  # no signature, or a malformed one, costs no decrypt
+    for _ in range(5):
+        forged = await _signed(live_harness, path, params, token="attacker-token-000000")
+        assert forged.status_code == 403
+    assert decrypts == 1  # the credentials are reused for a minute
+    async with sessions() as db:
+        rejected = (
+            await db.scalars(
+                select(AuditEvent).where(AuditEvent.action == "callback.twilio.rejected")
+            )
+        ).all()
+    assert sorted((e.metadata_["reason"], e.metadata_["count"]) for e in rejected) == [
+        ("bad_signature", 1),
+        ("malformed_signature", 1),
+        ("missing_signature", 1),
+    ]
+    telephony._rejections["bad_signature"] = (-1000.0, 4)  # a minute later
+    await _signed(live_harness, path, params, token="attacker-token-000000")
+    async with sessions() as db:
+        counts = (
+            await db.scalars(
+                select(AuditEvent.metadata_["count"].as_integer()).where(
+                    AuditEvent.action == "callback.twilio.rejected",
+                    AuditEvent.metadata_["reason"].as_string() == "bad_signature",
+                )
+            )
+        ).all()
+    assert sorted(counts) == [1, 5]
+    view = await _signed(live_harness, path, {"CallSid": sid, "CallStatus": "ringing"})
+    assert view.status_code == 204  # genuine callbacks still work
+
+
+async def test_oversized_callback_is_refused_before_reading(
+    live_harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    call_id, sid, _ = await _placed(live_harness, real_run_id, user_id)
+    path = f"/api/v1/callbacks/twilio/status/{call_id}"
+    params = {"CallSid": sid, "CallStatus": "completed"}
+    sig = signature(TOKEN, live_harness.PUBLIC + path, params)
+    body = httpx.QueryParams(params).__str__().encode()
+    declared = await live_harness.client.post(
+        path,
+        content=body,
+        headers={
+            "x-twilio-signature": sig,
+            "content-type": "application/x-www-form-urlencoded",
+            "content-length": str(10 * 1024 * 1024),
+        },
+    )
+    assert declared.status_code == 413
+
+    async def chunks() -> AsyncIterator[bytes]:  # chunked: no Content-Length
+        for _ in range(100):
+            yield b"a" * 1024
+
+    streamed = await live_harness.client.post(
+        path, content=chunks(), headers={"x-twilio-signature": sig}
+    )
+    assert streamed.status_code == 413
 
 
 async def test_callback_for_another_call_sid(
@@ -344,6 +509,75 @@ async def test_callback_for_another_call_sid(
         live_harness, f"/api/v1/callbacks/twilio/voice/{call_id}", {"CallSid": "CAother"}
     )
     assert resp.status_code == 404
+
+
+async def test_callback_before_twilio_answer_adopts_the_call_sid(
+    live_harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    """Twilio placed the call but its answer was lost (IN_DOUBT): the signed voice
+    callback still gets the disclosure, and the call becomes trackable."""
+    await _configure(live_harness, user_id)
+    headers = _agent(live_harness, real_run_id)
+    live_harness.twilio.fail_next = "timeout"
+    lost = await _call(live_harness, headers)
+    assert lost.json()["error"]["code"] == "OUTCOME_UNKNOWN"
+    call_id = lost.json()["error"]["details"]["callId"]
+    sid = "CA" + uuid.uuid4().hex
+    voice = f"/api/v1/callbacks/twilio/voice/{call_id}"
+    wrong_to = await _signed(live_harness, voice, {"CallSid": sid, "To": "+15555550999"})
+    assert wrong_to.status_code == 404
+    resp = await _signed(live_harness, voice, {"CallSid": sid, "To": TO})
+    assert resp.status_code == 200, resp.text
+    assert resp.text.index(DISCLOSED) < resp.text.index("Hi Asha")
+    # Another CallSid cannot take the call over once it is adopted.
+    other = await _signed(live_harness, voice, {"CallSid": "CA" + uuid.uuid4().hex})
+    assert other.status_code == 404
+    status = f"/api/v1/callbacks/twilio/status/{call_id}"
+    params = {"CallSid": sid, "CallStatus": "in-progress"}
+    assert (await _signed(live_harness, status, params)).status_code == 204
+    view = (await live_harness.client.get(f"{CALLS}/{call_id}", headers=headers)).json()
+    assert (view["state"], view["errorCode"]) == ("in-progress", None)
+    again = await _call(live_harness, headers)  # the same key now returns the call
+    assert again.status_code == 200 and again.json()["id"] == call_id
+    assert live_harness.twilio.calls == []  # and never redials
+
+
+async def test_callback_while_creating_adopts_and_the_answer_does_not_regress(
+    live_harness: Any,
+    real_run_id: uuid.UUID,
+    user_id: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Twilio's callbacks can overtake its answer to the create request."""
+    await _configure(live_harness, user_id)
+    headers = _agent(live_harness, real_run_id)
+    telephony = live_harness.app.state.broker.telephony
+    real_post = telephony.http.post
+    seen: dict[str, Any] = {}
+
+    async def post_with_early_callbacks(url: str, **kwargs: Any) -> httpx.Response:
+        resp = await real_post(url, **kwargs)
+        call_id = kwargs["data"]["Url"].rsplit("/", 1)[1]
+        sid = resp.json()["sid"]
+        seen.update(call_id=call_id, sid=sid)
+        voice = await _signed(
+            live_harness, f"/api/v1/callbacks/twilio/voice/{call_id}", {"CallSid": sid}
+        )
+        seen["voice"] = voice.status_code
+        status = await _signed(
+            live_harness,
+            f"/api/v1/callbacks/twilio/status/{call_id}",
+            {"CallSid": sid, "CallStatus": "ringing"},
+        )
+        seen["status"] = status.status_code
+        return resp
+
+    monkeypatch.setattr(telephony.http, "post", post_with_early_callbacks)
+    resp = await _call(live_harness, headers)
+    assert resp.status_code == 200, resp.text
+    assert (seen["voice"], seen["status"]) == (200, 204)
+    # Twilio's own answer says "queued", but the call has already moved on to ringing.
+    assert resp.json()["id"] == seen["call_id"] and resp.json()["state"] == "ringing"
 
 
 async def test_duplicate_and_late_callbacks_are_harmless(

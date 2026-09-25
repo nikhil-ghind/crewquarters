@@ -4,7 +4,7 @@ from caller_agent.rows import Plan, classify, read_rows
 
 
 def plan(numbers: list[str]) -> Plan:
-    values = [[f"P{i}", number, "yes", ""] for i, number in enumerate(numbers)]
+    values = [[f"P{chr(ord('a') + i)}", number, "yes", ""] for i, number in enumerate(numbers)]
     values.append(["Skip", "+15555550199", "no", ""])
     return classify(read_rows(values, 2), 3)
 
@@ -39,7 +39,7 @@ def test_request_shows_masked_recipients_script_skips_and_count() -> None:
     assert request["consequence"].startswith("3 automated calls will be placed now")
     recipients, script, skipped, summary = request["preview"]
     assert recipients["columns"] == ["Row", "Name", "Number", "Consent"]
-    assert recipients["rows"][0] == ["2", "P0", "••••0101", "validated"]
+    assert recipients["rows"][0] == ["2", "Pa", "••••0101", "validated"]
     assert CONFIG.disclosure in script["text"] and CONFIG.script in script["text"]
     assert skipped["rows"] == [["5", "Skip", "consent"]]
     assert {"label": "Call cap", "value": "3"} in summary["items"]

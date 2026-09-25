@@ -4,10 +4,15 @@
   the owner-approved script (the agent may only fill in ``{name}``) inside a bounded
   speech gather.
 * Every callback must carry a valid ``X-Twilio-Signature`` computed over the original
-  public URL (``CQ_PUBLIC_BASE_URL`` + path + query), and its CallSid must match.
+  public URL (``CQ_PUBLIC_BASE_URL`` + path + query), and its CallSid must match. A
+  signed callback that arrives before the broker has recorded Twilio's answer (the call
+  is still ``CREATING`` or ``IN_DOUBT``) adopts its CallSid, so the callee still hears
+  the disclosure. Rejected callbacks are audited at most once a minute per reason.
 * A call is keyed by (run, idempotency key). A retry returns the same call and never
   redials. If Twilio's answer to the create request is lost, the call is ``IN_DOUBT``:
   the agent gets ``OUTCOME_UNKNOWN`` and the call is never retried automatically.
+* ``maxCalls`` is enforced under a per-run advisory lock, so concurrent requests with
+  different idempotency keys cannot overshoot it.
 * Full phone numbers are used once to place the call and are never stored or logged.
 """
 
@@ -22,11 +27,11 @@ import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Any
+from typing import Any, NoReturn
 from xml.sax.saxutils import escape, quoteattr
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -34,7 +39,7 @@ from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.errors import needs_connection, permission_denied
 from crewquarters_broker.metrics import BrokerMetrics
 from crewquarters_broker.models import TelephonyCall
-from crewquarters_secret_store import Keyring
+from crewquarters_secret_store import Keyring, SecretStoreError
 from crewquarters_secret_store import db as secret_db
 from crewquarters_secret_store.db import ProviderProfile
 from crewquarters_shared import audit
@@ -49,6 +54,7 @@ CALLBACK_PATH = "/api/v1/callbacks/twilio"
 DISCLOSURE = "Hello. This is an automated demo call from Crewquarters."  # when none is configured
 E164 = re.compile(r"^\+[1-9]\d{7,14}$")
 ACCOUNT_SID = re.compile(r"^AC[0-9a-fA-F]{32}$")
+CALL_SID = re.compile(r"^CA[0-9a-fA-F]{32}$")
 TERMINAL = frozenset({"completed", "busy", "no-answer", "failed", "canceled"})
 _RANK = {"CREATING": 0, "IN_DOUBT": 0, "queued": 1, "initiated": 2, "ringing": 3, "in-progress": 4}
 # Internal states reported in Twilio's vocabulary (broker-sdk.openapi.yaml, Call.state).
@@ -58,6 +64,12 @@ TEST_CALL_MESSAGE = (
     "This is a Crewquarters test call confirming that calling works. No reply is needed. Goodbye."
 )
 TEST_CALL_INTERVAL_SECONDS = 60.0
+# First key of the per-run advisory lock that serializes call creation ("CQ" + 1).
+CALL_LOCK_NAMESPACE = 0x43510001
+# Rejected callbacks write at most one audit row per reason in this window, with a count.
+REJECTION_AUDIT_SECONDS = 60.0
+# Decrypted credentials used only to check callback signatures are reused this long.
+CALLBACK_CREDENTIALS_SECONDS = 60.0
 
 
 def signature(auth_token: str, url: str, params: Mapping[str, str]) -> str:
@@ -125,6 +137,9 @@ class TelephonyService:
         self.http = http
         self.metrics = metrics
         self._last_test_call = -TEST_CALL_INTERVAL_SECONDS
+        # reason -> (monotonic time of the last audit row, rejections since that row)
+        self._rejections: dict[str, tuple[float, int]] = {}
+        self._callback_creds: tuple[float, dict[str, str]] | None = None
         # Set by the fake provider mode to simulate Twilio's callbacks.
         self.on_created: Callable[[uuid.UUID, str, str], Awaitable[None]] | None = None
 
@@ -174,6 +189,7 @@ class TelephonyService:
                 target_id=profile.id,
             )
             await db.commit()
+        self._callback_creds = None
         return await self.test()
 
     async def test(self) -> dict[str, Any]:
@@ -275,6 +291,7 @@ class TelephonyService:
                 target_id=profile.id,
             )
             await db.commit()
+        self._callback_creds = None
 
     async def status(self) -> dict[str, Any]:
         async with self.sessions() as db:
@@ -309,6 +326,12 @@ class TelephonyService:
         self._check_destination(to)
         creds = await self._credentials()
         async with self.sessions() as db:
+            # Serialize creation per run until this transaction commits, so the count below
+            # cannot race another request's insert (distinct keys would overshoot maxCalls).
+            await db.execute(
+                text("SELECT pg_advisory_xact_lock(:namespace, hashtext(:run))"),
+                {"namespace": CALL_LOCK_NAMESPACE, "run": str(run_id)},
+            )
             existing = await self._by_key(db, run_id, idempotency_key)
             if existing is not None:
                 if existing.state == "IN_DOUBT":
@@ -360,17 +383,15 @@ class TelephonyService:
                 auth=(creds["accountSid"], creds["authToken"]),
             )
         except httpx.HTTPError:
-            await self._set(call.id, state="IN_DOUBT", error_code="OUTCOME_UNKNOWN")
-            raise outcome_unknown(call.id) from None
+            return await self._in_doubt(call.id)
         if resp.status_code >= 500:  # Twilio may or may not have placed it
-            await self._set(call.id, state="IN_DOUBT", error_code="OUTCOME_UNKNOWN")
-            raise outcome_unknown(call.id)
+            return await self._in_doubt(call.id)
         if resp.status_code >= 400:  # rejected: no call was placed
             log.warning("twilio rejected call %s with status %s", call.id, resp.status_code)
             return await self._set(call.id, state="failed", error_code="PROVIDER_REJECTED")
         body = resp.json()
         sid, state = str(body["sid"]), str(body.get("status") or "queued")
-        result = await self._set(call.id, provider_sid=sid, state=state)
+        result = await self._created(call.id, sid, state)
         if self.on_created is not None:
             await self.on_created(call.id, sid, to)
         return result
@@ -387,21 +408,39 @@ class TelephonyService:
     async def verify_callback(
         self, path_and_query: str, params: Mapping[str, str], sent_signature: str | None
     ) -> None:
-        creds = await self._credentials()
+        # Cheap checks first: a request without a well-formed signature costs no decrypt.
+        if not sent_signature:
+            await self._reject("missing_signature", path_and_query)
+        elif not _well_formed(sent_signature):
+            await self._reject("malformed_signature", path_and_query)
+        creds = await self._signing_credentials()
         url = f"{self.settings.public_base_url.rstrip('/')}{path_and_query}"
         expected = signature(creds["authToken"], url, params)
-        if not sent_signature or not hmac.compare_digest(expected, sent_signature):
-            self.metrics.callback_rejections.labels("twilio").inc()
+        if not hmac.compare_digest(expected, sent_signature or ""):
+            await self._reject("bad_signature", path_and_query)
+
+    async def _reject(self, reason: str, path_and_query: str) -> NoReturn:
+        """Refuse a callback. Every rejection is counted in metrics, but the audit log gets
+        at most one row per reason per ``REJECTION_AUDIT_SECONDS``, carrying the number of
+        rejections since the previous row, so forged traffic cannot flood it."""
+        self.metrics.callback_rejections.labels("twilio").inc()
+        now = time.monotonic()
+        last, pending = self._rejections.get(reason, (-REJECTION_AUDIT_SECONDS, 0))
+        pending += 1
+        if now - last >= REJECTION_AUDIT_SECONDS:
+            self._rejections[reason] = (now, 0)
             async with self.sessions() as db:
                 audit.record(
                     db,
                     action="callback.twilio.rejected",
                     actor_type="anonymous",
                     outcome="denied",
-                    metadata={"path": path_and_query},
+                    metadata={"reason": reason, "count": pending, "path": path_and_query},
                 )
                 await db.commit()
-            raise PlatformError("SIGNATURE_INVALID", "Invalid Twilio signature.", 403)
+        else:
+            self._rejections[reason] = (last, pending)
+        raise PlatformError("SIGNATURE_INVALID", "Invalid Twilio signature.", 403)
 
     async def voice(self, call_id: uuid.UUID, params: Mapping[str, str]) -> str:
         call = await self._callback_call(call_id, params)
@@ -437,20 +476,97 @@ class TelephonyService:
     # --- Internals ------------------------------------------------------------------------
 
     async def _callback_call(self, call_id: uuid.UUID, params: Mapping[str, str]) -> TelephonyCall:
+        """The call a signature-checked callback is for.
+
+        Twilio can call back before the broker has stored its answer to the create request,
+        or after that answer was lost (``IN_DOUBT``). The call id in the callback URL names
+        exactly one call, so a callback for a call without a CallSid adopts Twilio's."""
+        sid = params.get("CallSid", "")
         async with self.sessions() as db:
             call = await db.get(TelephonyCall, call_id)
-        if call is None or not call.provider_sid or params.get("CallSid") != call.provider_sid:
+            if (
+                call is not None
+                and call.provider_sid is None
+                and call.state in ("CREATING", "IN_DOUBT")
+                and CALL_SID.match(sid)
+                and params.get("To", "")[-4:] in ("", call.destination_last4)
+            ):
+                call = await self._adopt(db, call_id, sid)
+        if call is None or not call.provider_sid or sid != call.provider_sid:
             raise not_found("Call", call_id)
         return call
+
+    async def _adopt(self, db: AsyncSession, call_id: uuid.UUID, sid: str) -> TelephonyCall | None:
+        try:
+            await db.execute(
+                update(TelephonyCall)
+                .where(TelephonyCall.id == call_id, TelephonyCall.provider_sid.is_(None))
+                .values(provider_sid=sid, state="queued", error_code=None)
+            )
+            await db.commit()
+        except IntegrityError:  # the CallSid already belongs to another call
+            await db.rollback()
+        else:
+            log.info("call %s adopted its CallSid from a callback", call_id)
+        db.expunge_all()
+        return await db.get(TelephonyCall, call_id)
+
+    async def _created(self, call_id: uuid.UUID, sid: str, state: str) -> dict[str, Any]:
+        """Record Twilio's answer. A callback may already have adopted the CallSid and moved
+        the call on, so the state only ever advances."""
+        async with self.sessions() as db:
+            call = await db.get(TelephonyCall, call_id, with_for_update=True)
+            assert call is not None
+            if call.provider_sid is None:
+                call.provider_sid = sid
+            elif call.provider_sid != sid:
+                log.warning("twilio answered call %s with a different CallSid", call_id)
+            if _advances(call.state, state):
+                call.state = state
+            await db.commit()
+            await db.refresh(call)
+            return view(call)
+
+    async def _in_doubt(self, call_id: uuid.UUID) -> dict[str, Any]:
+        """The create request's outcome is unknown: mark the call ``IN_DOUBT`` and raise
+        ``OUTCOME_UNKNOWN``, unless a callback has already shown that Twilio placed it."""
+        async with self.sessions() as db:
+            await db.execute(
+                update(TelephonyCall)
+                .where(TelephonyCall.id == call_id, TelephonyCall.provider_sid.is_(None))
+                .values(state="IN_DOUBT", error_code="OUTCOME_UNKNOWN")
+            )
+            await db.commit()
+            call = await db.get(TelephonyCall, call_id)
+        assert call is not None
+        if call.state == "IN_DOUBT":
+            raise outcome_unknown(call_id)
+        return view(call)
+
+    async def _signing_credentials(self) -> dict[str, str]:
+        """Credentials for signature checks, reused briefly so that a flood of forged
+        callbacks does not decrypt the secret for every request."""
+        now = time.monotonic()
+        if self._callback_creds is not None and self._callback_creds[0] > now:
+            return self._callback_creds[1]
+        creds = await self._credentials()
+        self._callback_creds = (now + CALLBACK_CREDENTIALS_SECONDS, creds)
+        return creds
 
     async def _credentials(self) -> dict[str, str]:
         async with self.sessions() as db:
             profile = await self._profile(db)
             if profile is None or profile.encrypted_secret_id is None or not profile.enabled:
                 raise needs_connection("twilio", "Configure Twilio in Connections.")
-            raw = await secret_db.load(
-                db, self.keyring, profile.encrypted_secret_id, provider="twilio"
-            )
+            try:
+                raw = await secret_db.load(
+                    db, self.keyring, profile.encrypted_secret_id, provider="twilio"
+                )
+            except SecretStoreError:  # e.g. its master key version is no longer loaded
+                log.error("the saved twilio credentials cannot be decrypted")
+                raise needs_connection(
+                    "twilio", "The saved Twilio credentials cannot be read. Save them again."
+                ) from None
         creds: dict[str, str] = json.loads(raw)
         return creds
 
@@ -481,6 +597,14 @@ class TelephonyService:
     def _destination_hash(self, number: str) -> str:
         key = self.settings.secret_key.get_secret_value().encode()
         return hmac.new(key, b"cq-phone-v1|" + number.encode(), hashlib.sha256).hexdigest()
+
+
+def _well_formed(sent: str) -> bool:
+    """Twilio's signature is the base64 of a 20-byte HMAC-SHA1."""
+    try:
+        return len(base64.b64decode(sent, validate=True)) == 20
+    except ValueError:
+        return False
 
 
 def _advances(current: str, new: str) -> bool:

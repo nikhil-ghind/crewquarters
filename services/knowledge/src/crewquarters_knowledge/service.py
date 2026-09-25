@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import json
 import logging
 import os
 import shutil
@@ -20,13 +21,15 @@ from xml.sax.saxutils import escape, quoteattr
 
 from fastapi import UploadFile
 from sqlalchemy import delete, select
+from sqlalchemy import text as sql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from crewquarters_knowledge.chunking import chunk, count_tokens, describe
+from crewquarters_knowledge import isolation
+from crewquarters_knowledge.chunking import describe
 from crewquarters_knowledge.config import KnowledgeSettings
-from crewquarters_knowledge.embeddings import BATCH_SIZE, Embedder
-from crewquarters_knowledge.extract import ExtractionError, detect_mime, extract, safe_filename
+from crewquarters_knowledge.embeddings import BATCH_SIZE, PROFILES, Embedder
+from crewquarters_knowledge.extract import ExtractionError, detect_mime, safe_filename
 from crewquarters_knowledge.models import Document, DocumentChunk, KnowledgeBase
 from crewquarters_shared import jobs
 from crewquarters_shared.errors import PlatformError, conflict, not_found
@@ -50,6 +53,8 @@ def kb_view(kb: KnowledgeBase) -> dict[str, Any]:
         "name": kb.name,
         "embeddingProfile": kb.embedding_profile,
         "embeddingDimension": kb.embedding_dimension,
+        # The pinned model behind the profile id (source and revision), when known.
+        "embeddingModel": PROFILES.get(kb.embedding_profile),
         "createdAt": kb.created_at,
     }
 
@@ -273,8 +278,14 @@ async def ingest(
                 "EMBEDDING_PROFILE_MISMATCH",
                 f"This knowledge base uses {profile}; the service runs {embedder.profile}.",
             )
-        segments = await asyncio.to_thread(extract, path, mime)
-        pieces = chunk(segments, settings.chunk_tokens, settings.chunk_overlap_tokens)
+        prepared = await isolation.prepare(
+            path,
+            mime,
+            settings.chunk_tokens,
+            settings.chunk_overlap_tokens,
+            isolation.Limits(settings.extract_timeout_seconds, settings.extract_memory_bytes),
+        )
+        pieces = prepared.pieces
         if not pieces:
             raise ExtractionError("EMPTY_DOCUMENT", "No text was found in this document.")
     except ExtractionError as exc:
@@ -303,9 +314,9 @@ async def ingest(
         )
         doc.state, doc.error = "READY", None
         doc.extracted = {
-            "segments": len(segments),
+            "segments": prepared.segments,
             "chunks": len(pieces),
-            "tokens": sum(count_tokens(s.text) for s in segments),
+            "tokens": prepared.tokens,
         }
         await db.commit()
     log.info("document indexed", extra={"event": "knowledge.indexed"})
@@ -324,6 +335,41 @@ async def mark_failed(
         if doc is not None:
             doc.state, doc.error = state, {"code": code, "message": message}
             await db.commit()
+
+
+async def fail_abandoned(db: AsyncSession, grace_seconds: float) -> int:
+    """Fail PENDING and PROCESSING documents that no live ``knowledge.ingest`` job will
+    finish: for example, the process died and the scheduler's reaper marked the job dead.
+    ``grace_seconds`` skips documents that changed very recently. Returns the count."""
+    result = await db.execute(
+        sql(
+            """
+            UPDATE documents AS d
+            SET state = 'FAILED', error = CAST(:error AS jsonb), updated_at = now()
+            WHERE d.state IN ('PENDING', 'PROCESSING')
+              AND d.updated_at < now() - make_interval(secs => :grace)
+              AND NOT EXISTS (
+                SELECT 1 FROM jobs AS j
+                WHERE j.type = :job_type AND j.state IN ('available', 'claimed')
+                  AND j.payload ->> 'documentId' = d.id::text
+              )
+            RETURNING d.id
+            """
+        ),
+        {
+            "error": json.dumps(
+                {
+                    "code": "INGEST_ABANDONED",
+                    "message": "Indexing stopped unexpectedly. Re-index to try again.",
+                }
+            ),
+            "grace": grace_seconds,
+            "job_type": INGEST_JOB,
+        },
+    )
+    failed = len(result.all())
+    await db.commit()
+    return failed
 
 
 def format_context(passages: list[dict[str, Any]]) -> str:

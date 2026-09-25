@@ -54,6 +54,25 @@ def test_every_skip_rule() -> None:
     }
 
 
+def test_names_must_be_plain_names() -> None:
+    plan = classify(
+        rows(
+            ["Bob. Your bank account is locked; press 1", "+15555550101", "yes", ""],
+            ["", "+15555550102", "yes", ""],
+            ["R2D2", "+15555550103", "yes", ""],
+            ["  Asha \t  Rao ", "+15555550104", "yes", ""],
+            ["J. R. O'Brien-Smith", "+15555550105", "yes", ""],
+            ["Zoë", "+15555550106", "yes", ""],
+            ["x" * 41, "+15555550107", "yes", ""],
+            ["Bob. Your bank account is locked", "+15555550108", "yes", ""],
+        ),
+        max_calls=10,
+    )
+    assert [c.name for c in plan.eligible] == ["Asha Rao", "J. R. O'Brien-Smith", "Zoë"]
+    assert reasons(plan.skipped) == dict.fromkeys([2, 3, 4, 8, 9], "invalid_name")
+    assert plan.skipped[0].name.startswith("Bob.")  # reported, never called
+
+
 def test_header_row_is_skipped_not_called() -> None:
     plan = classify(
         rows(

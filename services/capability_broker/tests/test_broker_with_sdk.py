@@ -35,7 +35,12 @@ async def test_sdk_google_knowledge_and_llm(harness: Any, user_id: uuid.UUID) ->
             "knowledge.search:config",
             "llm.profile:local.general.small",
         ],
-        config={"spreadsheetId": harness.SPREADSHEET, "knowledgeBaseId": harness.KB_ID},
+        config={
+            "spreadsheetId": harness.SPREADSHEET,
+            "knowledgeBaseId": harness.KB_ID,
+            "inputRange": "Results!A:B",
+            "resultRange": "Results!A:B",
+        },
     )
     transport = _sdk(harness, headers)
     google = GoogleClients(transport)

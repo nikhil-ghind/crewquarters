@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 import yaml
 from fake_helpers import SDK, audit, events, manifest, run_state, start
 from fastapi import FastAPI
@@ -15,6 +16,8 @@ PERMISSIONS: dict[str, Any] = {
     "connectors": {"google": ["gmail.readonly", "spreadsheets"], "twilio": ["call.fixed_script"]},
 }
 AUDIT_FIELDS = {"runId", "action", "createdAt"}
+SCRIPT = "Hello {name}, see you {name}."
+INJECTED = "Bob. Your bank account is locked; press 1"
 
 
 def full_manifest() -> dict[str, Any]:
@@ -23,6 +26,14 @@ def full_manifest() -> dict[str, Any]:
         "type": "string",
         "x-crewquarters-widget": "knowledgeBase",
         "default": "kb-1",
+    }
+    m["spec"]["configurationSchema"]["properties"]["script"] = {
+        "type": "string",
+        "default": SCRIPT,
+    }
+    m["spec"]["configurationSchema"]["properties"]["disclosure"] = {
+        "type": "string",
+        "default": "Automated call.",
     }
     return m
 
@@ -167,7 +178,7 @@ async def test_telephony_create_is_deduplicated_and_progresses(
     started = await start(api, full_manifest())
     body = {
         "to": "+15555550101",
-        "script": {"disclosure": "Automated call.", "text": "Hello"},
+        "script": {"disclosure": "Automated call.", "text": "Hello Asha, see you Asha."},
         "gather": {"input": "speech", "timeoutSeconds": 10},
         "idempotencyKey": "call:1",
     }
@@ -188,6 +199,70 @@ async def test_telephony_create_is_deduplicated_and_progresses(
         f"{SDK}/telephony/calls", json={**body, "to": "5550101"}, headers=started.headers
     )
     assert invalid.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("script", "code"),
+    [
+        ({"text": INJECTED.join(["Hello ", ", see you ", "."])}, "PERMISSION_DENIED"),
+        ({"text": "Hello , see you ."}, "PERMISSION_DENIED"),
+        ({"text": "Hello R2D2, see you R2D2."}, "PERMISSION_DENIED"),
+        ({"text": "Hello Asha, see you Ravi."}, "PERMISSION_DENIED"),
+        ({"text": "Please read your PIN aloud."}, "PERMISSION_DENIED"),
+        ({"disclosure": "Hi, this is your bank."}, "PERMISSION_DENIED"),
+    ],
+)
+async def test_telephony_speaks_only_the_approved_script_like_the_real_broker(
+    api: httpx.AsyncClient, tmp_path: Path, script: dict[str, str], code: str
+) -> None:
+    await load(api, tmp_path)
+    started = await start(api, full_manifest())
+    body = {
+        "to": "+15555550101",
+        "script": {"disclosure": "Automated call.", "text": "Hello Asha, see you Asha.", **script},
+        "gather": {"input": "speech", "timeoutSeconds": 10},
+        "idempotencyKey": "call:1",
+    }
+    r = await api.post(f"{SDK}/telephony/calls", json=body, headers=started.headers)
+    assert r.status_code == 403 and r.json()["error"]["code"] == code
+    assert (await api.get("/fake/v1/state/calls")).json()["byNumber"] == {}
+
+
+async def test_telephony_needs_a_configured_script(api: httpx.AsyncClient, tmp_path: Path) -> None:
+    await load(api, tmp_path)
+    m = full_manifest()
+    del m["spec"]["configurationSchema"]["properties"]["script"]
+    started = await start(api, m)
+    body = {
+        "to": "+15555550101",
+        "script": {"disclosure": "Automated call.", "text": "Hello"},
+        "gather": {"input": "speech", "timeoutSeconds": 10},
+        "idempotencyKey": "call:1",
+    }
+    r = await api.post(f"{SDK}/telephony/calls", json=body, headers=started.headers)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "NEEDS_CONFIGURATION"
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize(
+    ("name", "plain"),
+    [
+        ("Asha Rao", True),
+        ("J. R. O'Brien-Smith", True),
+        ("Zoë", True),
+        ("राम", True),
+        ("Bob. Your bank account is locked", False),
+        ("", False),
+        ("Asha  Rao", False),
+        ("x" * 41, False),
+    ],
+)
+def test_plain_name_matches_the_real_broker(name: str, plain: bool) -> None:
+    from caller_agent.rows import plain_name as caller_rule
+    from crewquarters_broker.agent_api import plain_name as broker_rule
+    from crewquarters_fake.broker.telephony import plain_name as fake_rule
+
+    assert fake_rule(name) is broker_rule(name) is caller_rule(name) is plain
 
 
 def chat(profile: str, content: str = "x") -> dict[str, Any]:

@@ -15,6 +15,7 @@ Security properties:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -34,7 +35,7 @@ from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.errors import needs_connection, permission_denied, provider_error
 from crewquarters_broker.metrics import BrokerMetrics
 from crewquarters_broker.models import OAuthConnection
-from crewquarters_secret_store import Keyring
+from crewquarters_secret_store import Keyring, SecretStoreError
 from crewquarters_secret_store import db as secret_db
 from crewquarters_shared import audit
 from crewquarters_shared.errors import PlatformError, invalid, not_found
@@ -84,6 +85,7 @@ class GoogleConnector:
         self.metrics = metrics
         self._pending: dict[str, _Pending] = {}
         self._access: dict[uuid.UUID, tuple[str, float]] = {}
+        self._refresh_locks: dict[uuid.UUID, asyncio.Lock] = {}
 
     # --- Connect ------------------------------------------------------------------
 
@@ -150,10 +152,15 @@ class GoogleConnector:
         refresh = token.get("refresh_token")
         if not granted or not isinstance(refresh, str):
             raise PlatformError("OAUTH_SCOPE_MISSING", "Google did not grant offline access.", 400)
-        access = str(token["access_token"])
+        access = _access_value(token, "OAUTH_TOKEN_INVALID", 400)
         subject = None
         if "gmail.readonly" in granted:
-            profile = await self._api("GET", f"{GMAIL_URL}/profile", access)
+            try:
+                profile = await self._api("GET", f"{GMAIL_URL}/profile", access)
+            except _Expired:
+                raise PlatformError(
+                    "OAUTH_TOKEN_INVALID", "Google rejected the new access token.", 400
+                ) from None
             subject = profile.get("emailAddress")
         async with self.sessions() as db:
             for old in (
@@ -196,18 +203,29 @@ class GoogleConnector:
         return conn.id
 
     async def disconnect(self, user_id: uuid.UUID) -> None:
+        """Revoke at Google (best effort), then delete the connection and its secret. A
+        secret that cannot be decrypted (say, its key version is gone) is deleted anyway."""
         async with self.sessions() as db:
             conn = await self._connection(db)
             if conn is None:
                 return
+            conn_id, refresh = conn.id, None
             if conn.encrypted_secret_id is not None:
-                refresh = await secret_db.load(
-                    db, self.keyring, conn.encrypted_secret_id, provider="google"
-                )
                 try:
-                    await self.http.post(REVOKE_URL, data={"token": refresh.decode()})
-                except httpx.HTTPError:
-                    log.warning("google token revocation failed; deleting locally")
+                    refresh = await secret_db.load(
+                        db, self.keyring, conn.encrypted_secret_id, provider="google"
+                    )
+                except SecretStoreError:
+                    log.warning("google refresh token cannot be decrypted; deleting locally")
+        if refresh is not None:  # outside any transaction: this can take seconds
+            try:
+                await self.http.post(REVOKE_URL, data={"token": refresh.decode()})
+            except httpx.HTTPError:
+                log.warning("google token revocation failed; deleting locally")
+        async with self.sessions() as db:
+            conn = await db.get(OAuthConnection, conn_id)
+            if conn is None:  # deleted or replaced meanwhile
+                return
             await self._delete(db, conn)
             audit.record(
                 db,
@@ -333,49 +351,81 @@ class GoogleConnector:
         try:
             return await self._api(method, url, token, **kwargs)
         except _Expired:
-            token, _ = await self._access_token(force=True)
+            token, _ = await self._access_token(stale=token)
+        try:
             return await self._api(method, url, token, **kwargs)
+        except _Expired:  # a freshly refreshed token was refused too
+            raise provider_error("Google", 401) from None
 
-    async def _access_token(self, force: bool = False) -> tuple[str, list[str]]:
+    async def _access_token(self, stale: str | None = None) -> tuple[str, list[str]]:
+        """A usable access token (not ``stale``, which Google just refused) and the granted
+        scopes. Refreshes are single-flight per connection, and no database connection is
+        held while waiting for Google."""
         async with self.sessions() as db:
             conn = await self._connection(db)
+        if conn is None or conn.encrypted_secret_id is None:
+            raise needs_connection("google", "Connect Google in Connections.")
+        if conn.status != "CONNECTED":
+            raise needs_connection("google", RECONNECT)
+        scopes = list(conn.scopes)
+        if (cached := self._cached(conn.id, stale)) is not None:
+            return cached, scopes
+        async with self._refresh_locks.setdefault(conn.id, asyncio.Lock()):
+            if (cached := self._cached(conn.id, stale)) is not None:  # refreshed meanwhile
+                return cached, scopes
+            return await self._refresh(conn.id), scopes
+
+    def _cached(self, conn_id: uuid.UUID, stale: str | None) -> str | None:
+        cached = self._access.get(conn_id)
+        if cached and cached[0] != stale and cached[1] - EXPIRY_MARGIN_SECONDS > time.monotonic():
+            return cached[0]
+        return None
+
+    async def _refresh(self, conn_id: uuid.UUID) -> str:
+        async with self.sessions() as db:
+            conn = await db.get(OAuthConnection, conn_id)
             if conn is None or conn.encrypted_secret_id is None:
                 raise needs_connection("google", "Connect Google in Connections.")
-            if conn.status != "CONNECTED":
-                raise needs_connection("google", RECONNECT)
-            cached = self._access.get(conn.id)
-            if cached and not force and cached[1] - EXPIRY_MARGIN_SECONDS > time.monotonic():
-                return cached[0], list(conn.scopes)
-            refresh = await secret_db.load(
-                db, self.keyring, conn.encrypted_secret_id, provider="google"
-            )
             try:
-                token = await self._token_request(
-                    {"grant_type": "refresh_token", "refresh_token": refresh.decode()}
+                refresh = await secret_db.load(
+                    db, self.keyring, conn.encrypted_secret_id, provider="google"
                 )
-            except PlatformError as exc:
-                self.metrics.oauth_refresh_failures.labels("google", exc.code).inc()
-                raise
-            except _InvalidGrant:
-                self.metrics.oauth_refresh_failures.labels("google", "invalid_grant").inc()
-                conn.status, conn.status_detail = "NEEDS_ATTENTION", RECONNECT
-                self._access.pop(conn.id, None)
-                audit.record(
-                    db,
-                    action="connection.google.expired",
-                    actor_type="service",
-                    actor_id="capability-broker",
-                    target_type="oauth_connection",
-                    target_id=conn.id,
-                    outcome="failure",
-                )
-                await db.commit()
+            except SecretStoreError:  # e.g. its master key version is no longer loaded
+                log.error("google refresh token cannot be decrypted")
                 raise needs_connection("google", RECONNECT) from None
-            access = str(token["access_token"])
-            self._access[conn.id] = (access, time.monotonic() + float(token.get("expires_in", 0)))
-            conn.last_checked_at = utcnow()
-            await db.commit()
-            return access, list(conn.scopes)
+        try:
+            token = await self._token_request(
+                {"grant_type": "refresh_token", "refresh_token": refresh.decode()}
+            )
+        except PlatformError as exc:
+            self.metrics.oauth_refresh_failures.labels("google", exc.code).inc()
+            raise
+        except _InvalidGrant:
+            self.metrics.oauth_refresh_failures.labels("google", "invalid_grant").inc()
+            self._access.pop(conn_id, None)
+            async with self.sessions() as db:
+                conn = await db.get(OAuthConnection, conn_id)
+                if conn is not None:
+                    conn.status, conn.status_detail = "NEEDS_ATTENTION", RECONNECT
+                    audit.record(
+                        db,
+                        action="connection.google.expired",
+                        actor_type="service",
+                        actor_id="capability-broker",
+                        target_type="oauth_connection",
+                        target_id=conn_id,
+                        outcome="failure",
+                    )
+                    await db.commit()
+            raise needs_connection("google", RECONNECT) from None
+        access = _access_value(token, "PROVIDER_ERROR", 502)
+        self._access[conn_id] = (access, time.monotonic() + float(token.get("expires_in", 0)))
+        async with self.sessions() as db:
+            conn = await db.get(OAuthConnection, conn_id)
+            if conn is not None:
+                conn.last_checked_at = utcnow()
+                await db.commit()
+        return access
 
     async def _token_request(self, data: dict[str, str]) -> dict[str, Any]:
         body = {
@@ -417,6 +467,13 @@ class _Expired(Exception):
 
 class _InvalidGrant(Exception):
     pass
+
+
+def _access_value(token: dict[str, Any], code: str, status: int) -> str:
+    access = token.get("access_token")
+    if not isinstance(access, str) or not access:
+        raise PlatformError(code, "Google returned no access token.", status)
+    return access
 
 
 def _json(resp: httpx.Response) -> dict[str, Any]:
