@@ -65,6 +65,10 @@ test('first-run setup completes without a shell and resumes after refresh and Go
 
   await wizard.expectStep('Validation and finish');
   await expect(page.getByRole('list', { name: 'Validation checks' })).toBeVisible();
+  // The diagnostics bundle is built by the device, not in the browser.
+  const download = page.waitForEvent('download');
+  await page.getByRole('link', { name: 'Download diagnostics' }).click();
+  expect((await download).suggestedFilename()).toMatch(/^crewquarters-diagnostics-.*\.zip$/);
   await page.getByRole('button', { name: 'Finish setup' }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
@@ -72,4 +76,20 @@ test('first-run setup completes without a shell and resumes after refresh and Go
   // The wizard is hidden once setup is complete.
   await page.goto('/setup');
   await expect(page).toHaveURL(/\/$/);
+});
+
+test('once the owner exists, sign-in does not offer setup and the wizard offers no second owner', async ({ page, mock }) => {
+  await mock.reset('ready');
+  // Wait for the bootstrap status answer before asserting that the link is absent.
+  const status = page.waitForResponse((r) => r.url().endsWith('/api/v1/bootstrap/status'));
+  await page.goto('/login');
+  expect(await (await status).json()).toEqual({ ownerExists: true });
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Set up Crewquarters' })).toHaveCount(0);
+
+  await page.goto('/setup/owner');
+  await expect(page.getByText('The owner account already exists')).toBeVisible();
+  await expect(page.getByLabel('Setup code')).toHaveCount(0);
+  await page.getByRole('link', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(/\/login\?next=/);
 });

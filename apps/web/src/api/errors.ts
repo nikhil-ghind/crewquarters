@@ -75,6 +75,11 @@ const REMEDIATION: Record<string, string> = {
   PAYLOAD_TOO_LARGE: 'The file or request is too large.',
   MODEL_GATEWAY_UNAVAILABLE: 'Model serving is unavailable. Check System status.',
   RUNTIME_UNAVAILABLE: 'The agent runtime is unavailable. Check System status.',
+  BACKUP_IN_PROGRESS: 'A backup is already queued or running. Wait for it to finish; the list updates on its own.',
+  BACKUPS_NOT_CONFIGURED:
+    'Backups are not configured on this device (CQ_BACKUP_DIR). Run "crewquarters backup create" on the device instead.',
+  BACKUP_CONTAINS_MASTER_KEY: 'This backup contains the device master key, so it can only be copied on the device.',
+  BACKUP_UNREADABLE: 'The platform cannot read this backup. Copy it from the device instead.',
 };
 
 export function remediation(error: ApiError): string {

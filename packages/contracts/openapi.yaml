@@ -8,6 +8,19 @@ info:
     `X-CSRF-Token` header. Mutating requests accept an `Idempotency-Key` header.'
   version: 0.1.0
 paths:
+  /api/v1/bootstrap/status:
+    get:
+      tags:
+      - auth
+      summary: Whether the owner exists (public; tells the sign-in page whether setup is possible)
+      operationId: bootstrap_status_api_v1_bootstrap_status_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BootstrapStatusOut'
   /api/v1/bootstrap:
     post:
       tags:
@@ -3174,6 +3187,142 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: Service Unavailable
+  /api/v1/system/backups:
+    get:
+      tags:
+      - system
+      summary: 'Backups: queued, running, failed, and archives on the device (newest first)'
+      operationId: list_backups_api_v1_system_backups_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupPage'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - system
+      summary: Create a backup (runs as a job; never includes the device master key)
+      operationId: create_backup_api_v1_system_backups_post
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupOut'
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+  /api/v1/system/backups/{backup_id}/download:
+    get:
+      tags:
+      - system
+      summary: Download a backup archive (owner only; audited)
+      operationId: download_backup_api_v1_system_backups__backup_id__download_get
+      parameters:
+      - name: backup_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Backup Id
+      responses:
+        '200':
+          description: The backup archive (gzip-compressed tar).
+          content:
+            application/json:
+              schema: {}
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/system/diagnostics:
+    get:
+      tags:
+      - system
+      summary: Download a redacted diagnostics bundle (owner only; audited)
+      operationId: download_diagnostics_api_v1_system_diagnostics_get
+      responses:
+        '200':
+          description: Redacted diagnostics bundle (zip).
+          content:
+            application/json:
+              schema: {}
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /internal/v1/runs/{run_id}:
     get:
       tags:
@@ -4103,6 +4252,155 @@ components:
       - metadata
       - createdAt
       title: AuditEventOut
+    BackupErrorOut:
+      properties:
+        code:
+          type: string
+          title: Code
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - code
+      - message
+      title: BackupErrorOut
+    BackupOut:
+      properties:
+        id:
+          type: string
+          title: Id
+          description: Backup name, e.g. crewquarters-backup-20260925T100000Z-1a2b3c
+          examples:
+          - crewquarters-backup-20260925T100000Z-1a2b3c
+        status:
+          type: string
+          enum:
+          - queued
+          - running
+          - succeeded
+          - failed
+          title: Status
+        source:
+          type: string
+          enum:
+          - api
+          - device
+          title: Source
+          description: 'api: created from the UI/API; device: `crewquarters backup create`.'
+        createdAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Createdat
+        finishedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Finishedat
+        sizeBytes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Sizebytes
+        includesMasterKey:
+          type: boolean
+          title: Includesmasterkey
+          description: Never true for API backups. Backups with the master key are not downloadable through
+            the API.
+        platformVersion:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Platformversion
+        migrationHead:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Migrationhead
+        documentCount:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Documentcount
+        sha256:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sha256
+          description: SHA-256 of the archive file.
+        downloadable:
+          type: boolean
+          title: Downloadable
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/BackupErrorOut'
+          - type: 'null'
+      type: object
+      required:
+      - id
+      - status
+      - source
+      - createdAt
+      - finishedAt
+      - sizeBytes
+      - includesMasterKey
+      - platformVersion
+      - migrationHead
+      - documentCount
+      - downloadable
+      - error
+      title: BackupOut
+    BackupPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/BackupOut'
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+          description: Opaque cursor for the next page; null on the last page.
+        enabled:
+          type: boolean
+          title: Enabled
+          description: False when CQ_BACKUP_DIR is not set on the device.
+        location:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Location
+          description: Backup directory inside the platform.
+        retention:
+          type: integer
+          title: Retention
+          description: Newest backups kept; older ones are deleted.
+        includes:
+          items:
+            type: string
+          type: array
+          title: Includes
+          description: What a backup contains.
+        excludes:
+          items:
+            type: string
+          type: array
+          title: Excludes
+          description: What a backup never contains.
+      type: object
+      required:
+      - items
+      - enabled
+      - location
+      - retention
+      - includes
+      - excludes
+      title: BackupPage
     BatchEvent:
       properties:
         clientEventId:
@@ -4172,6 +4470,16 @@ components:
       - username
       - password
       title: BootstrapIn
+    BootstrapStatusOut:
+      properties:
+        ownerExists:
+          type: boolean
+          title: Ownerexists
+          description: True once the owner account exists; the setup code can no longer be used.
+      type: object
+      required:
+      - ownerExists
+      title: BootstrapStatusOut
     CatalogAgentOut:
       properties:
         agentId:

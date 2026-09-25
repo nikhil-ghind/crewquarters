@@ -3,6 +3,7 @@
 import type {
   AgentVersionOut,
   AuditEventOut,
+  BackupOut,
   CatalogAgentOut,
   ChatMessageOut,
   ChatSessionOut,
@@ -45,6 +46,7 @@ export interface Flags {
   lowDisk: boolean;
   googleDeny: boolean;
   sseFail: number;
+  backupsDisabled: boolean;
 }
 
 export interface State {
@@ -70,6 +72,8 @@ export interface State {
   docs: Map<string, DocRec>;
   chats: Map<string, ChatRec>;
   audit: AuditEventOut[];
+  /** Newest first. */
+  backups: BackupOut[];
   idempotency: Map<string, { hash: string; resp: Resp }>;
   oauthStates: Map<string, string[]>;
   lastTestCallAt: number;
@@ -121,11 +125,12 @@ export function emptyState(gen: number): State {
     docs: new Map(),
     chats: new Map(),
     audit: [],
+    backups: [],
     idempotency: new Map(),
     oauthStates: new Map(),
     lastTestCallAt: 0,
     speedMs: 300,
-    flags: { offline: false, runtimeDown: false, lowDisk: false, googleDeny: false, sseFail: 0 },
+    flags: { offline: false, runtimeDown: false, lowDisk: false, googleDeny: false, sseFail: 0, backupsDisabled: false },
     sseLog: [],
   };
 }
@@ -565,3 +570,27 @@ export function audit(action: string, target: { type?: string; id?: string } = {
 }
 
 export type { StoredCitation };
+
+// --- Backups -------------------------------------------------------------------------
+
+/** crewquarters-backup-<UTC stamp>-<label>, like the platform's archive names. */
+export function backupName(at: Date, label: string): string {
+  const stamp = at.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  return `crewquarters-backup-${stamp}-${label}`;
+}
+
+export function backupRec(patch: Partial<BackupOut> & Pick<BackupOut, 'id' | 'status' | 'source'>): BackupOut {
+  return {
+    createdAt: nowIso(),
+    finishedAt: null,
+    sizeBytes: null,
+    includesMasterKey: false,
+    platformVersion: null,
+    migrationHead: null,
+    documentCount: null,
+    sha256: null,
+    downloadable: false,
+    error: null,
+    ...patch,
+  };
+}

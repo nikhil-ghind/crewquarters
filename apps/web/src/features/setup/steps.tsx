@@ -3,12 +3,13 @@ import { Download, RotateCw } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api, mutate, unwrap } from '../../api/client';
+import { DIAGNOSTICS_URL } from '../../api/endpoints';
 import { isApiError, type FieldError } from '../../api/errors';
 import { useActionGuard } from '../../api/guards';
 import { useIntentKey, useModelAction } from '../../api/mutations';
 import {
   keys,
-  useAttention,
+  useBootstrapStatus,
   useCatalog,
   useConnections,
   useInstallations,
@@ -18,7 +19,7 @@ import {
 } from '../../api/queries';
 import { session } from '../../api/session';
 import { useModelEvents } from '../../api/streams';
-import { Button } from '../../components/Button';
+import { Button, DownloadLink } from '../../components/Button';
 import { Banner, CopyButton, ErrorPanel, SkeletonBlock } from '../../components/Feedback';
 import { ErrorSummary, Field } from '../../components/Field';
 import { Advanced, Card, KeyValue } from '../../components/Layout';
@@ -293,6 +294,7 @@ export function OwnerStep({ signedIn }: { signedIn: boolean }) {
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [exists, setExists] = useState(false);
+  const bootstrap = useBootstrapStatus({ enabled: !signedIn });
 
   if (signedIn) {
     return (
@@ -325,6 +327,7 @@ export function OwnerStep({ signedIn }: { signedIn: boolean }) {
       );
       session.signedIn(out.csrfToken);
       client.setQueryData(keys.me, out);
+      client.setQueryData(keys.bootstrapStatus, { ownerExists: true });
       await client.refetchQueries({ queryKey: keys.settings });
       await save({ completed: ['welcome', 'preflight', 'owner'], current: 'storage' });
       announce('Owner account created.');
@@ -341,6 +344,23 @@ export function OwnerStep({ signedIn }: { signedIn: boolean }) {
   };
   const err = (name: string) => errors.find((e) => e.path.endsWith(`/${name}`))?.message;
 
+  if (exists || bootstrap.data?.ownerExists) {
+    // The one owner already exists: never offer a second create form.
+    return (
+      <section className="stack-lg" aria-labelledby="setup-step-title">
+        <header className="stack-sm">
+          <h1 id="setup-step-title" tabIndex={-1}>
+            Owner account
+          </h1>
+          <p className="page-purpose">The owner account controls this device. There is only one owner.</p>
+        </header>
+        <Banner tone="info" title="The owner account already exists" action={<Link to="/login?next=/setup">Sign in</Link>}>
+          Sign in as the owner to continue setup.
+        </Banner>
+      </section>
+    );
+  }
+
   return (
     <section className="stack-lg" aria-labelledby="setup-step-title">
       <header className="stack-sm">
@@ -349,11 +369,6 @@ export function OwnerStep({ signedIn }: { signedIn: boolean }) {
         </h1>
         <p className="page-purpose">Create the account that controls this device. There is only one owner.</p>
       </header>
-      {exists ? (
-        <Banner tone="info" title="The owner account already exists" action={<Link to="/login?next=/setup">Sign in</Link>}>
-          Sign in as the owner to continue setup.
-        </Banner>
-      ) : null}
       {error ? <ErrorPanel error={error} title="Could not create the owner account" /> : null}
       <form className="form" onSubmit={(e) => void onSubmit(e)} noValidate>
         <ErrorSummary
@@ -635,7 +650,6 @@ export function ValidationStep() {
   const models = useModels();
   const connections = useConnections();
   const installations = useInstallations();
-  const attention = useAttention();
   const settings = useSettings();
   const state = readSetupState(settings.data);
   const save = useSaveSetup();
@@ -677,22 +691,6 @@ export function ValidationStep() {
   const blocking = serviceRows.some((r) => r.state === 'failed') || modelRow.state === 'failed';
   const checking = status.isPending || models.isPending;
 
-  const downloadDiagnostics = () => {
-    const bundle = {
-      generatedAt: new Date().toISOString(),
-      system: status.data ?? null,
-      checks: rows.map(({ id, name, state: s, explanation }) => ({ id, name, state: s, explanation })),
-      attentionCount: attention.data?.count ?? null,
-    };
-    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'crewquarters-setup-diagnostics.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const finish = async () => {
     setFinishing(true);
     setError(null);
@@ -726,9 +724,9 @@ export function ValidationStep() {
         <Button variant="tertiary" onClick={() => navigate('/setup/agents')}>
           Back
         </Button>
-        <Button icon={<Download size={16} aria-hidden="true" />} onClick={downloadDiagnostics}>
+        <DownloadLink href={DIAGNOSTICS_URL} icon={<Download size={16} aria-hidden="true" />}>
           Download diagnostics
-        </Button>
+        </DownloadLink>
         <Button
           variant="primary"
           busy={finishing}

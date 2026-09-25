@@ -1,10 +1,12 @@
 /// <reference types="node" />
 /** Named starting states: fresh (first run), ready (default), populated (demo data). */
-import { digestResult, KB_PASSAGES } from './fixtures.ts';
+import { digestResult, KB_PASSAGES, MIGRATION_HEAD, PLATFORM_VERSION } from './fixtures.ts';
 import type { Obj } from './http.ts';
 import { askCallerApproval } from './sim.ts';
 import {
   appendEvent,
+  backupName,
+  backupRec,
   capabilitiesFor,
   emptyState,
   findVersion,
@@ -146,6 +148,43 @@ function addKnowledge(): void {
   void KB_PASSAGES;
 }
 
+/** Backups already on the device: newest first, like the API. */
+function addBackups(populated: boolean): void {
+  const s = st();
+  const at = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3600000);
+  const archive = (hoursAgo: number, label: string, source: 'api' | 'device', masterKey = false) => {
+    const created = at(hoursAgo);
+    return backupRec({
+      id: backupName(created, label),
+      status: 'succeeded',
+      source,
+      createdAt: created.toISOString(),
+      finishedAt: new Date(created.getTime() + 95_000).toISOString(),
+      sizeBytes: 41_943_040 + hoursAgo * 1024,
+      includesMasterKey: masterKey,
+      platformVersion: PLATFORM_VERSION,
+      migrationHead: MIGRATION_HEAD,
+      documentCount: 2,
+      sha256: `${label}`.padEnd(64, '0').replace(/[^0-9a-f]/g, 'a'),
+      downloadable: !masterKey,
+    });
+  };
+  s.backups = [archive(26, 'nightly', 'device')];
+  if (!populated) return;
+  const failedAt = at(20);
+  s.backups.unshift(
+    backupRec({
+      id: backupName(failedAt, '9f3a1c'),
+      status: 'failed',
+      source: 'api',
+      createdAt: failedAt.toISOString(),
+      finishedAt: new Date(failedAt.getTime() + 4000).toISOString(),
+      error: { code: 'BACKUP_FAILED', message: 'pg_dump exited with status 1 (disk full).' },
+    }),
+  );
+  s.backups.push(archive(24 * 6, 'pre-upgrade', 'device', true));
+}
+
 export function applyScenario(scenario: Scenario): void {
   const prev = S.current;
   resetIds();
@@ -169,6 +208,7 @@ export function applyScenario(scenario: Scenario): void {
   loadModels(s, true);
   loadConnections(true);
   addKnowledge();
+  addBackups(scenario === 'populated');
   if (scenario === 'ready') return;
 
   // populated

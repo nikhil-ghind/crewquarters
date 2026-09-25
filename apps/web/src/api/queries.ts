@@ -9,6 +9,9 @@ import {
   isTerminal,
   type AttentionOut,
   type AuditEventOut,
+  type BackupOut,
+  type BackupPage,
+  type BootstrapStatusOut,
   type CatalogAgentOut,
   type ChatSessionDetailOut,
   type ChatSessionOut,
@@ -52,6 +55,8 @@ export const keys = {
   knowledgeBase: (id: string) => ['knowledge', id] as const,
   documents: (kbId: string) => ['knowledge', kbId, 'documents'] as const,
   providerProfiles: ['providerProfiles'] as const,
+  bootstrapStatus: ['bootstrap', 'status'] as const,
+  backups: ['system', 'backups'] as const,
 };
 
 export interface RunFilters {
@@ -146,6 +151,30 @@ export function useAudit(filters: AuditFilters) {
 }
 
 export type AuditPage = { items: AuditEventOut[]; nextCursor?: string | null };
+
+/** Public: whether the owner account exists (the sign-in page offers setup only if not). */
+export function useBootstrapStatus(opts?: Opts<BootstrapStatusOut>) {
+  return useQuery({
+    queryKey: keys.bootstrapStatus,
+    queryFn: () => unwrap(api.GET('/api/v1/bootstrap/status')),
+    staleTime: 30_000,
+    ...opts,
+  });
+}
+
+export function isBackupActive(b: BackupOut): boolean {
+  return b.status === 'queued' || b.status === 'running';
+}
+
+/** Backups, newest first. Polls only while a backup is queued or running. */
+export function useBackups(opts?: Opts<BackupPage>) {
+  return useQuery({
+    queryKey: keys.backups,
+    queryFn: () => unwrap(api.GET('/api/v1/system/backups', { params: { query: { limit: 50 } } })),
+    refetchInterval: (query) => (query.state.data?.items.some(isBackupActive) ? 2_500 : false),
+    ...opts,
+  });
+}
 
 // --- Agents -------------------------------------------------------------------------
 

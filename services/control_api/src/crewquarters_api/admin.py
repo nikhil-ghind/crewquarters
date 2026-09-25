@@ -3,6 +3,7 @@
 cq-admin bootstrap-token [--ttl-hours 24]   print a new one-time owner setup code
 cq-admin catalog-sync [DIR]                 load bundled manifests into the catalog
 cq-admin export-openapi PATH                write the OpenAPI document (YAML)
+cq-admin backup|diagnostics|demo ...        operations (crewquarters_api/ops_cli.py)
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from pathlib import Path
 
 from sqlalchemy import func, select
 
-from crewquarters_api import catalog, security
+from crewquarters_api import catalog, ops_cli, security
 from crewquarters_api.routers.auth import BOOTSTRAP_SETTING
 from crewquarters_shared import audit
 from crewquarters_shared.config import get_settings
@@ -76,7 +77,12 @@ def main(argv: list[str] | None = None) -> int:
     sync.add_argument("directory", nargs="?", type=Path)
     export = sub.add_parser("export-openapi", help="Write the OpenAPI YAML")
     export.add_argument("path", type=Path)
+    ops_cli.add_parsers(sub)
     args = parser.parse_args(argv)
+
+    handled = ops_cli.dispatch(args)
+    if handled is not None:
+        return handled
 
     if args.command == "bootstrap-token":
         issued = asyncio.run(_bootstrap_token(args.ttl_hours))

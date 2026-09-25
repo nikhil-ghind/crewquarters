@@ -40,6 +40,9 @@ export class MockControls {
   googleDeny(on: boolean) {
     return this.post('google-deny', { on });
   }
+  backupsDisabled(on: boolean) {
+    return this.post('backups-disabled', { on });
+  }
   sseDrop() {
     return this.post('sse', { mode: 'drop' });
   }
@@ -137,6 +140,7 @@ export const test = base.extend<{ mock: MockControls; failOnDialog: void }>({
     await mock.runtimeDown(false);
     await mock.lowDisk(false);
     await mock.googleDeny(false);
+    await mock.backupsDisabled(false);
   },
   // Agent/provider content must never execute: any alert/confirm is a failure.
   failOnDialog: [

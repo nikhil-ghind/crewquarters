@@ -353,6 +353,7 @@ source = { editable = "services/control_api" }
 dependencies = [
     { name = "alembic" },
     { name = "argon2-cffi" },
+    { name = "crewquarters-secret-store" },
     { name = "crewquarters-shared" },
     { name = "fastapi" },
     { name = "python-multipart" },
@@ -363,6 +364,7 @@ dependencies = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "argon2-cffi", specifier = ">=23.1" },
+    { name = "crewquarters-secret-store", editable = "packages/secret_store" },
     { name = "crewquarters-shared", editable = "packages/shared_python" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "python-multipart", specifier = ">=0.0.17" },

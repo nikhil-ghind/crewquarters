@@ -96,6 +96,16 @@ def _set_cookies(
     )
 
 
+@router.get(
+    "/bootstrap/status",
+    response_model=schemas.BootstrapStatusOut,
+    summary="Whether the owner exists (public; tells the sign-in page whether setup is possible)",
+)
+async def bootstrap_status(db: AsyncSession = Depends(get_db)) -> schemas.BootstrapStatusOut:
+    exists = await db.scalar(select(select(User.id).exists()))
+    return schemas.BootstrapStatusOut(owner_exists=bool(exists))
+
+
 @router.post(
     "/bootstrap",
     response_model=schemas.SessionOut,

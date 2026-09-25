@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
@@ -55,3 +56,42 @@ def configure_logging(service: str, level: str | None = None) -> None:
     root.setLevel(level or os.environ.get("CQ_LOG_LEVEL", "INFO"))
     for noisy in ("uvicorn.access",):
         logging.getLogger(noisy).disabled = True
+    if _recent is not None:  # configure_logging replaces the root handlers
+        root.addHandler(_recent)
+
+
+class RecentLogs(logging.Handler):
+    """Keeps the last ``capacity`` formatted records in memory for diagnostics bundles.
+
+    Records are formatted (and so redacted) by :class:`JsonFormatter` when they arrive.
+    """
+
+    def __init__(self, service: str, capacity: int = 500) -> None:
+        super().__init__()
+        self.setFormatter(JsonFormatter(service))
+        self._lines: deque[str] = deque(maxlen=capacity)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._lines.append(self.format(record))
+        except Exception:  # never let diagnostics break logging
+            self.handleError(record)
+
+    def lines(self) -> list[str]:
+        return list(self._lines)
+
+
+_recent: RecentLogs | None = None
+
+
+def install_recent_logs(service: str, capacity: int = 500) -> RecentLogs:
+    """Attach (once) a :class:`RecentLogs` handler to the root logger and return it."""
+    global _recent
+    if _recent is None:
+        _recent = RecentLogs(service, capacity)
+        logging.getLogger().addHandler(_recent)
+    return _recent
+
+
+def recent_logs() -> list[str]:
+    return _recent.lines() if _recent is not None else []

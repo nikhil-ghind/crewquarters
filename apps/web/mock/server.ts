@@ -18,6 +18,7 @@
  *     POST /__mock/low-disk       {on}            storage warning
  *     POST /__mock/sse            {mode:'drop'} | {mode:'fail', count}
  *     GET  /__mock/sse-log                        [{runId,lastEventId,after,at}]
+ *     POST /__mock/backups-disabled {on}          backups not configured (CQ_BACKUP_DIR unset)
  *     POST /__mock/google-expired                 Google → NEEDS_ATTENTION
  *     POST /__mock/google-deny    {on}            consent returns ?result=error&code=OAUTH_DENIED
  *     GET  /api/v1/connections/google/callback    simulated Google consent + broker callback
@@ -30,11 +31,12 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { crc32, gzipSync } from 'node:zlib';
 import { extname, join, normalize, resolve } from 'node:path';
 import type { ChatMessageOut, InputRequestOut } from '../src/api/schema.ts';
 import type { StoredCitation } from '../src/lib/knowledge.ts';
 import { HTML_SECURITY_HEADERS } from './csp.ts';
-import { KB_PASSAGES } from './fixtures.ts';
+import { BACKUP_EXCLUDES, BACKUP_INCLUDES, BACKUP_LOCATION, BACKUP_RETENTION, KB_PASSAGES, PLATFORM_VERSION } from './fixtures.ts';
 import {
   ApiErr,
   asObj,
@@ -67,12 +69,15 @@ import {
   installModel,
   loadModel,
   releaseLease,
+  runBackup,
   startRun,
   unloadModel,
 } from './sim.ts';
 import {
   appendEvent,
   audit,
+  backupName,
+  backupRec,
   capabilitiesFor,
   catalogOut,
   findVersion,
@@ -236,6 +241,8 @@ route('DELETE', `${P}/sessions/current`, (ctx) => {
 
 route('GET', `${P}/me`, (ctx) => ok(sessionOut(currentSession(ctx).csrf)));
 
+route('GET', `${P}/bootstrap/status`, () => ok({ ownerExists: st().owner !== null }), false);
+
 // --- Health, settings, status, audit --------------------------------------------------------------
 
 route('GET', `${P}/health/live`, () => ok({ status: 'ok' }), false);
@@ -333,6 +340,126 @@ route('GET', `${P}/audit-events`, (ctx) => {
   if (since) items = items.filter((a) => a.createdAt >= since);
   const limit = Number(ctx.query.get('limit') ?? 50);
   return ok(page(items.slice(0, limit)));
+});
+
+// --- Backups and diagnostics -------------------------------------------------------------------
+
+function backupsNotConfigured(): ApiErr {
+  return new ApiErr(409, 'BACKUPS_NOT_CONFIGURED', 'Backups are not configured on this device (CQ_BACKUP_DIR). Use `crewquarters backup create` on the device.');
+}
+
+route('GET', `${P}/system/backups`, (ctx) => {
+  const s = st();
+  const limit = Math.min(200, Math.max(1, Number(ctx.query.get('limit') ?? 50)));
+  const enabled = !s.flags.backupsDisabled;
+  return ok({
+    items: s.backups.slice(0, limit),
+    nextCursor: null,
+    enabled,
+    location: enabled ? BACKUP_LOCATION : null,
+    retention: BACKUP_RETENTION,
+    includes: BACKUP_INCLUDES,
+    excludes: BACKUP_EXCLUDES,
+  });
+});
+
+route('POST', `${P}/system/backups`, () => {
+  const s = st();
+  if (s.flags.backupsDisabled) throw backupsNotConfigured();
+  const live = s.backups.find((b) => b.status === 'queued' || b.status === 'running');
+  if (live) throw new ApiErr(409, 'BACKUP_IN_PROGRESS', 'A backup is already queued or running. Wait for it to finish.', { backupId: live.id });
+  const backup = backupRec({ id: backupName(new Date(), randomBytes(3).toString('hex')), status: 'queued', source: 'api' });
+  s.backups.unshift(backup);
+  audit('system.backup_requested', { type: 'backup', id: backup.id });
+  void runBackup(backup.id);
+  return ok({ ...backup }, 202);
+});
+
+route('GET', `${P}/system/backups/:id/download`, (ctx) => {
+  const s = st();
+  if (s.flags.backupsDisabled) throw backupsNotConfigured();
+  const id = param(ctx, 'id');
+  const backup = s.backups.find((b) => b.id === id && b.status === 'succeeded');
+  if (!backup) throw notFound('Backup', id);
+  if (backup.includesMasterKey) {
+    audit('system.backup_downloaded', { type: 'backup', id }, {}, 'denied');
+    throw new ApiErr(403, 'BACKUP_CONTAINS_MASTER_KEY', 'This backup contains the device master key and can only be copied on the device.');
+  }
+  const body = gzipSync(Buffer.from(`manifest.json\n${JSON.stringify({ format: 1, name: id, platformVersion: backup.platformVersion, migrationHead: backup.migrationHead })}\n`));
+  audit('system.backup_downloaded', { type: 'backup', id }, { bytes: body.length });
+  ctx.res.writeHead(200, {
+    'Content-Type': 'application/gzip',
+    'Content-Disposition': `attachment; filename="${id}.tar.gz"`,
+    'Content-Length': String(body.length),
+    'Cache-Control': 'no-store',
+  });
+  ctx.res.end(body);
+  return HANDLED;
+});
+
+/** A minimal stored (uncompressed) zip archive, enough for a real unzip to open. */
+function zipStore(files: [string, string][]): Buffer {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const [name, text] of files) {
+    const data = Buffer.from(text);
+    const fileName = Buffer.from(name);
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(fileName.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(fileName.length, 28);
+    central.writeUInt32LE(offset, 42);
+    locals.push(local, fileName, data);
+    centrals.push(central, fileName);
+    offset += local.length + fileName.length + data.length;
+  }
+  const dir = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(dir.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, dir, end]);
+}
+
+route('GET', `${P}/system/diagnostics`, (ctx) => {
+  const s = st();
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const summary = {
+    generatedAt: nowIso(),
+    platformVersion: PLATFORM_VERSION,
+    profile: 'mock',
+    models: [...s.models.values()].map((m) => ({ id: m.id, downloadState: m.downloadState, memoryState: m.memoryState })),
+    connections: [...s.connections.values()].map((c) => ({ provider: c.provider, status: c.status })),
+    flags: s.flags,
+  };
+  const body = zipStore([
+    ['summary.json', JSON.stringify(summary, null, 2)],
+    ['logs/recent.log', '[redacted mock log]\n'],
+  ]);
+  audit('system.diagnostics_downloaded');
+  ctx.res.writeHead(200, {
+    'Content-Type': 'application/zip',
+    'Content-Disposition': `attachment; filename="crewquarters-diagnostics-${stamp}.zip"`,
+    'Content-Length': String(body.length),
+    'Cache-Control': 'no-store',
+  });
+  ctx.res.end(body);
+  return HANDLED;
 });
 
 // --- Catalog and installations ---------------------------------------------------------------------
@@ -1203,6 +1330,9 @@ async function mockControl(ctx: Ctx): Promise<Result> {
     case 'POST /__mock/low-disk':
       s.flags.lowDisk = on;
       return ok({ lowDisk: on });
+    case 'POST /__mock/backups-disabled':
+      s.flags.backupsDisabled = on;
+      return ok({ backupsDisabled: on });
     case 'POST /__mock/google-deny':
       s.flags.googleDeny = on;
       return ok({ googleDeny: on });

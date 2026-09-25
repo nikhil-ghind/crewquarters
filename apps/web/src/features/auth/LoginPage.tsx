@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api, mutate } from '../../api/client';
 import { isApiError, remediation } from '../../api/errors';
-import { keys } from '../../api/queries';
+import { keys, useBootstrapStatus } from '../../api/queries';
 import { session } from '../../api/session';
 import { Button } from '../../components/Button';
 import { Banner } from '../../components/Feedback';
@@ -27,6 +27,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const expired = params.get('expired') === '1';
+  const bootstrap = useBootstrapStatus();
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -98,10 +99,12 @@ export default function LoginPage() {
               Sign in
             </Button>
           </form>
-          <p className="muted">
-            First time on this device? <Link to="/setup">Set up Crewquarters</Link> with the setup code shown by the
-            installer.
-          </p>
+          {bootstrap.data?.ownerExists === false ? (
+            <p className="muted">
+              First time on this device? <Link to="/setup">Set up Crewquarters</Link> with the setup code shown by the
+              installer.
+            </p>
+          ) : null}
         </div>
       </main>
     </div>

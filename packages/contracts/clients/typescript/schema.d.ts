@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/bootstrap/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the owner exists (public; tells the sign-in page whether setup is possible) */
+        get: operations["bootstrap_status_api_v1_bootstrap_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bootstrap": {
         parameters: {
             query?: never;
@@ -1031,6 +1048,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backups: queued, running, failed, and archives on the device (newest first) */
+        get: operations["list_backups_api_v1_system_backups_get"];
+        put?: never;
+        /** Create a backup (runs as a job; never includes the device master key) */
+        post: operations["create_backup_api_v1_system_backups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/backups/{backup_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download a backup archive (owner only; audited) */
+        get: operations["download_backup_api_v1_system_backups__backup_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download a redacted diagnostics bundle (owner only; audited) */
+        get: operations["download_diagnostics_api_v1_system_diagnostics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/v1/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -1428,6 +1497,92 @@ export interface components {
              */
             createdAt: string;
         };
+        /** BackupErrorOut */
+        BackupErrorOut: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** BackupOut */
+        BackupOut: {
+            /**
+             * Id
+             * @description Backup name, e.g. crewquarters-backup-20260925T100000Z-1a2b3c
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "succeeded" | "failed";
+            /**
+             * Source
+             * @description api: created from the UI/API; device: `crewquarters backup create`.
+             * @enum {string}
+             */
+            source: "api" | "device";
+            /** Createdat */
+            createdAt: string | null;
+            /** Finishedat */
+            finishedAt: string | null;
+            /** Sizebytes */
+            sizeBytes: number | null;
+            /**
+             * Includesmasterkey
+             * @description Never true for API backups. Backups with the master key are not downloadable through the API.
+             */
+            includesMasterKey: boolean;
+            /** Platformversion */
+            platformVersion: string | null;
+            /** Migrationhead */
+            migrationHead: string | null;
+            /** Documentcount */
+            documentCount: number | null;
+            /**
+             * Sha256
+             * @description SHA-256 of the archive file.
+             */
+            sha256?: string | null;
+            /** Downloadable */
+            downloadable: boolean;
+            error: components["schemas"]["BackupErrorOut"] | null;
+        };
+        /** BackupPage */
+        BackupPage: {
+            /** Items */
+            items: components["schemas"]["BackupOut"][];
+            /**
+             * Nextcursor
+             * @description Opaque cursor for the next page; null on the last page.
+             */
+            nextCursor?: string | null;
+            /**
+             * Enabled
+             * @description False when CQ_BACKUP_DIR is not set on the device.
+             */
+            enabled: boolean;
+            /**
+             * Location
+             * @description Backup directory inside the platform.
+             */
+            location: string | null;
+            /**
+             * Retention
+             * @description Newest backups kept; older ones are deleted.
+             */
+            retention: number;
+            /**
+             * Includes
+             * @description What a backup contains.
+             */
+            includes: string[];
+            /**
+             * Excludes
+             * @description What a backup never contains.
+             */
+            excludes: string[];
+        };
         /** BatchEvent */
         BatchEvent: {
             /** Clienteventid */
@@ -1465,6 +1620,14 @@ export interface components {
             password: string;
             /** Email */
             email?: string | null;
+        };
+        /** BootstrapStatusOut */
+        BootstrapStatusOut: {
+            /**
+             * Ownerexists
+             * @description True once the owner account exists; the setup code can no longer be used.
+             */
+            ownerExists: boolean;
         };
         /** CatalogAgentOut */
         CatalogAgentOut: {
@@ -3019,6 +3182,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    bootstrap_status_api_v1_bootstrap_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BootstrapStatusOut"];
+                };
+            };
+        };
+    };
     bootstrap_api_v1_bootstrap_post: {
         parameters: {
             query?: never;
@@ -6775,6 +6958,174 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_backups_api_v1_system_backups_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_backup_api_v1_system_backups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    download_backup_api_v1_system_backups__backup_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                backup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The backup archive (gzip-compressed tar). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "application/gzip": string;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_diagnostics_api_v1_system_diagnostics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redacted diagnostics bundle (zip). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "application/zip": string;
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

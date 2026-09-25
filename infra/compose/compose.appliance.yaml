@@ -49,6 +49,7 @@ x-platform-env: &platform-env
   # 26 MiB on the upload route (infra/proxy/nginx.conf).
   CQ_MAX_UPLOAD_BYTES: ${CQ_MAX_UPLOAD_BYTES:-26214400}
   CQ_CHAT_CLIENT_TOKEN: ${CQ_CHAT_CLIENT_TOKEN:?}
+  CQ_PLATFORM_VERSION: ${CQ_VERSION:?set in crewquarters.env}
 
 # Services that need the runtime daemon socket.
 x-platform: &platform
@@ -97,6 +98,16 @@ services:
       CQ_API_HOST: 0.0.0.0
       # Unpublished port: only the proxy and platform services reach it.
       CQ_API_FORWARDED_ALLOW_IPS: "*"
+      # Owner-triggered backups (docs/runbooks/backup-restore.md). The master key is not
+      # mounted here: API backups never include it.
+      CQ_DOCUMENTS_DIR: /var/lib/crewquarters/documents
+      CQ_BACKUP_DIR: /var/lib/crewquarters/backups
+      CQ_BACKUP_RETENTION: ${CQ_BACKUP_RETENTION:-7}
+    volumes:
+      - /run/crewquarters:/run/crewquarters
+      - /usr/share/crewquarters/catalog:/usr/share/crewquarters/catalog:ro
+      - /var/lib/crewquarters/documents:/var/lib/crewquarters/documents:ro
+      - /var/lib/crewquarters/backups:/var/lib/crewquarters/backups
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -21,12 +21,18 @@ from .attention_item_kind import AttentionItemKind
 from .attention_out import AttentionOut
 from .audit_event_out import AuditEventOut
 from .audit_event_out_metadata import AuditEventOutMetadata
+from .backup_error_out import BackupErrorOut
+from .backup_out import BackupOut
+from .backup_out_source import BackupOutSource
+from .backup_out_status import BackupOutStatus
+from .backup_page import BackupPage
 from .batch_event import BatchEvent
 from .batch_event_payload import BatchEventPayload
 from .body_upload_document_api_v1_knowledge_bases_kb_id_documents_post import (
     BodyUploadDocumentApiV1KnowledgeBasesKbIdDocumentsPost,
 )
 from .bootstrap_in import BootstrapIn
+from .bootstrap_status_out import BootstrapStatusOut
 from .catalog_agent_out import CatalogAgentOut
 from .catalog_agent_out_source import CatalogAgentOutSource
 from .catalog_agent_out_truststatus import CatalogAgentOutTruststatus
@@ -203,10 +209,16 @@ __all__ = (
     "AttentionOut",
     "AuditEventOut",
     "AuditEventOutMetadata",
+    "BackupErrorOut",
+    "BackupOut",
+    "BackupOutSource",
+    "BackupOutStatus",
+    "BackupPage",
     "BatchEvent",
     "BatchEventPayload",
     "BodyUploadDocumentApiV1KnowledgeBasesKbIdDocumentsPost",
     "BootstrapIn",
+    "BootstrapStatusOut",
     "CatalogAgentOut",
     "CatalogAgentOutSource",
     "CatalogAgentOutTruststatus",

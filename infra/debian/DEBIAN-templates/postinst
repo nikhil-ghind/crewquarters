@@ -22,7 +22,9 @@ install -d -m 0700 -o 999 -g 999 /var/lib/crewquarters/postgres
 # writable and setgid so every file it creates stays in the crewquarters group.
 install -d -m 2770 -o root -g crewquarters /var/lib/crewquarters/documents \
     /var/lib/crewquarters/embedding-models
-install -d -m 0700 /var/lib/crewquarters/backups
+# Backups: written by the control API (group crewquarters via group_add) and by root
+# (crewquarters backup create). Archives themselves are 0600.
+install -d -m 2770 -o root -g crewquarters /var/lib/crewquarters/backups
 install -d -m 0750 /var/log/crewquarters
 
 gen() { head -c 48 /dev/urandom | base64 | tr -d '=+/\n' | cut -c1-43; }

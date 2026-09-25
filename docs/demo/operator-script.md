@@ -57,6 +57,16 @@ make fake-up
 | 10 | Answer one call; trigger the duplicate-callback fixture (Person 3) | Transcript and status appear in `Results`; no duplicate row or call |
 | 11 | Run contract-probe with an approved cloud profile, then disable the profile | Cloud badge and audit event shown; local runs never fall back to cloud |
 
+### Reset between rehearsals on the real platform
+
+`make demo-reset` resets only the fake platform. On the GB10, run:
+
+```bash
+sudo crewquarters demo reset              # asks for confirmation; add --yes in scripts
+```
+
+This cancels active runs and waits for them to stop. It then deletes runs with their events, input requests and calls, and deletes chat sessions after releasing their model leases. Users, installations, schedules, connections, installed models and knowledge bases are kept. Add `--schedules` or `--knowledge` to delete those too, or `--since <ISO time>` to delete only data created since then. Afterwards it re-syncs the agent catalog and moves each schedule to its next occurrence. Take `sudo crewquarters backup create` before the first rehearsal and before the event (docs/runbooks/backup-restore.md).
+
 Run `pytest -m live tests/live` with the `CREWQ_LIVE_*` variables set as described in that file.
 This exercises the same agents against the real control API.
 

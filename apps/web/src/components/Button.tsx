@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react';
-import { forwardRef, useId, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { forwardRef, useId, type AnchorHTMLAttributes, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { Link, type LinkProps } from 'react-router';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'tertiary' | 'danger';
@@ -75,5 +75,25 @@ export function ButtonLink({ variant = 'secondary', icon, className, children, .
       {icon}
       {children}
     </Link>
+  );
+}
+
+interface DownloadLinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
+  href: string;
+  variant?: ButtonVariant;
+  icon?: ReactNode;
+}
+
+/**
+ * A same-origin file download styled as a button. A plain GET link, so the browser
+ * streams the file with the session cookie (no CSRF on GET) and takes the file name
+ * from the server's Content-Disposition.
+ */
+export function DownloadLink({ variant = 'secondary', icon, className, children, ...rest }: DownloadLinkProps) {
+  return (
+    <a className={`btn btn-${variant} ${className ?? ''}`} download {...rest}>
+      {icon}
+      {children}
+    </a>
   );
 }

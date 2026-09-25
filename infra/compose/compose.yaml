@@ -107,6 +107,12 @@ services:
       CQ_API_FORWARDED_ALLOW_IPS: "*"
       # The dev stack runs the real broker (with fake providers), so read connection status from it.
       CQ_BROKER_ADAPTER: http
+      # Owner-triggered backups (docs/runbooks/backup-restore.md): documents are read-only.
+      CQ_DOCUMENTS_DIR: /var/lib/crewquarters/documents
+      CQ_BACKUP_DIR: /var/lib/crewquarters/backups
+    volumes:
+      - documents:/var/lib/crewquarters/documents:ro
+      - backups:/var/lib/crewquarters/backups
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -313,3 +319,4 @@ volumes:
   master-key:
   documents:
   embedding-models:
+  backups:

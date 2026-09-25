@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -17,6 +18,7 @@ from fastapi import FastAPI, Request, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from crewquarters_api import catalog, errors, security
+from crewquarters_api.backups import BackupWorker
 from crewquarters_api.deps import AppState
 from crewquarters_api.gateway_client import GatewayClient
 from crewquarters_api.json_guard import JsonBodyGuard
@@ -29,6 +31,7 @@ from crewquarters_api.routers import (
     platform,
     runs,
     schedules,
+    system,
 )
 from crewquarters_api.routers import connections as connections_router
 from crewquarters_api.upstream import BrokerClient, ServiceClient
@@ -40,7 +43,7 @@ from crewquarters_shared.clients import (
 )
 from crewquarters_shared.config import Settings, get_settings
 from crewquarters_shared.db import create_engine, session_factory
-from crewquarters_shared.logs import configure_logging
+from crewquarters_shared.logs import configure_logging, install_recent_logs
 from crewquarters_shared.metrics import ApiMetrics
 from crewquarters_shared.runtime import DaemonRuntimeClient, RuntimeAdapter
 
@@ -184,11 +187,14 @@ def create_app(
     settings: Settings | None = None,
     *,
     transports: dict[str, httpx.AsyncBaseTransport] | None = None,
+    run_backup_worker: bool = True,
 ) -> FastAPI:
-    """``transports`` (tests only) replaces the HTTP transport of the ``broker``,
+    """``run_backup_worker=False`` (tests) leaves backup jobs queued.
+    ``transports`` (tests only) replaces the HTTP transport of the ``broker``,
     ``knowledge`` or ``gateway`` service clients."""
     settings = settings or get_settings()
     transports = transports or {}
+    install_recent_logs("control-api", settings.diagnostics_log_lines)
     token = settings.internal_service_token.get_secret_value()
     broker = BrokerClient(settings.broker_url, token, transport=transports.get("broker"))
     knowledge_client = ServiceClient(
@@ -214,7 +220,22 @@ def create_app(
                 loaded = await catalog.sync_directory(db, settings.catalog_dir)
                 await db.commit()
             log.info("catalog synced: %s", ", ".join(loaded) or "no manifests")
+        # Owner-triggered backups (system.backup jobs) run in this process: it is the one
+        # holding the backup directory and the read-only document store.
+        stop = asyncio.Event()
+        backup_task = (
+            asyncio.create_task(
+                BackupWorker(sessions, settings, f"control-api:{uuid.uuid4().hex[:8]}").run_forever(
+                    stop
+                )
+            )
+            if settings.backup_dir is not None and run_backup_worker
+            else None
+        )
         yield
+        stop.set()
+        if backup_task is not None:
+            await backup_task
         if runtime is not None:
             await runtime.close()
         if isinstance(models, GatewayClient):
@@ -289,6 +310,7 @@ def create_app(
         chat.router,
         connections_router.router,
         knowledge.router,
+        system.router,
     ):
         app.include_router(router, prefix=API_PREFIX)
     app.include_router(internal.router, prefix=INTERNAL_PREFIX)
