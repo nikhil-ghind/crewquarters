@@ -114,6 +114,9 @@ export const CONNECTION_STATUS: Record<ConnectionStatus, StatusSpec> = {
   },
 };
 
+/** A saved cloud key that has not been tested yet. */
+export const PROFILE_UNTESTED: StatusSpec = { label: 'Not tested yet', tone: 'neutral', icon: 'minus' };
+
 export const DEVICE_STATUS: Record<SystemStatusOut['status'], StatusSpec> = {
   healthy: { label: 'Healthy', tone: 'success', icon: 'check' },
   degraded: { label: 'Degraded', tone: 'warning', icon: 'alert' },

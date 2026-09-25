@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight, Phone, RotateCw, Trash2 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { isApiError, remediation } from '../../api/errors';
 import { useActionGuard } from '../../api/guards';
 import { useIntentKey } from '../../api/mutations';
@@ -16,7 +16,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { useFeedback } from '../../components/Toast';
 import { formatRelative, formatUtc } from '../../lib/format';
 import { writePref } from '../../lib/storage';
-import { CONNECTION_STATUS, PROVIDER_NAMES } from '../../lib/status';
+import { CONNECTION_STATUS, PROFILE_UNTESTED, PROVIDER_NAMES } from '../../lib/status';
 import { affectedList, useAffected } from './affected';
 
 export const GOOGLE_RETURN_KEY = 'google.returnTo';
@@ -382,10 +382,14 @@ export function TwilioForm() {
 
 // --- OpenAI / Anthropic -----------------------------------------------------------------
 
-function profileStatus(p: ProviderProfileOut) {
+/** Profile status comes from the model gateway's key test: CONNECTED, ERROR or UNTESTED. */
+export function profileStatus(p: ProviderProfileOut) {
   if (!p.enabled) return CONNECTION_STATUS.DISABLED;
+  if (p.status === 'ERROR') return CONNECTION_STATUS.NEEDS_ATTENTION;
+  if (p.status === 'CONNECTED') return CONNECTION_STATUS.CONNECTED;
+  if (p.status === 'UNTESTED') return PROFILE_UNTESTED;
   const known = Object.keys(CONNECTION_STATUS).includes(p.status);
-  return known ? CONNECTION_STATUS[p.status as keyof typeof CONNECTION_STATUS] : CONNECTION_STATUS.CONNECTED;
+  return known ? CONNECTION_STATUS[p.status as keyof typeof CONNECTION_STATUS] : CONNECTION_STATUS.UNKNOWN;
 }
 
 export function ProviderKeyForm({ provider }: { provider: 'openai' | 'anthropic' }) {
@@ -397,6 +401,17 @@ export function ProviderKeyForm({ provider }: { provider: 'openai' | 'anthropic'
   const { toast } = useFeedback();
   const affected = useAffected(provider);
   const [displayName, setDisplayName] = useState(`${name} key`);
+  // Names are unique per provider; suggest a free one once the existing keys load.
+  const taken = mine.map((p) => p.displayName.trim().toLowerCase()).join('|');
+  useEffect(() => {
+    const names = new Set(taken ? taken.split('|') : []);
+    setDisplayName((current) => {
+      if (!names.has(current.trim().toLowerCase())) return current;
+      let i = 2;
+      while (names.has(`${name} key ${i}`.toLowerCase())) i += 1;
+      return `${name} key ${i}`;
+    });
+  }, [taken, name]);
   const [apiKey, setApiKey] = useState('');
   const [models, setModels] = useState('');
   const [dailyTokens, setDailyTokens] = useState('');
@@ -430,8 +445,11 @@ export function ProviderKeyForm({ provider }: { provider: 'openai' | 'anthropic'
   });
   const test = useMutation({
     mutationFn: (id: string) => pendingApi.providerProfileTest(id),
-    onSuccess: (out, id) =>
-      setTestResult((r) => ({ ...r, [id]: out.status === 'CONNECTED' ? 'Test succeeded' : `Test failed${out.detail ? `: ${out.detail}` : ''}` })),
+    onSuccess: (out, id) => {
+      setTestResult((r) => ({ ...r, [id]: out.status === 'CONNECTED' ? 'Test succeeded' : `Test failed${out.detail ? `: ${out.detail}` : ''}` }));
+      // The Connections summary derives the provider status from the tested profiles.
+      void client.invalidateQueries({ queryKey: keys.connections });
+    },
     onError: (e, id) => setTestResult((r) => ({ ...r, [id]: isApiError(e) ? remediation(e) : 'Test failed' })),
     onSettled: () => void client.invalidateQueries({ queryKey: keys.providerProfiles }),
   });
@@ -451,6 +469,8 @@ export function ProviderKeyForm({ provider }: { provider: 'openai' | 'anthropic'
     e.preventDefault();
     const local: { path: string; message: string }[] = [];
     if (!displayName.trim()) local.push({ path: '/displayName', message: 'Give this key a name.' });
+    else if (mine.some((p) => p.displayName.trim().toLowerCase() === displayName.trim().toLowerCase()))
+      local.push({ path: '/displayName', message: 'A key with this name already exists. Choose another name.' });
     if (apiKey.length < 8) local.push({ path: '/apiKey', message: `Paste the API key from your ${name} account.` });
     if (dailyTokens && (!/^\d+$/.test(dailyTokens) || Number(dailyTokens) <= 0)) local.push({ path: '/dailyTokens', message: 'Enter a whole number of tokens, or leave it empty.' });
     setErrors(local);

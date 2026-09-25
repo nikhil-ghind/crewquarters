@@ -205,6 +205,27 @@ function CitedText({ text, citations, onOpen }: { text: string; citations: Store
   );
 }
 
+/** Every cited source stays reachable even when the answer text has no [n] markers. */
+function SourceList({ citations, onOpen }: { citations: StoredCitation[]; onOpen: (c: StoredCitation) => void }) {
+  return (
+    <span className="row muted" style={{ fontSize: 12, marginTop: 4 }}>
+      Sources:
+      {citations.map((c) => (
+        <button
+          key={c.citationId}
+          type="button"
+          className="citation-chip"
+          style={{ width: 'auto' }}
+          aria-label={`Source ${c.index}: ${c.document.name}${c.location ? `, ${c.location}` : ''}`}
+          onClick={() => onOpen(c)}
+        >
+          {c.index} · {c.document.name}
+        </button>
+      ))}
+    </span>
+  );
+}
+
 function ChatSessionPage({ sessionId }: { sessionId: string }) {
   const session = useChatSession(sessionId);
   if (session.isPending) {
@@ -407,9 +428,7 @@ function ChatView({ session }: { session: ChatSessionDetailOut }) {
                   {m.status === 'stopped' ? <span className="muted"> (stopped)</span> : null}
                   {m.status === 'failed' ? <span className="field-error"> The answer failed.</span> : null}
                   {m.role === 'assistant' && citations.length > 0 ? (
-                    <span className="muted" style={{ display: 'block', fontSize: 12 }}>
-                      Sources: {citations.map((c) => `[${c.index}] ${c.document.name}`).join(' · ')}
-                    </span>
+                    <SourceList citations={citations} onOpen={(c) => openSource(c, m.id)} />
                   ) : null}
                 </div>
               );
