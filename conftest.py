@@ -26,6 +26,36 @@ from crewquarters_shared.config import Settings
 from crewquarters_shared.db import create_engine, session_factory
 
 ROOT = Path(__file__).parent
+
+# Fake-platform fixtures (fake_server, fake_client) for the SDK, crewctl, and agent suites.
+pytest_plugins = ["crewquarters_fake.testing", "gateway_helpers"]
+
+# Suites that never touch PostgreSQL. They are marked ``no_db`` so the autouse ``clean_db``
+# fixture below skips them and they run without the database.
+DB_FREE_ROOTS = (
+    "packages/python_sdk",
+    "packages/fake_platform",
+    "packages/crewctl",
+    "agents",
+    "tests/integration",
+    "tests/e2e",
+    "tests/live",
+    "tests/contract/test_broker_contract_files.py",
+    "tests/contract/test_fake_route_parity.py",
+    "tests/contract/test_fake_traffic_conformance.py",
+)
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    for item in items:
+        try:
+            relative = item.path.relative_to(ROOT).as_posix()
+        except ValueError:
+            continue
+        if relative.startswith(DB_FREE_ROOTS):
+            item.add_marker(pytest.mark.no_db)
+
+
 ADMIN_URL = os.environ.get(
     "CQ_TEST_ADMIN_URL",
     "postgresql+psycopg://crewquarters:crewquarters@127.0.0.1:55432/crewquarters",

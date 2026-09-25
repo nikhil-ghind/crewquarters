@@ -1,0 +1,16 @@
+[project]
+name = "crewquarters-agent-contract-probe"
+version = "0.1.0"
+description = "Contract-test agent that exercises every broker capability the SDK exposes"
+requires-python = ">=3.12"
+dependencies = ["crewquarters-sdk"]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/contract_probe"]
+
+[tool.uv.sources]
+crewquarters-sdk = { workspace = true }

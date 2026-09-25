@@ -1,0 +1,3 @@
+spreadsheetId: demo-contacts
+callPollSeconds: 0.5
+script: "Hello {name}. This is an automated demo call from the Crewquarters team about Friday's demo. Please say whether you can join after the tone."

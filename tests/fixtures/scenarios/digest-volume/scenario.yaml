@@ -1,0 +1,8 @@
+name: digest-volume
+timezone: Asia/Kolkata
+gmail:
+  mailbox:
+    - generate: {count: 150, idPrefix: "vol-", date: "2026-09-23T00:10:00+05:30", stepMinutes: 9,
+                 subject: "Newsletter issue {n}", body: "Issue {n} of the weekly newsletter.", category: updates}
+llm:
+  rules: ../_shared/digest-llm-rules.yaml

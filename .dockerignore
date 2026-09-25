@@ -9,3 +9,6 @@ packages/contracts/clients
 docs
 tests
 **/tests
+.superpowers
+evidence
+.e2e

@@ -1,0 +1,30 @@
+[project]
+name = "crewquarters-fake"
+version = "0.1.0"
+description = "Crewquarters fake platform for development and tests: broker, control-API slice, mock providers, launchers"
+requires-python = ">=3.12"
+dependencies = [
+    "crewquarters-shared",
+    "crewquarters-sdk",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "httpx>=0.27",
+    "PyYAML>=6.0",
+    "jsonschema>=4.23",
+    "click>=8.1",
+    "tzdata>=2024.1",
+]
+
+[project.scripts]
+crewq-fake = "crewquarters_fake.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/crewquarters_fake"]
+
+[tool.uv.sources]
+crewquarters-shared = { workspace = true }
+crewquarters-sdk = { workspace = true }

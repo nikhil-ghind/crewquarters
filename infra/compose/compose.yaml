@@ -97,5 +97,50 @@ services:
       timeout: 3s
       retries: 20
 
+  # --- Person 5: SDK/agent development stack (profile `fake`: make fake-up) ---------------
+  # The fake platform stands in for the capability broker, model gateway, knowledge service,
+  # and Google/Twilio until Persons 2-3 ship them. Agent containers attach only to the
+  # internal `crewq-agents` network (no route to the internet) and reach `broker`.
+  fake-platform:
+    profiles: [fake]
+    build:
+      context: ../..
+      dockerfile: packages/fake_platform/Dockerfile
+    image: crewquarters/fake-platform:dev
+    environment:
+      CREWQ_FAKE_SCENARIOS_DIR: /workspace
+      CREWQ_FAKE_HEARTBEAT_SECONDS: "2"
+      CREWQ_FAKE_LLM_BASE_URL: ${CREWQ_FAKE_LLM_BASE_URL:-}
+      CREWQ_FAKE_LLM_MODEL: ${CREWQ_FAKE_LLM_MODEL:-}
+    volumes:
+      # Scenarios are read from the repository (read-only): tests/fixtures/scenarios, agents/*/scenarios.
+      - ../..:/workspace:ro
+    ports:
+      - "127.0.0.1:8090:8080"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready')"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks:
+      default: {}
+      agents:
+        aliases: [broker]
+
+  registry:
+    profiles: [fake]
+    image: registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+    ports:
+      - "127.0.0.1:5001:5000"
+
+networks:
+  agents:
+    name: crewq-agents
+    internal: true
+
 volumes:
   pgdata:

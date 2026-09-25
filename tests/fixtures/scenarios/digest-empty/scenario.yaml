@@ -1,0 +1,4 @@
+name: digest-empty
+timezone: UTC
+gmail:
+  mailbox: []

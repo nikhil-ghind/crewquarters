@@ -3,6 +3,8 @@ name = "crewquarters-workspace"
 version = "0.1.0"
 description = "Crewquarters monorepo workspace"
 requires-python = ">=3.12,<3.13"
+# The platform image installs only these (infra/docker/python.Dockerfile). Everything else in
+# the workspace (SDK, crewctl, fake platform, agents) is installed with `uv sync --all-packages`.
 dependencies = [
     "crewquarters-shared",
     "crewquarters-control-api",
@@ -21,6 +23,12 @@ members = [
     "services/scheduler",
     "services/runtime_daemon",
     "services/model_gateway",
+    "packages/python_sdk",
+    "packages/fake_platform",
+    "packages/crewctl",
+    "agents/contract_probe",
+    "agents/gmail_digest",
+    "agents/caller",
 ]
 
 [tool.uv.sources]
@@ -40,6 +48,7 @@ dev = [
     "mypy>=1.13",
     "types-pyyaml",
     "types-jsonschema",
+    "openapi-spec-validator>=0.7",
 ]
 
 [tool.ruff]
@@ -49,6 +58,8 @@ extend-exclude = [
     "packages/contracts/clients",
     "services/control_api/migrations/versions",
     "catalog",  # bundled model files are pinned by SHA-256
+    ".superpowers",
+    "*.md",
 ]
 
 [tool.ruff.lint]
@@ -63,11 +74,24 @@ known-first-party = [
     "crewquarters_runtime",
     "crewquarters_gateway",
     "conftest",
+    "crewquarters",
+    "crewctl",
+    "crewquarters_fake",
+    "contract_probe",
+    "gmail_digest",
+    "caller_agent",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S105", "S106", "S311", "S603", "S607", "E501"]
 "**/migrations/**" = ["E501"]
+# Dev tooling that shells out to docker/python by design (argument lists, never a shell).
+"packages/fake_platform/src/crewquarters_fake/launcher.py" = ["S603", "S607"]
+"packages/crewctl/src/crewctl/build.py" = ["S603", "S607"]
+"infra/scripts/evidence_report.py" = ["S603", "S607"]
+"tests/e2e/**" = ["S603", "S607"]
+# The classification prompt is model input; wrapping it would change what the model sees.
+"agents/gmail_digest/src/gmail_digest/prompts.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -77,12 +101,27 @@ ignore_missing_imports = true
 exclude = ["migrations/", "tests/"]
 
 [tool.pytest.ini_options]
+# importlib mode lets test modules share basenames across packages; pythonpath keeps
+# `from conftest import ...` working for the control-plane tests. "." must stay first so that
+# `conftest` is the root one; the other entries hold test-helper modules (fakebroker,
+# fake_helpers, agent_runs, openapi_check, gateway_helpers). Never insert test directories into sys.path.
+addopts = "--import-mode=importlib -ra"
+pythonpath = [
+    ".",
+    "packages/python_sdk/tests",
+    "packages/fake_platform/tests",
+    "tests/integration",
+    "tests/contract",
+    "services/model_gateway/tests",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 markers = [
     "no_db: test does not need the database",
     "docker: test needs a local Docker engine",
+    "e2e: requires the fake Docker stack (make fake-up) and pushed agent images",
+    "live: requires a real Crewquarters platform and CREWQ_LIVE_* settings",
 ]
 testpaths = [
     "packages/shared_python/tests",
@@ -92,7 +131,15 @@ testpaths = [
     "services/model_gateway/tests",
     "tests/contract",
     "tests/integration",
+    "tests/stack",
+    "packages/python_sdk/tests",
+    "packages/fake_platform/tests",
+    "packages/crewctl/tests",
+    "agents",
+    "tests/e2e",
+    "tests/live",
 ]
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
 
 [tool.coverage.run]
 concurrency = ["greenlet", "thread"]

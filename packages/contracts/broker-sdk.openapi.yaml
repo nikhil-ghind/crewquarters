@@ -1,0 +1,793 @@
+openapi: 3.1.0
+info:
+  title: Crewquarters broker SDK API
+  version: v1alpha1
+  x-status: draft
+  x-owner: Person 3
+  x-drafted-by: Person 5
+  description: |
+    DRAFT. The API an agent container's SDK uses to reach the capability broker.
+    Every request carries `Authorization: Bearer <PLATFORM_RUN_TOKEN>` and an `X-Request-Id` header.
+    JSON uses camelCase. Errors use the PLAN.md section 4.3 envelope.
+
+    Run lifecycle, input, and action operations mirror the control plane's
+    `/internal/v1` run API (packages/contracts/openapi.yaml) so the broker can pass them
+    through, adding the attempt from the verified run token:
+      /handshake, /heartbeat, /events, /result -> /internal/v1/runs/{runId}/...
+      /input-requests                          -> /internal/v1/runs/{runId}/input-requests
+      /input-requests/{id}                     -> /internal/v1/input-requests/{id}
+      /actions/{key}/claim|complete            -> /internal/v1/runs/{runId}/actions/{key}/...
+    Capability strings come from packages/contracts/capabilities.yaml. Event payloads follow
+    packages/contracts/events/run-event.schema.json.
+
+    Operation extensions:
+      x-capability   capability string required, or null for baseline operations
+      x-idempotent   true, false, or "with-idempotency-key" (safe to retry only when the key is present)
+      x-fault-target operation id used by the fake platform's fault injection
+
+    After a cancel is requested, capability operations return 409 RUN_CANCELLED while handshake,
+    heartbeat, events, and result keep working so the agent can report its outcome.
+servers:
+  - url: http://broker:8080/internal/v1/sdk
+security:
+  - runToken: []
+
+paths:
+  /handshake:
+    post:
+      operationId: handshake
+      x-capability: null
+      x-idempotent: true
+      x-fault-target: broker.handshake
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/HandshakeRequest"}
+      responses:
+        "200":
+          description: Run context for this attempt.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Handshake"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /heartbeat:
+    post:
+      operationId: heartbeat
+      x-capability: null
+      x-idempotent: true
+      x-fault-target: broker.heartbeat
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200":
+          description: |
+            Liveness acknowledged. `cancelRequested` is true once the owner cancelled the run or
+            the run has already ended; the agent should stop and post its result.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RunStateResponse"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /events:
+    post:
+      operationId: postEvents
+      x-capability: null
+      x-idempotent: true
+      x-fault-target: broker.events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EventsRequest"}
+      responses:
+        "200":
+          description: Events accepted; duplicate clientEventId values are ignored.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/EventsResponse"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /result:
+    post:
+      operationId: postResult
+      x-capability: null
+      x-idempotent: true
+      x-fault-target: broker.result
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ResultRequest"}
+      responses:
+        "200":
+          description: |
+            The first result wins; later posts return the recorded state. A result posted after
+            the owner cancelled ends the run CANCELLED.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RunStateResponse"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /input-requests:
+    post:
+      operationId: createInputRequest
+      x-capability: user_input
+      x-idempotent: true
+      x-fault-target: broker.input.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InputRequestCreate"}
+      responses:
+        "200":
+          description: |
+            The request for this key. Asking an existing key returns it (an answer given to an
+            earlier attempt is returned as is); a request an earlier attempt left cancelled or
+            expired is reopened with a new version.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InputRequest"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /input-requests/{id}:
+    get:
+      operationId: getInputRequest
+      x-capability: user_input
+      x-idempotent: true
+      x-fault-target: broker.input.get
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - name: wait
+          in: query
+          required: false
+          description: Long-poll up to this many seconds for the request to close.
+          schema: {type: number, minimum: 0, maximum: 30, default: 0}
+      responses:
+        "200":
+          description: Current state of the request.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InputRequest"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /llm/chat:
+    post:
+      operationId: llmChat
+      x-capability: "llm.profile:<variant> (and cloud.<provider> for cloud profiles)"
+      x-idempotent: with-idempotency-key
+      x-fault-target: broker.llm.chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChatRequest"}
+      responses:
+        "200":
+          description: Normalised model response.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChatResponse"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /llm/chat:stream:
+    post:
+      operationId: llmChatStream
+      x-capability: "llm.profile:<variant> (and cloud.<provider> for cloud profiles)"
+      x-idempotent: false
+      x-fault-target: broker.llm.stream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChatRequest"}
+      responses:
+        "200":
+          description: |
+            Server-sent events. `event: delta` with data `{"text": "..."}`, then exactly one of
+            `event: done` with a ChatResponse or `event: error` with an Error envelope.
+          content:
+            text/event-stream:
+              schema: {type: string}
+        default: {$ref: "#/components/responses/Error"}
+
+  /knowledge/search:
+    post:
+      operationId: knowledgeSearch
+      x-capability: knowledge.search:config
+      x-idempotent: true
+      x-fault-target: broker.knowledge.search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/KnowledgeSearchRequest"}
+      responses:
+        "200":
+          description: Passages from the knowledge base selected in the installation config.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/KnowledgeSearchResponse"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /google/gmail/messages:
+    get:
+      operationId: gmailListMessages
+      x-capability: google.gmail.readonly
+      x-idempotent: true
+      x-fault-target: broker.gmail.list
+      parameters:
+        - {name: q, in: query, required: false, schema: {type: string}}
+        - {name: maxResults, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: pageToken, in: query, required: false, schema: {type: string}}
+        - {name: labelIds, in: query, required: false, schema: {type: array, items: {type: string}}, style: form, explode: true}
+      responses:
+        "200":
+          description: Gmail users.messages.list response shape.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/GmailListResponse"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /google/gmail/messages/{id}:
+    get:
+      operationId: gmailGetMessage
+      x-capability: google.gmail.readonly
+      x-idempotent: true
+      x-fault-target: broker.gmail.get
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Gmail users.messages.get format=full message, passed through unmodified.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/GmailMessage"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /google/sheets/values:get:
+    post:
+      operationId: sheetsGetValues
+      x-capability: google.spreadsheets
+      x-idempotent: true
+      x-fault-target: broker.sheets.get
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SheetsRangeRequest"}
+      responses:
+        "200":
+          description: Values in the range (trailing empty rows and cells trimmed).
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SheetsValuesResponse"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /google/sheets/values:update:
+    post:
+      operationId: sheetsUpdateValues
+      x-capability: google.spreadsheets
+      x-idempotent: true
+      x-fault-target: broker.sheets.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SheetsWriteRequest"}
+      responses:
+        "200":
+          description: Values written at the range start.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SheetsUpdateResponse"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /google/sheets/values:append:
+    post:
+      operationId: sheetsAppendValues
+      x-capability: google.spreadsheets
+      x-idempotent: false
+      x-fault-target: broker.sheets.append
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SheetsWriteRequest"}
+      responses:
+        "200":
+          description: Values appended after the last non-empty row of the table.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SheetsUpdateResponse"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /telephony/calls:
+    post:
+      operationId: createCall
+      x-capability: twilio.call.fixed_script
+      x-idempotent: true
+      x-fault-target: broker.telephony.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CallCreate"}
+      responses:
+        "200":
+          description: The call for this idempotencyKey (existing or newly placed). The broker builds the TwiML.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Call"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /telephony/calls/{id}:
+    get:
+      operationId: getCall
+      x-capability: twilio.call.fixed_script
+      x-idempotent: true
+      x-fault-target: broker.telephony.get
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Current call state.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Call"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /actions/{key}/claim:
+    post:
+      operationId: claimAction
+      x-capability: null
+      x-idempotent: false
+      x-fault-target: broker.actions.claim
+      parameters:
+        - {name: key, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+      responses:
+        "200":
+          description: |
+            `claimed`: this call created the key, so proceed with the side effect. `in_doubt`: the
+            key was claimed before (by this or an earlier attempt) and never completed; the side
+            effect may already have happened. `completed`: the stored result is returned.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ActionRecord"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /actions/{key}/complete:
+    post:
+      operationId: completeAction
+      x-capability: null
+      x-idempotent: true
+      x-fault-target: broker.actions.complete
+      parameters:
+        - {name: key, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ActionComplete"}
+      responses:
+        "200":
+          description: The action is completed with this result (the first result is kept).
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ActionRecord"}
+        default: {$ref: "#/components/responses/Error"}
+
+components:
+  securitySchemes:
+    runToken:
+      type: http
+      scheme: bearer
+      description: Short-lived, run-scoped token from PLATFORM_RUN_TOKEN.
+
+  responses:
+    Error:
+      description: |
+        Error envelope. Codes by status: 401 UNAUTHENTICATED; 403 CAPABILITY_DENIED,
+        PERMISSION_DENIED; 404 NOT_FOUND; 409 RUN_NOT_ACTIVE, RUN_CANCELLED, INVALID_RUN_STATE,
+        NEEDS_CONNECTION, ACTION_NOT_CLAIMED, PROTOCOL_UNSUPPORTED; 422 INVALID_REQUEST,
+        INVALID_EVENT_TYPE, INVALID_EVENT, INVALID_INPUT_SCHEMA, INPUT_WAIT_BUDGET_EXCEEDED,
+        UNSUPPORTED_FEATURE; 429 RATE_LIMITED (with Retry-After); 502 PROVIDER_ERROR;
+        503 MODEL_UNAVAILABLE, PROVIDER_UNAVAILABLE; 504 TIMEOUT.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            requestId: {type: [string, "null"]}
+            details: {type: object}
+
+    HandshakeRequest:
+      type: object
+      required: [protocol, sdkVersion, agentId]
+      properties:
+        protocol: {const: v1alpha1}
+        sdkVersion: {type: string}
+        agentId: {type: string}
+
+    RunInfo:
+      type: object
+      required: [id, attempt, trigger, scheduledFor, installationId, agentId, agentVersion, createdAt]
+      properties:
+        id: {type: string}
+        attempt: {type: integer, minimum: 1}
+        trigger: {enum: [manual, schedule]}
+        scheduledFor: {type: [string, "null"], format: date-time}
+        installationId: {type: string}
+        agentId: {type: string}
+        agentVersion: {type: string}
+        createdAt: {type: string, format: date-time}
+
+    Grants:
+      type: object
+      required: [llmProfiles, modelBindings, knowledgeBaseIds, google, twilio, cloudProviders]
+      properties:
+        llmProfiles: {type: array, items: {type: string}, description: Bound profile variants.}
+        modelBindings:
+          type: object
+          additionalProperties: {type: string}
+          description: Requested profile (family or exact) to the variant the owner approved.
+        knowledgeBaseIds: {type: array, items: {type: string}}
+        google: {type: array, items: {type: string}}
+        twilio: {type: array, items: {type: string}}
+        cloudProviders: {type: array, items: {type: string}}
+
+    Limits:
+      type: object
+      required: [activeTimeoutSeconds, inputWaitRemainingSeconds]
+      properties:
+        activeTimeoutSeconds: {type: integer}
+        inputWaitRemainingSeconds: {type: number, minimum: 0}
+
+    Handshake:
+      type: object
+      required: [run, config, capabilities, grants, limits, heartbeatIntervalSeconds, serverTime]
+      properties:
+        run: {$ref: "#/components/schemas/RunInfo"}
+        config: {type: object}
+        capabilities: {type: array, items: {type: string}}
+        grants: {$ref: "#/components/schemas/Grants"}
+        limits: {$ref: "#/components/schemas/Limits"}
+        heartbeatIntervalSeconds: {type: number, exclusiveMinimum: 0}
+        serverTime: {type: string, format: date-time}
+
+    RunStateResponse:
+      description: The control plane's HeartbeatOut.
+      type: object
+      required: [state, cancelRequested]
+      properties:
+        state:
+          enum: [QUEUED, PREPARING, LOADING_MODEL, RUNNING, WAITING_INPUT, CANCELLING, SUCCEEDED,
+                 FAILED, CANCELLED, INTERRUPTED]
+        cancelRequested: {type: boolean}
+
+    AgentEvent:
+      type: object
+      required: [clientEventId, type, occurredAt, payload]
+      properties:
+        clientEventId: {type: string, minLength: 1, maxLength: 64}
+        type: {enum: [run.log, run.progress, run.metric, run.artifact]}
+        occurredAt: {type: string, format: date-time}
+        payload:
+          type: object
+          description: The payload for this type in packages/contracts/events/run-event.schema.json.
+
+    EventsRequest:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          maxItems: 200
+          items: {$ref: "#/components/schemas/AgentEvent"}
+
+    EventsResponse:
+      type: object
+      required: [accepted, lastSequence]
+      properties:
+        accepted: {type: integer, minimum: 0}
+        lastSequence: {type: integer, minimum: 0}
+
+    RunError:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        retryable: {type: boolean, default: true}
+        details: {type: object}
+
+    ResultRequest:
+      description: |
+        The control plane's RunResultIn without `attempt` (the broker adds it from the token).
+        A cancelled run reports `failed` with error code RUN_CANCELLED.
+      type: object
+      required: [status]
+      properties:
+        status: {enum: [succeeded, failed]}
+        result:
+          type: [object, "null"]
+          description: Validated against the manifest's resultSchema by the platform.
+        error:
+          oneOf:
+            - {type: "null"}
+            - {$ref: "#/components/schemas/RunError"}
+
+    Choice:
+      type: object
+      required: [value, label]
+      properties:
+        value: {type: string}
+        label: {type: string}
+        style: {enum: [primary, secondary, danger], default: secondary}
+
+    PreviewBlock:
+      oneOf:
+        - type: object
+          required: [type, text]
+          properties:
+            type: {const: text}
+            text: {type: string}
+        - type: object
+          required: [type, items]
+          properties:
+            type: {const: keyValue}
+            items:
+              type: array
+              items:
+                type: object
+                required: [label, value]
+                properties:
+                  label: {type: string}
+                  value: {type: string}
+        - type: object
+          required: [type, columns, rows]
+          properties:
+            type: {const: table}
+            columns: {type: array, items: {type: string}}
+            rows: {type: array, items: {type: array, items: {type: string}}}
+
+    Preview:
+      description: |
+        The approval card the owner sees (stored by the control plane as the request's `preview`).
+      type: object
+      required: [blocks]
+      properties:
+        blocks: {type: array, items: {$ref: "#/components/schemas/PreviewBlock"}}
+        choices: {type: array, items: {$ref: "#/components/schemas/Choice"}}
+        consequence: {type: string}
+
+    InputRequestCreate:
+      description: The control plane's AskIn without `attempt`.
+      type: object
+      required: [key, title, prompt, schema, timeoutSeconds]
+      properties:
+        key: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_.:-]+$"}
+        title: {type: string, minLength: 1, maxLength: 200}
+        prompt: {type: string, minLength: 1, maxLength: 4000}
+        schema:
+          type: object
+          description: |
+            JSON Schema the answer must satisfy; `pattern` and `patternProperties` are not allowed.
+            With choices it is {"type":"object","required":["choice"],"properties":{"choice":{"type":"string","enum":[...]}}}.
+        preview: {$ref: "#/components/schemas/Preview"}
+        timeoutSeconds: {type: integer, minimum: 1, maximum: 86400}
+
+    InputRequest:
+      description: |
+        The fields the SDK reads from the control plane's InputRequestOut (the broker may return
+        the whole InputRequestOut).
+      type: object
+      required: [id, key, state, version, createdAt, deadline, answeredAt]
+      properties:
+        id: {type: string}
+        key: {type: string}
+        state: {enum: [pending, answered, expired, cancelled]}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        deadline: {type: string, format: date-time}
+        answer: {description: The submitted answer object; null until answered.}
+        answeredAt: {type: [string, "null"], format: date-time}
+
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role: {enum: [system, user, assistant]}
+        content: {type: string}
+
+    ChatRequest:
+      type: object
+      required: [profile, messages]
+      properties:
+        profile: {type: string}
+        messages: {type: array, minItems: 1, items: {$ref: "#/components/schemas/ChatMessage"}}
+        temperature: {type: [number, "null"], minimum: 0, maximum: 2}
+        maxOutputTokens: {type: [integer, "null"], minimum: 1}
+        responseSchema: {type: [object, "null"]}
+        tools: {type: array, maxItems: 0, description: Tools are not supported in v1alpha1.}
+        idempotencyKey: {type: [string, "null"]}
+
+    Usage:
+      type: object
+      required: [inputTokens, outputTokens]
+      properties:
+        inputTokens: {type: integer, minimum: 0}
+        outputTokens: {type: integer, minimum: 0}
+
+    ChatResponse:
+      type: object
+      required: [text, structured, finishReason, usage, provider, model, locality, latencyMs, requestId]
+      properties:
+        text: {type: string}
+        structured: {}
+        finishReason: {enum: [stop, length, content_filter, error]}
+        usage: {$ref: "#/components/schemas/Usage"}
+        provider: {type: string}
+        model: {type: string}
+        locality: {enum: [local, cloud]}
+        latencyMs: {type: integer, minimum: 0}
+        requestId: {type: string}
+
+    KnowledgeSearchRequest:
+      type: object
+      required: [knowledgeBaseId, query]
+      properties:
+        knowledgeBaseId: {type: string}
+        query: {type: string, minLength: 1}
+        topK: {type: integer, minimum: 1, maximum: 50, default: 8}
+        filters:
+          type: object
+          properties:
+            documentIds: {type: array, items: {type: string}}
+        maxContextTokens: {type: [integer, "null"], minimum: 1}
+
+    Passage:
+      type: object
+      required: [citationId, text, score, document, locator]
+      properties:
+        citationId: {type: string}
+        text: {type: string}
+        score: {type: number}
+        document:
+          type: object
+          required: [id, name]
+          properties:
+            id: {type: string}
+            name: {type: string}
+        locator:
+          type: object
+          properties:
+            page: {type: integer}
+            section: {type: string}
+            row: {type: integer}
+
+    KnowledgeSearchResponse:
+      type: object
+      required: [passages]
+      properties:
+        passages: {type: array, items: {$ref: "#/components/schemas/Passage"}}
+
+    GmailListResponse:
+      type: object
+      required: [resultSizeEstimate]
+      properties:
+        messages:
+          type: array
+          items:
+            type: object
+            required: [id, threadId]
+            properties:
+              id: {type: string}
+              threadId: {type: string}
+        nextPageToken: {type: string}
+        resultSizeEstimate: {type: integer, minimum: 0}
+
+    GmailMessage:
+      type: object
+      description: Gmail API Message resource (format=full).
+      required: [id, threadId]
+      properties:
+        id: {type: string}
+        threadId: {type: string}
+        labelIds: {type: array, items: {type: string}}
+        snippet: {type: string}
+        internalDate: {type: string}
+        payload: {type: object}
+
+    SheetsRangeRequest:
+      type: object
+      required: [spreadsheetId, range]
+      properties:
+        spreadsheetId: {type: string}
+        range: {type: string, description: "A1 notation, e.g. Contacts!A2:D"}
+
+    SheetsWriteRequest:
+      type: object
+      required: [spreadsheetId, range, values]
+      properties:
+        spreadsheetId: {type: string}
+        range: {type: string}
+        values: {type: array, items: {type: array, items: {type: [string, number, boolean, "null"]}}}
+
+    SheetsValuesResponse:
+      type: object
+      required: [range, values]
+      properties:
+        range: {type: string}
+        values: {type: array, items: {type: array, items: {type: string}}}
+
+    SheetsUpdateResponse:
+      type: object
+      required: [updatedRange, updatedRows]
+      properties:
+        updatedRange: {type: string}
+        updatedRows: {type: integer, minimum: 0}
+
+    CallCreate:
+      type: object
+      required: [to, script, gather, idempotencyKey]
+      properties:
+        to: {type: string, pattern: "^\\+[1-9][0-9]{7,14}$"}
+        script:
+          type: object
+          required: [disclosure, text]
+          properties:
+            disclosure: {type: string, minLength: 1}
+            text: {type: string, minLength: 1}
+        gather:
+          type: object
+          required: [input, timeoutSeconds]
+          properties:
+            input: {const: speech}
+            timeoutSeconds: {type: integer, minimum: 1, maximum: 60}
+        idempotencyKey: {type: string, minLength: 1, maxLength: 200}
+
+    Call:
+      type: object
+      required: [id, idempotencyKey, toMasked, state, answered, speechCaptured, transcript, durationSeconds, errorCode, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        idempotencyKey: {type: string}
+        toMasked: {type: string, description: Last four digits only; the full number is never returned.}
+        state: {enum: [queued, initiated, ringing, in-progress, completed, busy, no-answer, failed, canceled]}
+        answered: {type: boolean}
+        speechCaptured: {type: boolean}
+        transcript: {type: [string, "null"]}
+        durationSeconds: {type: [integer, "null"]}
+        errorCode: {type: [string, "null"]}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    ActionComplete:
+      type: object
+      properties:
+        result: {description: Stored and returned to later claims of this key.}
+
+    ActionRecord:
+      description: The control plane's ActionOut.
+      type: object
+      required: [key, status]
+      properties:
+        key: {type: string}
+        status: {enum: [claimed, in_doubt, completed]}
+        result: {}

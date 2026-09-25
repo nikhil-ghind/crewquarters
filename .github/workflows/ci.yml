@@ -20,12 +20,14 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "0.5.11"
-      - run: uv sync --frozen --python 3.12
+      - run: uv sync --frozen --python 3.12 --all-packages
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: >-
           uv run mypy packages/shared_python/src services/control_api/src services/scheduler/src
           services/model_gateway/src services/runtime_daemon/src
+          packages/python_sdk/src packages/fake_platform/src packages/crewctl/src
+          agents/contract_probe/src agents/gmail_digest/src agents/caller/src
 
   platform-tests:
     runs-on: ubuntu-24.04
@@ -45,7 +47,7 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "0.5.11"
-      - run: uv sync --frozen --python 3.12
+      - run: uv sync --frozen --python 3.12 --all-packages
       - run: uv run pytest -q --cov --cov-report=term --cov-report=json
         env:
           CQ_TEST_ADMIN_URL: postgresql+psycopg://crewquarters:crewquarters@127.0.0.1:55432/crewquarters
@@ -155,3 +157,37 @@ jobs:
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+
+  # --- Person 5: agents in hardened containers against the fake platform --------------------
+  agent-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.11"
+      - run: uv sync --frozen --python 3.12 --all-packages
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+      - run: make fake-up
+      - run: make e2e
+      - if: failure()
+        run: docker compose -f infra/compose/compose.yaml --profile fake logs fake-platform
+
+  agent-images-arm64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build arm64 agent and fake-platform images; self-check under emulation
+        run: |
+          for agent in contract_probe gmail_digest caller; do
+            docker buildx build --platform linux/arm64 -f agents/$agent/Dockerfile -t crewq/$agent:arm64 --load .
+            docker run --rm --platform linux/arm64 --network none crewq/$agent:arm64 --self-check
+          done
+          docker buildx build --platform linux/arm64 -f packages/fake_platform/Dockerfile -t crewq/fake-platform:arm64 --load .
+          docker run --rm --platform linux/arm64 crewq/fake-platform:arm64 --help

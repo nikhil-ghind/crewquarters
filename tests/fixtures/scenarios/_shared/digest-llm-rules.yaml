@@ -1,0 +1,15 @@
+# Mock-LLM rules for the Gmail digest. The fake emits one item per evidence block (email) and applies
+# the first keyword override that matches that email's text.
+- name: digest-classifier
+  match: {schemaTitle: DigestBatch}
+  respond:
+    perEvidence:
+      arrayField: items
+      item: {ref: "{ref}", priority: low, reason: "Routine or informational message", nextAction: "No action needed", uncertain: false}
+      overrides:
+        - when: {contains: ["outage", "is down", "security alert", "payment failed", "password reset"]}
+          set: {priority: urgent, reason: "Service, security, or payment incident", nextAction: "Investigate now"}
+        - when: {contains: ["maybe", "not sure"]}
+          set: {priority: important, uncertain: true, reason: "Unclear request", nextAction: "Read and decide"}
+        - when: {contains: ["deadline", "invoice", "meeting", "please review", "contract"]}
+          set: {priority: important, reason: "Needs your attention soon", nextAction: "Reply or schedule time today"}
