@@ -27,7 +27,7 @@ HOST_PLATFORM = $(shell uv run python -c "from crewctl.build import host_platfor
         test test-platform test-contract test-sdk contracts contracts-check lint fmt image image-arm64 \
         fake-up fake-down agent-images e2e-images e2e \
         demo-seed demo-reset demo-run demo-pending demo-approve evidence \
-        integration-up integration-down realstack-images realstack-up realstack-test realstack-down
+        integration-up integration-down demo-up demo-down realstack-images realstack-up realstack-test realstack-down
 
 help:
 	@grep -E '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -59,7 +59,34 @@ integration-up: ## Dev stack plus the runtime daemon in a container (real agent/
 	$(COMPOSE) -f infra/compose/compose.runtime.yaml up -d --wait
 	@echo "UI/API: http://127.0.0.1:8080/ (runtime daemon: containerized, dev only)"
 
+# --- Local demo: the full platform on this machine with the three demo agents -------------
+# docs/runbooks/local-demo.md. LIVE_ENV=~/crewquarters-live.env switches the broker to real
+# Google/Twilio (CQ_PROVIDER_MODE=live plus the OAuth client and allowed numbers).
+LIVE_ENV ?=
+DEMO_COMPOSE = $(COMPOSE) $(if $(LIVE_ENV),--env-file $(LIVE_ENV)) -f infra/compose/compose.runtime.yaml \
+	-f infra/compose/compose.demo.yaml
+
+demo-up: ## Full local demo on http://127.0.0.1:8080: runtime daemon + Gmail digest, caller, probe agents
+	mkdir -p $${CQ_DATA_DIR:-/tmp/crewquarters-data}
+	docker build -f infra/docker/python.Dockerfile -t crewquarters/platform:dev .
+	docker build -f infra/docker/proxy.Dockerfile -t crewquarters/proxy:dev .
+	$(COMPOSE) --profile fake up -d --wait registry
+	uv run python tests/realstack/prepare.py --registry $(REGISTRY) --out .demo --no-test-variants
+	$(DEMO_COMPOSE) up -d --wait runtime-daemon
+	$(DEMO_COMPOSE) up -d --wait
+	@echo "UI: http://127.0.0.1:8080/   First time: make dev-bootstrap for the owner setup code"
+
+demo-down: ## Stop the local demo (keeps data; `make demo-down V=1` also deletes volumes and run data)
+	# Agent and model containers belong to the runtime daemon, not to Compose.
+	-docker ps -aq --filter label=io.crewquarters.kind | xargs -r docker rm -f
+	$(if $(V),-$(DEMO_COMPOSE) run --rm --no-deps --entrypoint sh runtime-daemon \
+		-c 'rm -rf "$$CQ_RUNTIME_DATA_DIR/runs" "$$CQ_RUNTIME_DATA_DIR/models"')
+	$(DEMO_COMPOSE) down $(if $(V),-v)
+	$(COMPOSE) --profile fake rm -sf registry
+
 integration-down: ## Stop the integration stack
+	# Agent and model containers belong to the runtime daemon, not to Compose.
+	-docker ps -aq --filter label=io.crewquarters.kind | xargs -r docker rm -f
 	$(COMPOSE) -f infra/compose/compose.runtime.yaml down
 
 dev-bootstrap: ## Print a one-time owner setup code for the running stack

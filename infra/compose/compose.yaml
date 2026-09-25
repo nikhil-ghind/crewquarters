@@ -133,6 +133,8 @@ services:
       # Placeholder OAuth client for the fake Google provider; set real values with CQ_PROVIDER_MODE=live.
       CQ_GOOGLE_CLIENT_ID: ${CQ_GOOGLE_CLIENT_ID:-crewquarters-dev.apps.example.com}
       CQ_GOOGLE_CLIENT_SECRET: ${CQ_GOOGLE_CLIENT_SECRET:-dev-client-secret}
+      # Live mode only: the numbers the caller may dial (JSON list of E.164).
+      CQ_TWILIO_ALLOWED_NUMBERS: ${CQ_TWILIO_ALLOWED_NUMBERS:-[]}
     depends_on:
       migrate:
         condition: service_completed_successfully

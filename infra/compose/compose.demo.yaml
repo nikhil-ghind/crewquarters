@@ -1,0 +1,19 @@
+# Local demo override (`make demo-up`): layered on compose.yaml and compose.runtime.yaml.
+# The control API and scheduler load .demo/catalog, written by
+# `tests/realstack/prepare.py --out .demo --no-test-variants`: the bundled catalog plus the
+# contract probe, Gmail digest and caller agents, pinned to the digests just pushed to the
+# local registry (127.0.0.1:5001, service `registry`). Google and Twilio are the broker's
+# built-in fakes unless an env file sets CQ_PROVIDER_MODE=live (`make demo-up
+# LIVE_ENV=~/crewquarters-live.env`; docs/runbooks/local-demo.md).
+services:
+  control-api:
+    environment:
+      CQ_CATALOG_DIR: /demo/catalog
+    volumes:
+      - ../../.demo/catalog:/demo/catalog:ro
+
+  scheduler:
+    environment:
+      CQ_CATALOG_DIR: /demo/catalog
+    volumes:
+      - ../../.demo/catalog:/demo/catalog:ro

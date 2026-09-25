@@ -1,6 +1,9 @@
 """Build and push the three bundled agent images, then write the catalog the stack loads.
 
     uv run python tests/realstack/prepare.py --registry localhost:15001
+    uv run python tests/realstack/prepare.py --registry localhost:5001 --out .demo --no-test-variants
+
+The second form is ``make demo-up`` (the developer's own stack): no test-only entries.
 
 1. ``crewctl build --push`` for each agent in agents/ (host architecture), pinning the
    pushed digest into tests/realstack/.generated/manifests/<agent>.yaml. Committed manifests
@@ -85,11 +88,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--registry", default="localhost:15001")
     parser.add_argument("--platform", default=host_platform())
-    parser.add_argument("--skip-build", action="store_true", help="reuse .generated/manifests")
+    parser.add_argument("--skip-build", action="store_true", help="reuse <out>/manifests")
+    parser.add_argument("--out", type=Path, default=GENERATED, help="output directory")
+    parser.add_argument(
+        "--no-test-variants", action="store_true", help="omit the realstack-oom/-crash entries"
+    )
     args = parser.parse_args()
 
-    manifests_dir = GENERATED / "manifests"
-    catalog_dir = GENERATED / "catalog"
+    out = args.out if args.out.is_absolute() else REPO / args.out
+    manifests_dir = out / "manifests"
+    catalog_dir = out / "catalog"
     if not args.skip_build:
         for agent in AGENTS:
             result = build(
@@ -108,7 +116,7 @@ def main() -> int:
     for agent in AGENTS:
         shutil.copy(manifests_dir / f"{agent}.yaml", catalog_dir / f"{agent}.yaml")
     probe = yaml.safe_load((manifests_dir / "contract_probe.yaml").read_text())
-    for variant in variants(probe):
+    for variant in [] if args.no_test_variants else variants(probe):
         path = catalog_dir / f"{variant['metadata']['id']}.yaml"
         path.write_text(yaml.safe_dump(variant, sort_keys=False))
     for path in catalog_dir.iterdir():

@@ -90,5 +90,8 @@ Thumbs.db
 /evidence/
 /.e2e/
 
+# Local demo catalog and pinned manifests (make demo-up)
+/.demo/
+
 # Agent worktrees
 .claude/worktrees/
