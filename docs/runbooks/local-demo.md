@@ -264,7 +264,7 @@ Use only numbers whose owners have agreed to test calls.
 
 | Command | Effect |
 | --- | --- |
-| `make demo-down` | Removes every container labelled `io.crewquarters.kind` (agent and model containers, on this Docker engine), stops the stack and removes the registry. Volumes and run data are kept |
+| `make demo-down` | Removes this stack's agent and model containers (those the runtime daemon attached to `cq-agents`/`cq-models`), stops the stack and removes the registry. Volumes and run data are kept |
 | `make demo-down V=1` | The same, and also deletes the `runs` and `models` directories under `CQ_DATA_DIR` and every volume of the `crewquarters` Compose project: the database, master key, documents, embedding model and backups |
 | `docker compose -f infra/compose/compose.yaml exec control-api cq-admin demo reset --yes` | Between rehearsals: cancels active runs, releases chat leases, and deletes runs, calls, action claims and chat sessions. Users, installations, schedules, connections, models and knowledge bases stay; `--schedules` and `--knowledge` remove those too ([backup-restore.md](backup-restore.md)) |
 
