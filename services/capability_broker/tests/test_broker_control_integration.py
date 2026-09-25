@@ -6,9 +6,9 @@ import asyncio
 from typing import Any
 
 import httpx
+
 from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.main import create_app
-
 from crewquarters_shared.runtime import RunSpec
 
 

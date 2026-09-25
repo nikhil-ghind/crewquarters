@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from crewquarters_secret_store.db import EncryptedSecret, ProviderProfile
 from sqlalchemy import create_engine
 
+from crewquarters_secret_store.db import EncryptedSecret, ProviderProfile
 from crewquarters_shared.db.base import Base
 
 

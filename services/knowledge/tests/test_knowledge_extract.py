@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+
 from crewquarters_knowledge import extract as ex
 from crewquarters_knowledge.extract import ExtractionError, Segment
 

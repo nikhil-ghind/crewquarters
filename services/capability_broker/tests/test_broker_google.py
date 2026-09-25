@@ -11,12 +11,12 @@ from typing import Any
 
 import httpx
 import pytest
-from crewquarters_broker import google
-from crewquarters_broker.models import OAuthConnection
-from crewquarters_secret_store.db import EncryptedSecret
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from crewquarters_broker import google
+from crewquarters_broker.models import OAuthConnection
+from crewquarters_secret_store.db import EncryptedSecret
 from crewquarters_shared.db.models import AuditEvent
 
 START = "/internal/v1/connections/google/start"

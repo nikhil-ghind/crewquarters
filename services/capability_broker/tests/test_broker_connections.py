@@ -5,10 +5,11 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from crewquarters_secret_store import db as secret_db
-from crewquarters_secret_store.db import EncryptedSecret, ProviderProfile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from crewquarters_secret_store import db as secret_db
+from crewquarters_secret_store.db import EncryptedSecret, ProviderProfile
 
 PROFILES = "/internal/v1/provider-profiles"
 KEY = "placeholder-api-key-aaaaaaaa"

@@ -6,7 +6,6 @@ import hmac
 from dataclasses import dataclass
 
 import httpx
-from crewquarters_secret_store import Keyring
 from fastapi import Depends, Request
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -18,6 +17,7 @@ from crewquarters_broker.google import GoogleConnector
 from crewquarters_broker.internal import InternalClient
 from crewquarters_broker.metrics import BrokerMetrics
 from crewquarters_broker.twilio import TelephonyService
+from crewquarters_secret_store import Keyring
 from crewquarters_shared.errors import PlatformError
 
 

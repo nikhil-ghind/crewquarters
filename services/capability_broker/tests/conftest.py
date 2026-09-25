@@ -9,14 +9,14 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from crewquarters_broker import fakes
 from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.main import create_app
 from crewquarters_broker.models import OAuthConnection, TelephonyCall
 from crewquarters_secret_store.db import EncryptedSecret, ProviderProfile
-from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from crewquarters_shared import capability
 from crewquarters_shared.config import Settings
 from crewquarters_shared.db.base import Base

@@ -13,6 +13,7 @@ echo "== version: $(crewquarters version)"
 id crewquarters-runtime
 echo "== perms"; stat -c '%a %U:%G %n' /etc/crewquarters /etc/crewquarters/secrets.env /etc/crewquarters/runtime-token /etc/crewquarters/master.key /var/lib/crewquarters/models /var/lib/crewquarters/postgres
 echo "master.key bytes: $(stat -c %s /etc/crewquarters/master.key)"
+grep -Eq '^1:[0-9a-f]{64}$' /etc/crewquarters/master.key || { echo "FAIL: master.key is not a keyring"; exit 1; }
 grep -c '^CQ_' /etc/crewquarters/secrets.env
 grep '^CQ_SOCKET_GID=' /etc/crewquarters/secrets.env
 grep -q '^CQ_CHAT_CLIENT_TOKEN=' /etc/crewquarters/secrets.env || { echo "FAIL: chat token"; exit 1; }

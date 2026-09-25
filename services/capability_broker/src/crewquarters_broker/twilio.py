@@ -26,9 +26,6 @@ from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
 import httpx
-from crewquarters_secret_store import Keyring
-from crewquarters_secret_store import db as secret_db
-from crewquarters_secret_store.db import ProviderProfile
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -37,6 +34,9 @@ from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.errors import needs_connection, permission_denied
 from crewquarters_broker.metrics import BrokerMetrics
 from crewquarters_broker.models import TelephonyCall
+from crewquarters_secret_store import Keyring
+from crewquarters_secret_store import db as secret_db
+from crewquarters_secret_store.db import ProviderProfile
 from crewquarters_shared import audit
 from crewquarters_shared.errors import PlatformError, invalid, not_found
 from crewquarters_shared.redaction import mask_phone

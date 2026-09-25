@@ -6,11 +6,11 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from crewquarters_knowledge.models import DocumentChunk
-from crewquarters_knowledge.service import EVIDENCE_PREAMBLE
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from crewquarters_knowledge.models import DocumentChunk
+from crewquarters_knowledge.service import EVIDENCE_PREAMBLE
 from crewquarters_shared.db.models import Job
 
 POLICY = b"""# Cancellation

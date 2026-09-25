@@ -27,8 +27,6 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 import httpx
-from crewquarters_secret_store import Keyring
-from crewquarters_secret_store import db as secret_db
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -36,6 +34,8 @@ from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.errors import needs_connection, permission_denied, provider_error
 from crewquarters_broker.metrics import BrokerMetrics
 from crewquarters_broker.models import OAuthConnection
+from crewquarters_secret_store import Keyring
+from crewquarters_secret_store import db as secret_db
 from crewquarters_shared import audit
 from crewquarters_shared.errors import PlatformError, invalid, not_found
 from crewquarters_shared.timeutil import utcnow

@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 
 import pytest
+
 from crewquarters_knowledge.chunking import TOKEN, chunk, count_tokens, describe
 from crewquarters_knowledge.extract import Segment
 

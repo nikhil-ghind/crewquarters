@@ -1,4 +1,5 @@
-# Crewquarters platform image: control API, scheduler/worker, model gateway, admin CLI,
+# Crewquarters platform image: control API, scheduler/worker, model gateway, capability
+# broker, knowledge service, admin CLI,
 # and the runtime daemon package (the appliance runs the daemon on the host from the
 # .deb; the laptop integration profile runs it in a container).
 # One image, different commands (README "Services and ownership boundaries").
@@ -13,6 +14,9 @@ COPY services/control_api/pyproject.toml services/control_api/
 COPY services/scheduler/pyproject.toml services/scheduler/
 COPY services/runtime_daemon/pyproject.toml services/runtime_daemon/
 COPY services/model_gateway/pyproject.toml services/model_gateway/
+COPY packages/secret_store/pyproject.toml packages/secret_store/
+COPY services/capability_broker/pyproject.toml services/capability_broker/
+COPY services/knowledge/pyproject.toml services/knowledge/
 # The other workspace members (SDK, dev tools, agents) are not installed in this image, but uv
 # needs their manifests to read the frozen workspace lock.
 COPY packages/python_sdk/pyproject.toml packages/python_sdk/
@@ -23,13 +27,17 @@ COPY agents/gmail_digest/pyproject.toml agents/gmail_digest/
 COPY agents/caller/pyproject.toml agents/caller/
 RUN for pkg in packages/shared_python/src/crewquarters_shared services/control_api/src/crewquarters_api \
         services/scheduler/src/crewquarters_scheduler services/runtime_daemon/src/crewquarters_runtime \
-        services/model_gateway/src/crewquarters_gateway; do mkdir -p "$pkg" && touch "$pkg/__init__.py"; done \
+        services/model_gateway/src/crewquarters_gateway packages/secret_store/src/crewquarters_secret_store \
+        services/capability_broker/src/crewquarters_broker services/knowledge/src/crewquarters_knowledge; do mkdir -p "$pkg" && touch "$pkg/__init__.py"; done \
     && uv sync --frozen --no-dev --no-editable --no-install-workspace
 COPY packages/shared_python packages/shared_python
 COPY services/control_api services/control_api
 COPY services/scheduler services/scheduler
 COPY services/runtime_daemon services/runtime_daemon
 COPY services/model_gateway services/model_gateway
+COPY packages/secret_store packages/secret_store
+COPY services/capability_broker services/capability_broker
+COPY services/knowledge services/knowledge
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.12-slim-bookworm

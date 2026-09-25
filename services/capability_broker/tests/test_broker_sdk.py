@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 import yaml
+
 from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.main import create_app
 

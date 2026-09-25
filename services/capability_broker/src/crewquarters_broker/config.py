@@ -9,9 +9,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from crewquarters_secret_store import Keyring
 from pydantic import SecretStr
 
+from crewquarters_secret_store import Keyring
 from crewquarters_shared.config import Settings
 
 # Insecure development keyring so the ``dev`` profile starts without an installer.

@@ -11,6 +11,9 @@ dependencies = [
     "crewquarters-scheduler",
     "crewquarters-runtime",
     "crewquarters-gateway",
+    "crewquarters-secret-store",
+    "crewquarters-capability-broker",
+    "crewquarters-knowledge",
 ]
 
 [tool.uv]
@@ -23,6 +26,9 @@ members = [
     "services/scheduler",
     "services/runtime_daemon",
     "services/model_gateway",
+    "packages/secret_store",
+    "services/capability_broker",
+    "services/knowledge",
     "packages/python_sdk",
     "packages/fake_platform",
     "packages/crewctl",
@@ -37,6 +43,9 @@ crewquarters-control-api = { workspace = true }
 crewquarters-scheduler = { workspace = true }
 crewquarters-runtime = { workspace = true }
 crewquarters-gateway = { workspace = true }
+crewquarters-secret-store = { workspace = true }
+crewquarters-capability-broker = { workspace = true }
+crewquarters-knowledge = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -73,6 +82,9 @@ known-first-party = [
     "crewquarters_scheduler",
     "crewquarters_runtime",
     "crewquarters_gateway",
+    "crewquarters_secret_store",
+    "crewquarters_broker",
+    "crewquarters_knowledge",
     "conftest",
     "crewquarters",
     "crewctl",
@@ -129,6 +141,9 @@ testpaths = [
     "services/scheduler/tests",
     "services/runtime_daemon/tests",
     "services/model_gateway/tests",
+    "packages/secret_store/tests",
+    "services/capability_broker/tests",
+    "services/knowledge/tests",
     "tests/contract",
     "tests/integration",
     "tests/stack",
@@ -149,6 +164,9 @@ source = [
     "crewquarters_scheduler",
     "crewquarters_runtime",
     "crewquarters_gateway",
+    "crewquarters_secret_store",
+    "crewquarters_broker",
+    "crewquarters_knowledge",
 ]
 omit = [
     "*/crewquarters_api/admin.py",

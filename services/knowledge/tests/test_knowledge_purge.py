@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from crewquarters_knowledge import service
-from crewquarters_knowledge.config import KnowledgeSettings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from crewquarters_knowledge import service
+from crewquarters_knowledge.config import KnowledgeSettings
 from crewquarters_shared import jobs
 from crewquarters_shared.db.models import Job
 

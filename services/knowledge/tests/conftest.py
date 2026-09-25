@@ -9,13 +9,13 @@ from pathlib import Path
 
 import httpx
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from crewquarters_knowledge.config import KnowledgeSettings
 from crewquarters_knowledge.embeddings import HashingEmbedder
 from crewquarters_knowledge.main import create_app
 from crewquarters_knowledge.models import Document, DocumentChunk, KnowledgeBase
-from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from crewquarters_shared.config import Settings
 from crewquarters_shared.db.base import Base
 
