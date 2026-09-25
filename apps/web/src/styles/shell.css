@@ -94,6 +94,7 @@
 }
 .nav-link[aria-current='page'] {
   color: var(--color-text);
+  background: var(--color-primary-bg);
   font-weight: 700;
 }
 .nav-link[aria-current='page']::before {
@@ -104,7 +105,7 @@
   bottom: 8px;
   width: 4px;
   border-radius: 0 4px 4px 0;
-  background: var(--color-primary);
+  background: var(--color-accent);
 }
 .nav-link[aria-current='page'] svg {
   color: var(--color-primary);
