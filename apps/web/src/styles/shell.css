@@ -1,0 +1,328 @@
+/* Application shell (PLAN.md section 13.3) and breakpoints (section 13.18). */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-expanded) minmax(0, 1fr);
+  min-height: 100vh;
+}
+.app-shell[data-collapsed='true'] {
+  grid-template-columns: var(--sidebar-collapsed) minmax(0, 1fr);
+}
+/* Medium desktop (768-1279 px) defaults to icon-only; see AppShell. */
+@media (max-width: 767px) {
+  .app-shell,
+  .app-shell[data-collapsed='true'],
+  .app-shell[data-collapsed='false'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+@media (max-width: 767px) {
+  .app-shell > .sidebar {
+    display: none;
+  }
+}
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  min-height: var(--topbar-height);
+  border-bottom: 1px solid var(--color-border);
+}
+.brand-mark {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius-control);
+  background: var(--color-primary);
+  color: var(--color-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.brand-name {
+  font-weight: 700;
+}
+.brand-device {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-nav {
+  flex: 1;
+  padding: var(--space-3) var(--space-2);
+}
+.sidebar-nav ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-weight: 500;
+}
+.nav-link:hover {
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+.nav-link[aria-current='page'] {
+  color: var(--color-text);
+  font-weight: 700;
+}
+.nav-link[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--color-primary);
+}
+.nav-link[aria-current='page'] svg {
+  color: var(--color-primary);
+}
+.nav-label {
+  flex: 1;
+  white-space: nowrap;
+}
+.sidebar-footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.collapse-toggle {
+  justify-content: flex-start;
+  color: var(--color-text-muted);
+}
+
+/* Collapsed (icon-only) sidebar hides text but keeps accessible names. */
+.sidebar[data-collapsed='true'] .nav-label,
+.sidebar[data-collapsed='true'] .brand-text,
+.sidebar[data-collapsed='true'] .sidebar-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+.sidebar[data-collapsed='true'] .nav-link {
+  justify-content: center;
+  padding: 0;
+}
+.sidebar[data-collapsed='true'] .nav-link .count-badge {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+}
+.sidebar[data-collapsed='true'] .sidebar-brand {
+  justify-content: center;
+  padding: var(--space-3) 0;
+}
+
+.main-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--topbar-height);
+  padding: 0 var(--space-6);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+@media (max-width: 767px) {
+  .topbar {
+    padding: 0 var(--space-2) 0 var(--space-2);
+    gap: var(--space-1);
+  }
+}
+.topbar-spacer {
+  flex: 1;
+}
+.topbar-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: none;
+  cursor: pointer;
+  color: var(--color-text);
+}
+.topbar-button:hover {
+  background: var(--color-bg);
+  border-color: var(--color-border);
+}
+.topbar-memory {
+  min-width: 180px;
+  white-space: nowrap;
+}
+.topbar-memory .meter {
+  width: 140px;
+}
+@media (max-width: 1279px) {
+  .topbar-memory .meter {
+    width: 96px;
+  }
+  .topbar-hide-medium {
+    display: none;
+  }
+}
+@media (max-width: 767px) {
+  .topbar-hide-mobile {
+    display: none;
+  }
+  .topbar-memory {
+    min-width: 0;
+  }
+  /* Phone widths: the meter stays (with its accessible value text); the visible label goes. */
+  .topbar-memory .meter {
+    width: 56px;
+  }
+  .topbar-memory .meter > .muted {
+    display: none;
+  }
+}
+.mobile-only {
+  display: none;
+}
+@media (max-width: 767px) {
+  .mobile-only {
+    display: inline-flex;
+  }
+}
+.nav-drawer {
+  border: none;
+  padding: 0;
+  margin: 0;
+  width: min(300px, 88vw);
+  height: 100vh;
+  max-height: 100vh;
+}
+.nav-drawer::backdrop {
+  background: var(--color-overlay);
+}
+.nav-drawer .sidebar {
+  position: static;
+  height: 100%;
+  border-right: none;
+}
+.owner-menu {
+  right: 0;
+  width: 240px;
+}
+.menu-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--color-text);
+  text-decoration: none;
+  cursor: pointer;
+  text-align: left;
+}
+.menu-item:hover {
+  background: var(--color-bg);
+}
+.main-content:focus {
+  outline: none;
+}
+
+/* Setup and sign-in pages use a centered single column without the shell. */
+.bare-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.bare-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+.bare-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6) var(--space-16);
+}
+@media (max-width: 767px) {
+  .bare-main {
+    padding: var(--space-4) var(--space-4) var(--space-16);
+  }
+}
+.setup-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--space-8);
+  align-items: start;
+}
+@media (max-width: 1023px) {
+  .setup-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+}
+.auth-card {
+  max-width: 440px;
+  margin: var(--space-8) auto 0;
+}

@@ -87,6 +87,8 @@ The services live in one monorepo and may share Python libraries, but they run a
 
 The UI is designed as a local appliance control plane rather than a developer dashboard. It must let an owner complete installation, connect services, install models and agents, approve actions, and diagnose ordinary failures without using a terminal.
 
+The implementation lives in `apps/web`. See [docs/web-ui.md](docs/web-ui.md) for commands, the mock API, tests, and what the reverse proxy must do to serve the static build.
+
 The persistent navigation contains:
 
 - **Overview** — device health, attention items, active work, recent results, and upcoming schedules.
