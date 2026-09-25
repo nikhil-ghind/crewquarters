@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -20,6 +21,8 @@ from crewquarters_shared.db import create_engine, session_factory
 from crewquarters_shared.logs import configure_logging
 
 PROVIDER_TIMEOUT_SECONDS = 20.0
+# A local model may cold-start before its first token (PLAN.md section 8).
+GATEWAY_TIMEOUT_SECONDS = 660.0
 
 
 def create_app(
@@ -28,6 +31,7 @@ def create_app(
     provider_transport: httpx.AsyncBaseTransport | None = None,
     control_transport: httpx.AsyncBaseTransport | None = None,
     knowledge_transport: httpx.AsyncBaseTransport | None = None,
+    gateway_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     """Transports are injectable for tests. In fake provider mode, Google and Twilio are
     served by :mod:`crewquarters_broker.fakes` unless a transport is given."""
@@ -42,16 +46,27 @@ def create_app(
     http = httpx.AsyncClient(timeout=PROVIDER_TIMEOUT_SECONDS, transport=provider_transport)
     control = InternalClient(settings.control_api_url, token, control_transport)
     knowledge = InternalClient(settings.knowledge_url, token, knowledge_transport)
+    gateway = httpx.AsyncClient(
+        base_url=f"{settings.model_gateway_url.rstrip('/')}/internal/v1",
+        headers={"authorization": f"Bearer {token}"},
+        timeout=httpx.Timeout(GATEWAY_TIMEOUT_SECONDS, connect=5.0),
+        transport=gateway_transport,
+    )
     telephony = TelephonyService(settings, keyring, sessions, http)
+    simulations: set[asyncio.Task[None]] = set()
     if fake:
-        telephony.on_created, _ = fakes.call_simulator(telephony)
+        telephony.on_created, simulations = fakes.call_simulator(telephony)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
+        # Let simulated callbacks finish: cancelling one mid-statement can leave its
+        # connection inside a transaction that blocks other writers.
+        await asyncio.gather(*simulations, return_exceptions=True)
         await http.aclose()
         await control.close()
         await knowledge.close()
+        await gateway.aclose()
         await engine.dispose()
 
     app = FastAPI(
@@ -72,6 +87,7 @@ def create_app(
         sessions=sessions,
         control=control,
         knowledge=knowledge,
+        gateway=gateway,
         google=GoogleConnector(settings, keyring, sessions, http),
         telephony=telephony,
     )

@@ -1,5 +1,4 @@
-"""Broker test fixtures and helpers. Import into a test module; not a conftest, because
-every ``conftest.py`` shares one module name and would shadow the root conftest."""
+"""Fixtures for the capability broker tests."""
 
 from __future__ import annotations
 
@@ -10,14 +9,14 @@ from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from crewquarters_broker import fakes
 from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.main import create_app
 from crewquarters_broker.models import OAuthConnection, TelephonyCall
 from crewquarters_secret_store.db import EncryptedSecret, ProviderProfile
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from crewquarters_shared import capability
 from crewquarters_shared.config import Settings
 from crewquarters_shared.db.base import Base
@@ -54,9 +53,10 @@ def broker_settings(settings: Settings) -> BrokerSettings:
 
 
 class Harness:
-    """A broker wired to provider fakes, a controllable control-API run view, and a
-    recording knowledge service."""
+    """A broker wired to provider fakes, a controllable control-API run view, and
+    recording knowledge and model-gateway services."""
 
+    SDK = "/internal/v1/sdk"
     PUBLIC = PUBLIC
     SPREADSHEET = SPREADSHEET
     KB_ID = KB_ID
@@ -67,11 +67,15 @@ class Harness:
         self.twilio = fakes.FakeTwilio()
         self.run: dict[str, Any] = {}
         self.knowledge_requests: list[dict[str, Any]] = []
+        self.control_requests: list[dict[str, Any]] = []
+        self.gateway_requests: list[httpx.Request] = []
+        self.gateway_error: tuple[int, dict[str, Any]] | None = None
         self.app = create_app(
             settings,
             provider_transport=fakes.transport(self.google, self.twilio),
             control_transport=httpx.MockTransport(self._control),
             knowledge_transport=httpx.MockTransport(self._knowledge),
+            gateway_transport=httpx.MockTransport(self._gateway),
         )
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=self.app), base_url="http://broker"
@@ -81,8 +85,18 @@ class Harness:
         }
 
     def _control(self, request: httpx.Request) -> httpx.Response:
-        if request.url.path == f"/internal/v1/runs/{self.run.get('id')}":
+        run_path = f"/internal/v1/runs/{self.run.get('id')}"
+        if request.method == "GET" and request.url.path == run_path:
             return httpx.Response(200, json=self.run)
+        if request.method == "POST" and request.url.path.startswith(run_path + "/"):
+            body = json.loads(request.content)
+            self.control_requests.append({"path": request.url.path, "body": body})
+            if request.url.path.endswith("/events"):
+                return httpx.Response(201, json={"sequence": len(self.control_requests)})
+            if "/actions/" in request.url.path:
+                key = request.url.path.split("/actions/")[1].split("/")[0]
+                return httpx.Response(200, json={"key": key, "status": "claimed", "result": None})
+            return httpx.Response(200, json={"state": "RUNNING", "cancelRequested": False})
         return httpx.Response(
             404, json={"error": {"code": "NOT_FOUND", "message": "Run not found.", "details": {}}}
         )
@@ -91,7 +105,42 @@ class Harness:
         self.knowledge_requests.append(
             {"path": request.url.path, "body": json.loads(request.content)}
         )
-        return httpx.Response(200, json={"passages": []})
+        passage = {
+            "citationId": "c1",
+            "text": "Refunds are prorated.",
+            "score": 0.9,
+            "document": {"id": "d1", "name": "policy.md"},
+            "locator": {"section": "Refunds"},
+            "location": "Refunds",
+        }
+        return httpx.Response(200, json={"passages": [passage], "context": "..."})
+
+    def _gateway(self, request: httpx.Request) -> httpx.Response:
+        self.gateway_requests.append(request)
+        if self.gateway_error is not None:
+            status, error = self.gateway_error
+            return httpx.Response(status, json={"error": error})
+        body = json.loads(request.content)
+        response = {
+            "text": "Hi.",
+            "structured": None,
+            "finishReason": "stop",
+            "usage": {"inputTokens": 3, "outputTokens": 1},
+            "provider": "local",
+            "model": body["profile"],
+            "locality": "local",
+            "latencyMs": 5,
+            "requestId": "r1",
+        }
+        if not body.get("stream"):
+            return httpx.Response(200, json=response)
+        events = [
+            {"type": "delta", "text": "H"},
+            {"type": "delta", "text": "i."},
+            {"type": "done", "response": response},
+        ]
+        sse = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events)
+        return httpx.Response(200, text=sse, headers={"content-type": "text/event-stream"})
 
     def agent(
         self,
@@ -147,13 +196,15 @@ class Harness:
 def permissions_for(caps: list[str]) -> dict[str, Any]:
     """The approved-permissions block that yields these capability strings."""
     return {
-        "llmProfiles": [],
+        "llmProfiles": [
+            c.removeprefix("llm.profile:") for c in caps if c.startswith("llm.profile:")
+        ],
         "knowledge": ["config"] if "knowledge.search:config" in caps else [],
         "connectors": {
             "google": [c.removeprefix("google.") for c in caps if c.startswith("google.")],
             "twilio": [c.removeprefix("twilio.") for c in caps if c.startswith("twilio.")],
         },
-        "cloudProviders": [],
+        "cloudProviders": [c.removeprefix("cloud.") for c in caps if c.startswith("cloud.")],
         "userInput": "user_input" in caps,
     }
 

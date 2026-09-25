@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from crewquarters_secret_store import Keyring, SecretStoreError
 
 pytestmark = pytest.mark.no_db

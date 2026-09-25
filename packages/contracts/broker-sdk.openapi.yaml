@@ -26,7 +26,17 @@ info:
       x-fault-target operation id used by the fake platform's fault injection
 
     After a cancel is requested, capability operations return 409 RUN_CANCELLED while handshake,
-    heartbeat, events, and result keep working so the agent can report its outcome.
+    heartbeat, events, result, and actions keep working so the agent can report its outcome.
+
+    Broker enforcement (implemented in services/capability_broker; docs/capability-broker.md):
+      - A capability must be in the token AND in the run's current approval; the token must be the
+        current attempt's (jti, attempt, installation) and the run active.
+      - Resource ids the agent sends (knowledgeBaseId, spreadsheetId) must equal the installation
+        config's; otherwise 403 PERMISSION_DENIED.
+      - Calls speak only the owner-approved words: script.text must be config.script with every
+        {name} replaced by the same name (at most 100 characters, no markup), and script.disclosure
+        must equal config.disclosure when one is set; otherwise 403 PERMISSION_DENIED.
+      - Handshake fields the control plane cannot yet supply fall back to token-derived values.
 servers:
   - url: http://broker:8080/internal/v1/sdk
 security:
@@ -392,12 +402,15 @@ components:
   responses:
     Error:
       description: |
-        Error envelope. Codes by status: 401 UNAUTHENTICATED; 403 CAPABILITY_DENIED,
-        PERMISSION_DENIED; 404 NOT_FOUND; 409 RUN_NOT_ACTIVE, RUN_CANCELLED, INVALID_RUN_STATE,
-        NEEDS_CONNECTION, ACTION_NOT_CLAIMED, PROTOCOL_UNSUPPORTED; 422 INVALID_REQUEST,
+        Error envelope. Codes by status: 401 UNAUTHENTICATED; 403 CAPABILITY_DENIED (capability not
+        granted), PERMISSION_DENIED (resource, script, disclosure, or number not approved);
+        404 NOT_FOUND; 409 RUN_NOT_ACTIVE, RUN_CANCELLED, INVALID_RUN_STATE, NEEDS_CONNECTION,
+        NEEDS_CONFIGURATION, CALL_LIMIT_REACHED, ACTION_NOT_CLAIMED, PROTOCOL_UNSUPPORTED;
+        422 INVALID_REQUEST,
         INVALID_EVENT_TYPE, INVALID_EVENT, INVALID_INPUT_SCHEMA, INPUT_WAIT_BUDGET_EXCEEDED,
         UNSUPPORTED_FEATURE; 429 RATE_LIMITED (with Retry-After); 502 PROVIDER_ERROR;
-        503 MODEL_UNAVAILABLE, PROVIDER_UNAVAILABLE; 504 TIMEOUT.
+        503 MODEL_UNAVAILABLE, PROVIDER_UNAVAILABLE, OUTCOME_UNKNOWN (a non-idempotent side effect
+        may or may not have happened; never retried automatically); 504 TIMEOUT.
       content:
         application/json:
           schema: {$ref: "#/components/schemas/Error"}
@@ -652,7 +665,9 @@ components:
       type: object
       required: [knowledgeBaseId, query]
       properties:
-        knowledgeBaseId: {type: string}
+        knowledgeBaseId:
+          type: string
+          description: Must be the knowledge base selected in the installation config.
         query: {type: string, minLength: 1}
         topK: {type: integer, minimum: 1, maximum: 50, default: 8}
         filters:
@@ -674,6 +689,9 @@ components:
           properties:
             id: {type: string}
             name: {type: string}
+        location:
+          type: string
+          description: Human-readable citation location, e.g. "page 3-4" or "Refunds (line 2)".
         locator:
           type: object
           properties:
@@ -718,14 +736,18 @@ components:
       type: object
       required: [spreadsheetId, range]
       properties:
-        spreadsheetId: {type: string}
+        spreadsheetId:
+          type: string
+          description: Must be the spreadsheet named in the installation config.
         range: {type: string, description: "A1 notation, e.g. Contacts!A2:D"}
 
     SheetsWriteRequest:
       type: object
       required: [spreadsheetId, range, values]
       properties:
-        spreadsheetId: {type: string}
+        spreadsheetId:
+          type: string
+          description: Must be the spreadsheet named in the installation config.
         range: {type: string}
         values: {type: array, items: {type: array, items: {type: [string, number, boolean, "null"]}}}
 
@@ -744,6 +766,10 @@ components:
         updatedRows: {type: integer, minimum: 0}
 
     CallCreate:
+      description: |
+        The broker builds the TwiML: the disclosure, then the script inside a speech Gather. Only the
+        owner-approved words are accepted (see "Broker enforcement" above). The same idempotencyKey
+        returns the same call and never redials.
       type: object
       required: [to, script, gather, idempotencyKey]
       properties:
@@ -774,7 +800,11 @@ components:
         speechCaptured: {type: boolean}
         transcript: {type: [string, "null"]}
         durationSeconds: {type: [integer, "null"]}
-        errorCode: {type: [string, "null"]}
+        errorCode:
+          type: [string, "null"]
+          description: |
+            OUTCOME_UNKNOWN (Twilio never confirmed the call; state is failed), PROVIDER_REJECTED
+            (no call was placed), or Twilio's ErrorCode for a failed call.
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
 

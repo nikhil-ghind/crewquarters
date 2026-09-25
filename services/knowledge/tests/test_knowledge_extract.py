@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import io
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-
 from crewquarters_knowledge import extract as ex
 from crewquarters_knowledge.extract import ExtractionError, Segment
 
-pytest_plugins = ["knowledge_testkit"]
 pytestmark = pytest.mark.no_db
 
 DOCX = ex.SUPPORTED[".docx"]
@@ -47,9 +46,9 @@ def test_unsafe_filenames_rejected(raw: str) -> None:
     assert _code(ex.safe_filename, raw) == "INVALID_FILENAME"
 
 
-def test_mime_is_confirmed_by_content() -> None:
-    from knowledge_testkit import make_docx, make_pdf
-
+def test_mime_is_confirmed_by_content(
+    make_pdf: Callable[[list[str]], bytes], make_docx: Callable[..., bytes]
+) -> None:
     assert ex.detect_mime("a.PDF", make_pdf(["hi"])[:16]) == "application/pdf"
     assert ex.detect_mime("a.docx", make_docx("h", ["p"])[:16]) == DOCX
     assert _code(ex.detect_mime, "a.exe", b"MZ") == "UNSUPPORTED_TYPE"
@@ -98,9 +97,7 @@ def test_malformed_csv(tmp_path: Path) -> None:
     assert _code(ex.extract, _file(tmp_path, "a.csv", content), "text/csv") == "EXTRACTION_FAILED"
 
 
-def test_pdf_pages(tmp_path: Path) -> None:
-    from knowledge_testkit import make_pdf
-
+def test_pdf_pages(tmp_path: Path, make_pdf: Callable[[list[str]], bytes]) -> None:
     path = _file(tmp_path, "a.pdf", make_pdf(["Page one says hello.", "Page two (terms)."]))
     assert ex.extract(path, "application/pdf") == [
         Segment("Page one says hello.", {"page": 1}),
@@ -108,15 +105,14 @@ def test_pdf_pages(tmp_path: Path) -> None:
     ]
 
 
-def test_scanned_pdf_is_rejected_clearly(tmp_path: Path) -> None:
-    from knowledge_testkit import make_pdf
-
+def test_scanned_pdf_is_rejected_clearly(
+    tmp_path: Path, make_pdf: Callable[[list[str]], bytes]
+) -> None:
     path = _file(tmp_path, "scan.pdf", make_pdf(["", ""]))
     assert _code(ex.extract, path, "application/pdf") == "SCANNED_PDF_UNSUPPORTED"
 
 
-def test_corrupt_and_encrypted_pdf(tmp_path: Path) -> None:
-    from knowledge_testkit import make_pdf
+def test_corrupt_and_encrypted_pdf(tmp_path: Path, make_pdf: Callable[[list[str]], bytes]) -> None:
     from pypdf import PdfReader, PdfWriter
 
     corrupt = _file(tmp_path, "bad.pdf", b"%PDF-1.4\n" + b"\x00garbage" * 50)
@@ -132,9 +128,7 @@ def test_corrupt_and_encrypted_pdf(tmp_path: Path) -> None:
     assert _code(ex.extract, locked, "application/pdf") == "ENCRYPTED_PDF"
 
 
-def test_docx_sections_and_tables(tmp_path: Path) -> None:
-    from knowledge_testkit import make_docx
-
+def test_docx_sections_and_tables(tmp_path: Path, make_docx: Callable[..., bytes]) -> None:
     content = make_docx(
         "Policy", ["Refunds within 30 days.", ""], [["Plan", "Price"], ["Pro", "9"]]
     )
@@ -144,9 +138,9 @@ def test_docx_sections_and_tables(tmp_path: Path) -> None:
     assert Segment("Pro | 9", {"table": 1, "row": 2}) in segments
 
 
-def test_docx_expansion_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from knowledge_testkit import make_docx
-
+def test_docx_expansion_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_docx: Callable[..., bytes]
+) -> None:
     monkeypatch.setattr(ex, "MAX_DOCX_UNCOMPRESSED", 1000)
     path = _file(tmp_path, "a.docx", make_docx("Big", ["x" * 5000]))
     assert _code(ex.extract, path, DOCX) == "TOO_LARGE"

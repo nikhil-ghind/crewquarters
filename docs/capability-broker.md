@@ -8,92 +8,67 @@ The broker is the only service that handles Google and Twilio credentials. An ag
 
 | Prefix | Caller | Authentication |
 | --- | --- | --- |
-| `/agent/v1/*` | Agent containers (the SDK) | `Authorization: Bearer $PLATFORM_RUN_TOKEN` |
-| `/internal/v1/*` | Control API (connections), on the owner's behalf | `Authorization: Bearer $CQ_INTERNAL_SERVICE_TOKEN` |
+| `/internal/v1/sdk/*` | Agent containers (the SDK) | `Authorization: Bearer $PLATFORM_RUN_TOKEN` |
+| `/internal/v1/connections*`, `/internal/v1/provider-profiles*` | Control API (connections), on the owner's behalf | `Authorization: Bearer $CQ_INTERNAL_SERVICE_TOKEN` |
 | `/api/v1/connections/google/callback` and `/api/v1/callbacks/twilio/*` | Google and Twilio, through the reverse proxy | OAuth `state` plus browser binding; Twilio signature |
 
 The reverse proxy must forward only the two public callback groups to the broker (PLAN.md sections 4.1 and 14.3).
 
 ## Capability checks
 
-Every `/agent/v1` call passes all of these checks (`crewquarters_broker/auth.py`):
+Every `/internal/v1/sdk` call passes all of these checks (`crewquarters_broker/auth.py`):
 
 1. **Token:** a valid HS256 signature, `aud=crewquarters-broker`, issuer, and expiry.
 2. **Run state:** the control API's run view (`GET /internal/v1/runs/{id}`) shows an active state. The token's `jti` must equal `capabilityTokenId`, and its attempt and installation must match. A token from an earlier attempt is therefore revoked.
 3. **Capability:** the capability is in the token **and** in the run's current approved permissions. This is an intersection, so narrowing an approval takes effect immediately.
 4. **Resource:** the knowledge base and spreadsheet IDs come from the approved installation config (see `resource` in `packages/contracts/capabilities.yaml`), never from the agent's request.
 5. **Connection:** the provider connection exists and has the needed scope. Otherwise the call returns `409 NEEDS_CONNECTION`.
-6. **Cancellation:** side effects (calls and sheet writes) stop once cancellation is requested (`409 CANCELLED`).
+6. **Cancellation:** once cancellation is requested, capability operations return `409 RUN_CANCELLED`; baseline operations (handshake, heartbeat, events, result, actions) keep working.
 
-## Agent API (`/agent/v1`): contract for the SDK
+## SDK API (`/internal/v1/sdk`)
 
-The run and attempt always come from the token. JSON is camelCase. Errors use the platform shape `{"error": {code, message, requestId, details}}`. The codes map to the SDK's typed exceptions:
+The contract is `packages/contracts/broker-sdk.openapi.yaml` (owner Person 3, drafted by Person 5). The broker serves every operation in it, and a test (`test_broker_serves_every_contract_operation`) keeps the two in step. A second test drives the broker through Person 5's real SDK clients.
 
-| Code | Status | SDK exception |
+The run and attempt always come from the token. JSON is camelCase. Errors use the platform envelope, with the contract's codes:
+
+| Code | Status | Meaning |
 | --- | --- | --- |
-| `UNAUTHENTICATED` | 401 | stop: the token is invalid, revoked, or for an old attempt |
-| `RUN_NOT_ACTIVE` | 409 | stop |
-| `PERMISSION_DENIED` | 403 | `PermissionDenied` |
-| `NEEDS_CONNECTION`, `NEEDS_CONFIGURATION` | 409 | `NeedsConnection` |
-| `CANCELLED` | 409 | `Cancelled` |
-| `RATE_LIMITED` | 429 | `RateLimited` |
-| `INVALID_INPUT` | 422 | `InvalidInput` |
-| `PROVIDER_ERROR`, `PROVIDER_UNAVAILABLE` | 502, 503 | retry only if the operation is idempotent |
-| `PROVIDER_IN_DOUBT` | 503 | never retry blindly; check the call first |
+| `UNAUTHENTICATED` | 401 | The token is invalid, revoked, or for an old attempt |
+| `CAPABILITY_DENIED` | 403 | The capability isn't in both the token and the current approval |
+| `PERMISSION_DENIED` | 403 | The resource, script, disclosure or number isn't the approved one |
+| `RUN_NOT_ACTIVE`, `RUN_CANCELLED` | 409 | The run ended, or the owner cancelled it |
+| `NEEDS_CONNECTION`, `NEEDS_CONFIGURATION`, `PROTOCOL_UNSUPPORTED`, `CALL_LIMIT_REACHED` | 409 | The owner must act, or the SDK is too new |
+| `INVALID_REQUEST` | 422 | The request failed validation |
+| `RATE_LIMITED` | 429 | Provider rate limit |
+| `PROVIDER_ERROR`, `PROVIDER_UNAVAILABLE`, `MODEL_UNAVAILABLE` | 502, 503 | Retry only idempotent operations |
+| `OUTCOME_UNKNOWN` | 503 | Twilio didn't confirm a call; never retried automatically |
 
-### Run lifecycle
+**Cancellation.** Once the owner cancels, capability operations (LLM, knowledge, Gmail, Sheets, telephony, input requests) return `RUN_CANCELLED`. Handshake, heartbeat, events, result and actions keep working, so the agent can report its outcome.
 
-These are forwarded to the control API with the token's attempt.
+### How the broker applies the contract
 
-| Route | Capability | Body |
-| --- | --- | --- |
-| `POST /agent/v1/handshake` | — | — |
-| `POST /agent/v1/heartbeat` | — | — (returns `cancelRequested`) |
-| `POST /agent/v1/events` | `events.write` | `{type: run.log\|run.progress\|run.metric\|run.artifact, payload}` |
-| `POST /agent/v1/result` | — | `{status: succeeded\|failed, result?, error?}` |
-| `POST /agent/v1/input-requests` | `user_input` | `{key, title, prompt, schema, timeoutSeconds, preview?}` |
-| `GET /agent/v1/input-requests/{id}?wait=0..30` | `user_input` | long-poll; only this run's requests |
-| `POST /agent/v1/actions/{key}/claim` | `idempotency` | — → `claimed \| completed \| in_doubt` |
-| `POST /agent/v1/actions/{key}/complete` | `idempotency` | `{result}` |
+- **Handshake.** The broker forwards the handshake to the control API, then builds the `Handshake` response from the control API's run view and the token.
+  - The run view doesn't yet include `trigger`, `scheduledFor`, `agentId`, `agentVersion`, `createdAt`, `activeTimeoutSeconds` or `inputWaitRemainingSeconds`.
+  - Until it does, those fields fall back to `manual`, `null`, the SDK's `agentId`, the token's version and issue time, and the token's remaining lifetime. The token's lifetime always covers a legitimate attempt.
+  - A `protocol` other than `v1alpha1` returns `PROTOCOL_UNSUPPORTED`.
+- **Events.** Each event in a batch is forwarded to the control API, and duplicate `clientEventId` values within one batch are dropped. Deduplication across retries needs the control API to store `clientEventId` (requested from Person 1).
+- **Knowledge and Sheets.** The agent sends `knowledgeBaseId` or `spreadsheetId`. The broker accepts it only if it equals the installation config's `knowledgeBaseId` or `spreadsheetId`, and otherwise returns `PERMISSION_DENIED`. Sheets values are written with `valueInputOption=RAW`, so untrusted text is never evaluated as a formula.
+- **Gmail.** `GET /google/gmail/messages` passes `labelIds` and returns `resultSizeEstimate`. `GET /google/gmail/messages/{id}` returns Gmail's `format=full` message unmodified. It's untrusted content, and the SDK parses MIME and reduces HTML to text.
+- **LLM.** `/llm/chat` and `/llm/chat:stream` are forwarded to the model gateway's `POST /internal/v1/llm/chat` with the service token and the agent's token in `X-Capability-Token`. The gateway re-verifies the token and the profile.
+  - The broker first requires an `llm.profile:*` capability, plus `cloud.<provider>` for cloud profiles.
+  - Stream events are translated to the contract's `delta` / `done` / `error` SSE.
+  - Tools are rejected.
+- **Telephony.** The contract's `CallCreate` carries the script and disclosure, but the broker speaks only what the owner approved:
+  - `script.text` must equal `config.script` with every `{name}` replaced by the same name: at most 100 characters, with no `<>{}` or control characters.
+  - `script.disclosure` must equal `config.disclosure` when one is configured. Otherwise the broker uses its own fixed disclosure.
+  - Anything else returns `PERMISSION_DENIED`, and no call is placed.
 
-### Knowledge
-
-`POST /agent/v1/knowledge/search` needs `knowledge.search:config`. The body is `{query, topK?, maxContextTokens?, filters?: {documentIds}}`. The knowledge base is `config.knowledgeBaseId`. The response is the knowledge service's query result, described in [knowledge.md](knowledge.md).
-
-### Gmail (`google.gmail.readonly`)
-
-- `GET /agent/v1/google/gmail/messages?q=&pageToken=&maxResults=1..500` returns `{messages: [{id, threadId}], nextPageToken}`. `q` uses Gmail search syntax, for example `after:1718841600 before:1718928000`.
-- `GET /agent/v1/google/gmail/messages/{id}?maxChars=100..100000` returns a sanitized message:
-  - `{id, threadId, labelIds, internalDate, from, to, cc, subject, date, snippet, body, bodyTruncated, attachments: [{filename, mimeType, size}], link}`;
-  - the body is plain text only: `text/plain` is preferred, and HTML is reduced to text with scripts and styles dropped;
-  - attachment bytes are never returned;
-  - email is untrusted evidence.
-
-### Sheets (`google.spreadsheets`, spreadsheet = `config.spreadsheetId`)
-
-- `GET /agent/v1/google/sheets/values?range=Contacts!A2:D` returns `{range, values}`.
-- `POST /agent/v1/google/sheets/values:append` takes `{range, values}` and returns `{updatedRange, updatedRows}`.
-- `PUT /agent/v1/google/sheets/values` takes `{range, values}` and overwrites the range.
-
-Values are written with `valueInputOption=RAW`, so a formula from untrusted text (`=IMPORTXML(...)`) is stored as text and never evaluated. The broker never retries an append; use `ctx.idempotency` around it.
-
-### Telephony (`twilio.call.fixed_script`)
-
-- `POST /agent/v1/telephony/calls` takes `{to: "+E164", idempotencyKey, variables?: {name}}` and returns a call.
-  - **Script:** the script is `config.script`, and only `{name}` is substituted. The name is limited to 80 characters, with `<>{}` and control characters removed.
-  - **Limits:** `config.maxCalls` (default 3, at most 10) caps calls per run. `config.responseSeconds` (default 20, range 5–60) bounds the speech gather.
-  - **Idempotency:** the same key returns the same call and never redials.
-- `GET /agent/v1/telephony/calls/{id}` returns `{id, idempotencyKey, to: "***1234", state, outcome, transcript, createdAt, updatedAt}`.
-  - `outcome` is one of `pending`, `answered_speech`, `answered_no_speech`, `busy`, `no_answer`, `failed`, `canceled`, `in_doubt`.
-  - Only this run's calls are visible.
-
-The TwiML is fixed:
-1. It first discloses that this is an automated demo call from Crewquarters.
-2. It then plays the approved script inside a bounded `<Gather input="speech">`.
-
-The first transcript wins, and late or duplicate status callbacks never move a call backwards. **Nothing here makes a call legally compliant.** Restrict live tests to consenting, verified team numbers (`CQ_TWILIO_ALLOWED_NUMBERS`).
-
-If Twilio's answer to a create request is lost, the call becomes `in_doubt` and is never redialed automatically. A rejected request becomes `failed`, and no call was placed.
+  The broker builds the TwiML: the disclosure first, then the script inside a speech `<Gather>` with the requested `timeoutSeconds`. `config.maxCalls` (default 3, at most 10) caps calls per run. The same `idempotencyKey` returns the same call and never redials.
+- **Call view.** A `Call` has `{id, idempotencyKey, toMasked, state, answered, speechCaptured, transcript, durationSeconds, errorCode, createdAt, updatedAt}`, with `state` in Twilio's vocabulary.
+  - A call Twilio rejected is `failed` with `errorCode: PROVIDER_REJECTED`.
+  - A call whose create response was lost is `failed` with `errorCode: OUTCOME_UNKNOWN`, and creating it again with the same key returns `OUTCOME_UNKNOWN`.
+  - The first transcript wins, and late or duplicate status callbacks never move a call backwards.
+- **Legal compliance:** nothing here makes a call legally compliant. Restrict live tests to consenting, verified team numbers (`CQ_TWILIO_ALLOWED_NUMBERS`).
 
 ## Internal API for the control API (`/internal/v1`)
 
@@ -141,7 +116,7 @@ The callback requires that cookie, so an attacker cannot make the owner's browse
 
 ## Configuration
 
-These are in addition to the shared `CQ_*` settings (`CQ_DATABASE_URL`, `CQ_CAPABILITY_SIGNING_KEY`, `CQ_INTERNAL_SERVICE_TOKEN`, `CQ_SECRET_KEY`, `CQ_PROFILE`).
+These are in addition to the shared `CQ_*` settings the broker also reads: `CQ_DATABASE_URL`, `CQ_CAPABILITY_SIGNING_KEY`, `CQ_INTERNAL_SERVICE_TOKEN`, `CQ_SECRET_KEY`, `CQ_PROFILE`, and `CQ_MODEL_GATEWAY_URL` (where LLM calls are forwarded).
 
 | Variable | Type | Default | Secret | Profiles | Purpose |
 | --- | --- | --- | --- | --- | --- |
@@ -160,23 +135,26 @@ These are in addition to the shared `CQ_*` settings (`CQ_DATABASE_URL`, `CQ_CAPA
 The fakes support fake end-to-end runs and tests. Fixtures contain no real personal data: `example.com` addresses and `+1555555xxxx` numbers.
 
 - **Google sign-in:** call the callback with `code=fake-code` (both scopes) or `code=fake-code:gmail.readonly`.
-- **Gmail fixtures:** eight messages dated yesterday: plain, multipart, HTML-only, empty, attachment-only, prompt injection, promotion, and malformed base64. `after:`/`before:` are honoured, and results paginate.
+- **Gmail fixtures:** eight messages dated yesterday: plain, multipart, HTML-only, empty, attachment-only, prompt injection, promotion, and malformed base64. `after:`/`before:` and `labelIds` are honoured, and results paginate with `resultSizeEstimate`.
 - **Sheets:** stored in memory.
 - **Twilio:** the destination's last digit selects the outcome.
 
-| Last digit | Outcome |
-| --- | --- |
-| 2 | busy |
-| 3 | no answer |
-| 4 | failed |
-| 5 | answered, no speech |
-| anything else | answered, speech "Yes, I can attend." |
+| Last digit | Final `state` | `answered` / `speechCaptured` |
+| --- | --- | --- |
+| 2 | `busy` | false / false |
+| 3 | `no-answer` | false / false |
+| 4 | `failed` | false / false |
+| 5 | `completed` | true / false |
+| anything else | `completed` | true / true, transcript "Yes, I can attend." |
 
 ## Tests
 
 Run with `pytest services/capability_broker/tests packages/secret_store/tests`. They need the PostgreSQL test server described in the root `conftest.py`. Coverage:
 
-- negative authorization for every agent route;
+- every contract operation is served, and Person 5's SDK clients work against the broker;
+- negative authorization for every capability operation, and `RUN_CANCELLED` after a cancel;
+- only the approved script, disclosure, spreadsheet and knowledge base are accepted;
+- handshake, event batches, and LLM forwarding including stream translation;
 - token revocation;
 - OAuth state replay, expiry, and binding, plus PKCE;
 - incremental and partial grants, and seven-day expiry handling;

@@ -58,15 +58,15 @@ Documents are returned as `{id, knowledgeBaseId, name, mime, bytes, sha256, stat
 
 ### Query
 
-Request (PLAN.md section 9.2): `{"query": "...", "topK": 8, "maxContextTokens": 5000, "filters": {"documentIds": []}}`. Passages are ranked by cosine similarity and returned in order until adding the next one would exceed `maxContextTokens`.
+Request (PLAN.md section 9.2): `{"query": "...", "topK": 8, "maxContextTokens": 5000, "filters": {"documentIds": []}}`. Passages are ranked by cosine similarity and returned in order until adding the next one would exceed `maxContextTokens`. Each passage has the `Passage` shape of `packages/contracts/broker-sdk.openapi.yaml`, plus a human-readable `location`.
 
 ```json
 {
   "knowledgeBaseId": "…",
   "passages": [
-    {"citationId": "<chunk uuid>", "documentId": "…", "documentName": "policy.md",
-     "location": "Cancellation (line 1)", "locator": {"section": "Cancellation", "line": 1},
-     "text": "…", "score": 0.83}
+    {"citationId": "<chunk uuid>", "text": "…", "score": 0.83,
+     "document": {"id": "…", "name": "policy.md"},
+     "locator": {"section": "Cancellation", "line": 1}, "location": "Cancellation (line 1)"}
   ],
   "context": "UNTRUSTED EVIDENCE. …\n<evidence>\n<passage id=\"…\" document=\"policy.md\" location=\"…\">\n…\n</passage>\n</evidence>"
 }

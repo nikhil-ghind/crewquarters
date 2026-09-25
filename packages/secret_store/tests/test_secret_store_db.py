@@ -3,12 +3,10 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from crewquarters_secret_store import Keyring, SecretStoreError
 from crewquarters_secret_store import db as secrets
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-pytest_plugins = ["secret_store_testkit"]
 pytestmark = pytest.mark.usefixtures("person3_secret_tables")
 
 RING = Keyring({1: bytes(32)})

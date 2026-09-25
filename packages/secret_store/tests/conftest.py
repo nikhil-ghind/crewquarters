@@ -1,12 +1,11 @@
-"""Test fixtures for Person 3 tables. Import into a test module; not a conftest, because
-every ``conftest.py`` shares one module name and would shadow the root conftest."""
+"""Fixtures for the secret_store tests."""
 
 from __future__ import annotations
 
 import pytest
+from crewquarters_secret_store.db import EncryptedSecret, ProviderProfile
 from sqlalchemy import create_engine
 
-from crewquarters_secret_store.db import EncryptedSecret, ProviderProfile
 from crewquarters_shared.db.base import Base
 
 

@@ -8,19 +8,20 @@ A call is allowed only when all of these hold:
 3. the capability is in the token AND in the run's current approved permissions
    (the intersection, so a narrowed approval takes effect immediately);
 4. the operation's resource is the one the owner configured (spreadsheet, knowledge base);
+   capability operations also stop once cancellation is requested;
 5. the provider connection is available (checked by the provider adapters).
 """
 
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import jwt
 from fastapi import Request
 
-from crewquarters_broker.errors import permission_denied, unauthenticated
+from crewquarters_broker.errors import capability_denied, permission_denied, unauthenticated
 from crewquarters_broker.internal import InternalClient
 from crewquarters_shared import capability
 from crewquarters_shared.errors import PlatformError
@@ -32,6 +33,8 @@ class Grant:
     claims: capability.CapabilityClaims
     run: dict[str, Any]
     capabilities: frozenset[str]
+    # Forwarded to the model gateway, which re-verifies it. Never logged.
+    token: str = field(repr=False, default="")
 
     @property
     def run_id(self) -> uuid.UUID:
@@ -46,22 +49,24 @@ class Grant:
         config: dict[str, Any] = self.run.get("config") or {}
         return config
 
-    def require(self, cap: str) -> None:
+    def require(self, cap: str, *, baseline: bool = False) -> None:
+        """The capability is granted and, for capability operations, the run is not
+        cancelling. Baseline operations (events, actions) keep working after a cancel."""
         if cap not in self.capabilities:
-            raise permission_denied(f"This run is not allowed to use {cap}.", capability=cap)
+            raise capability_denied(cap)
+        if not baseline and self.run.get("cancelRequested"):
+            raise PlatformError("RUN_CANCELLED", "The run is being cancelled.", 409)
 
-    def require_not_cancelled(self) -> None:
-        """Side effects (calls, sheet writes) stop as soon as cancellation is requested."""
-        if self.run.get("cancelRequested"):
-            raise PlatformError("CANCELLED", "The run is being cancelled.", 409)
-
-    def configured(self, key: str) -> str:
-        """A resource ID the owner chose in the installation config."""
+    def configured(self, key: str, requested: str | None = None) -> str:
+        """A resource ID the owner chose in the installation config. When the agent names
+        one too, it must be that same resource."""
         value = self.config.get(key)
         if not isinstance(value, str) or not value:
             raise PlatformError(
                 "NEEDS_CONFIGURATION", f"The installation config has no {key}.", 409, {"key": key}
             )
+        if requested is not None and requested != value:
+            raise permission_denied(f"Only the configured {key} may be used.", key=key)
         return value
 
 
@@ -91,6 +96,7 @@ async def authorize(token: str, signing_key: str, control: InternalClient) -> Gr
         claims=claims,
         run=run,
         capabilities=frozenset(claims.capabilities) & frozenset(approved),
+        token=token,
     )
 
 

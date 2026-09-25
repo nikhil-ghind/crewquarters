@@ -292,7 +292,7 @@ def format_context(passages: list[dict[str, Any]]) -> str:
     """Retrieved text as delimited, labelled evidence (PLAN.md section 9.3). Passage text
     is escaped, so a document cannot close its own tag or forge another passage."""
     blocks = [
-        f"<passage id={quoteattr(p['citationId'])} document={quoteattr(p['documentName'])} "
+        f"<passage id={quoteattr(p['citationId'])} document={quoteattr(p['document']['name'])} "
         f"location={quoteattr(p['location'])}>\n{escape(p['text'])}\n</passage>"
         for p in passages
     ]
@@ -333,12 +333,11 @@ async def query(
         passages.append(
             {
                 "citationId": str(row.id),
-                "documentId": str(row.document_id),
-                "documentName": document_name,
-                "location": describe(row.locator),
-                "locator": row.locator,
                 "text": row.text,
                 "score": round(1.0 - float(dist), 6),
+                "document": {"id": str(row.document_id), "name": document_name},
+                "locator": row.locator,
+                "location": describe(row.locator),
             }
         )
     return {

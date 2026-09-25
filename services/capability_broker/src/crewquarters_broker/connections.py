@@ -10,13 +10,13 @@ from __future__ import annotations
 import uuid
 from typing import Any, Literal
 
+from crewquarters_secret_store import db as secret_db
+from crewquarters_secret_store.db import ProviderProfile
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import Field
 from sqlalchemy import select
 
 from crewquarters_broker.deps import ApiModel, BrokerState, broker_state, internal_auth
-from crewquarters_secret_store import db as secret_db
-from crewquarters_secret_store.db import ProviderProfile
 from crewquarters_shared import audit
 from crewquarters_shared.errors import not_found
 

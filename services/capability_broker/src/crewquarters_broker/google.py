@@ -27,15 +27,14 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 import httpx
+from crewquarters_secret_store import Keyring
+from crewquarters_secret_store import db as secret_db
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from crewquarters_broker import mail
 from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.errors import needs_connection, permission_denied, provider_error
 from crewquarters_broker.models import OAuthConnection
-from crewquarters_secret_store import Keyring
-from crewquarters_secret_store import db as secret_db
 from crewquarters_shared import audit
 from crewquarters_shared.errors import PlatformError, invalid, not_found
 from crewquarters_shared.timeutil import utcnow
@@ -242,28 +241,34 @@ class GoogleConnector:
     # --- Gmail and Sheets ---------------------------------------------------------
 
     async def gmail_list(
-        self, query: str, page_token: str | None, max_results: int
+        self, query: str, page_token: str | None, max_results: int, label_ids: list[str]
     ) -> dict[str, Any]:
         params: dict[str, Any] = {"q": query, "maxResults": max_results}
         if page_token:
             params["pageToken"] = page_token
+        if label_ids:
+            params["labelIds"] = label_ids
         data = await self._call("gmail.readonly", "GET", f"{GMAIL_URL}/messages", params=params)
-        return {
+        body: dict[str, Any] = {
             "messages": [
                 {"id": m.get("id"), "threadId": m.get("threadId")}
                 for m in data.get("messages") or []
             ],
-            "nextPageToken": data.get("nextPageToken"),
+            "resultSizeEstimate": int(data.get("resultSizeEstimate") or 0),
         }
+        if data.get("nextPageToken"):
+            body["nextPageToken"] = data["nextPageToken"]
+        return body
 
-    async def gmail_get(self, message_id: str, max_chars: int) -> dict[str, Any]:
-        data = await self._call(
+    async def gmail_get(self, message_id: str) -> dict[str, Any]:
+        """The Gmail ``format=full`` message, unmodified. It is untrusted content; the SDK
+        parses MIME and reduces HTML to text (broker-sdk.openapi.yaml, gmailGetMessage)."""
+        return await self._call(
             "gmail.readonly",
             "GET",
             f"{GMAIL_URL}/messages/{quote(message_id, safe='')}",
             params={"format": "full"},
         )
-        return mail.sanitize(data, max_chars)
 
     async def sheets_read(self, spreadsheet_id: str, cell_range: str) -> dict[str, Any]:
         data = await self._call("spreadsheets", "GET", self._values_url(spreadsheet_id, cell_range))

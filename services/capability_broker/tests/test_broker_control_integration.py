@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx
-
 from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.main import create_app
+
 from crewquarters_shared.runtime import RunSpec
-
-if TYPE_CHECKING:
-    from broker_testkit import Harness
-
-pytest_plugins = ["broker_testkit"]
 
 
 async def _wait_state(owner: httpx.AsyncClient, run_id: str, state: str) -> None:
@@ -31,7 +26,7 @@ async def test_agent_lifecycle_through_broker(
     platform: Any,
     catalog_synced: None,
     broker_settings: BrokerSettings,
-    harness: Harness,
+    harness: Any,
 ) -> None:
     specs: list[RunSpec] = []
     start = platform.runtime.start_run
@@ -68,19 +63,22 @@ async def test_agent_lifecycle_through_broker(
         broker.router.lifespan_context(broker),
         httpx.AsyncClient(transport=httpx.ASGITransport(app=broker), base_url="http://b") as b,
     ):
-        beat = await b.post("/agent/v1/heartbeat", headers=headers)
+        beat = await b.post("/internal/v1/sdk/heartbeat", headers=headers)
         assert beat.status_code == 200, beat.text
         assert beat.json()["cancelRequested"] is False
 
-        event = await b.post(
-            "/agent/v1/events",
-            headers=headers,
-            json={"type": "run.log", "payload": {"message": "via broker"}},
-        )
-        assert event.status_code in (200, 201, 204), event.text
+        log = {
+            "clientEventId": "e1",
+            "type": "run.log",
+            "occurredAt": "2026-09-25T10:00:00Z",
+            "payload": {"level": "info", "message": "via broker"},
+        }
+        event = await b.post("/internal/v1/sdk/events", headers=headers, json={"events": [log]})
+        assert event.status_code == 200, event.text
+        assert event.json()["accepted"] == 1 and event.json()["lastSequence"] > 0
 
         asked = await b.post(
-            "/agent/v1/input-requests",
+            "/internal/v1/sdk/input-requests",
             headers=headers,
             json={
                 "key": "confirm",
@@ -91,30 +89,32 @@ async def test_agent_lifecycle_through_broker(
             },
         )
         assert asked.status_code in (200, 201), asked.text
-        polled = await b.get(f"/agent/v1/input-requests/{asked.json()['id']}", headers=headers)
+        polled = await b.get(
+            f"/internal/v1/sdk/input-requests/{asked.json()['id']}", headers=headers
+        )
         assert polled.status_code == 200 and polled.json()["state"] == "pending"
 
-        claim = await b.post("/agent/v1/actions/call-row-1/claim", headers=headers)
+        claim = await b.post("/internal/v1/sdk/actions/call-row-1/claim", headers=headers)
         assert claim.json()["status"] == "claimed", claim.text
         done = await b.post(
-            "/agent/v1/actions/call-row-1/complete",
+            "/internal/v1/sdk/actions/call-row-1/complete",
             headers=headers,
             json={"result": {"sid": "CA1"}},
         )
         assert done.status_code == 200, done.text
-        again = await b.post("/agent/v1/actions/call-row-1/claim", headers=headers)
+        again = await b.post("/internal/v1/sdk/actions/call-row-1/claim", headers=headers)
         assert again.json() == {
             "key": "call-row-1",
             "status": "completed",
             "result": {"sid": "CA1"},
         }
 
-        denied = await b.get("/agent/v1/google/gmail/messages", headers=headers)
+        denied = await b.get("/internal/v1/sdk/google/gmail/messages", headers=headers)
         assert denied.status_code == 403
 
         # Cancellation propagates, and a terminal run revokes the token.
         cancel = await owner.post(f"/api/v1/runs/{run_id}/cancel")
         assert cancel.status_code in (200, 202), cancel.text
         await _wait_state(owner, run_id, "CANCELLED")
-        after = await b.post("/agent/v1/heartbeat", headers=headers)
+        after = await b.post("/internal/v1/sdk/heartbeat", headers=headers)
         assert after.status_code == 409 and after.json()["error"]["code"] == "RUN_NOT_ACTIVE"

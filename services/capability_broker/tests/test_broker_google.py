@@ -7,28 +7,25 @@ import hashlib
 import logging
 import time
 import uuid
-from typing import TYPE_CHECKING
+from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from crewquarters_broker import google
 from crewquarters_broker.models import OAuthConnection
 from crewquarters_secret_store.db import EncryptedSecret
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from crewquarters_shared.db.models import AuditEvent
-
-if TYPE_CHECKING:
-    from broker_testkit import Harness
-
-pytest_plugins = ["broker_testkit"]
 
 START = "/internal/v1/connections/google/start"
 CALLBACK = "/api/v1/connections/google/callback"
+SDK = "/internal/v1/sdk"
+GMAIL = f"{SDK}/google/gmail/messages"
 
 
-async def _start(h: Harness, user_id: uuid.UUID, caps: list[str]) -> tuple[str, str, httpx.URL]:
+async def _start(h: Any, user_id: uuid.UUID, caps: list[str]) -> tuple[str, str, httpx.URL]:
     resp = await h.client.post(
         START, json={"userId": str(user_id), "capabilities": caps}, headers=h.service_headers
     )
@@ -37,7 +34,7 @@ async def _start(h: Harness, user_id: uuid.UUID, caps: list[str]) -> tuple[str, 
     return url.params["state"], resp.json()["browserBinding"], url
 
 
-async def _callback(h: Harness, binding: str | None, **params: str) -> str:
+async def _callback(h: Any, binding: str | None, **params: str) -> str:
     h.client.cookies.clear()
     if binding:
         h.client.cookies.set("cq_oauth_binding", binding)
@@ -47,7 +44,7 @@ async def _callback(h: Harness, binding: str | None, **params: str) -> str:
     return resp.headers["location"]
 
 
-async def test_start_builds_exact_consent_url(harness: Harness, user_id: uuid.UUID) -> None:
+async def test_start_builds_exact_consent_url(harness: Any, user_id: uuid.UUID) -> None:
     state, _, url = await _start(harness, user_id, ["spreadsheets", "gmail.readonly"])
     params = url.params
     assert str(url).startswith(google.AUTH_URL + "?")
@@ -58,7 +55,7 @@ async def test_start_builds_exact_consent_url(harness: Harness, user_id: uuid.UU
 
 
 async def test_start_requires_service_token_and_valid_scopes(
-    harness: Harness, user_id: uuid.UUID
+    harness: Any, user_id: uuid.UUID
 ) -> None:
     body = {"userId": str(user_id), "capabilities": ["gmail.readonly"]}
     assert (await harness.client.post(START, json=body)).status_code == 401
@@ -68,7 +65,7 @@ async def test_start_requires_service_token_and_valid_scopes(
 
 
 async def test_callback_stores_encrypted_refresh_token(
-    harness: Harness, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+    harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
     state, binding, url = await _start(harness, user_id, ["gmail.readonly", "spreadsheets"])
     location = await _callback(harness, binding, state=state, code="fake-code")
@@ -97,14 +94,14 @@ async def test_callback_stores_encrypted_refresh_token(
     assert "fake-refresh" not in resp.text and "fake-access" not in resp.text
 
 
-async def test_state_is_single_use(harness: Harness, user_id: uuid.UUID) -> None:
+async def test_state_is_single_use(harness: Any, user_id: uuid.UUID) -> None:
     state, binding, _ = await _start(harness, user_id, ["gmail.readonly"])
     assert (await _callback(harness, binding, state=state, code="fake-code")).endswith("connected")
     replay = await _callback(harness, binding, state=state, code="fake-code")
     assert replay.endswith("result=error&code=OAUTH_STATE_INVALID")
 
 
-async def test_unknown_or_expired_state(harness: Harness, user_id: uuid.UUID) -> None:
+async def test_unknown_or_expired_state(harness: Any, user_id: uuid.UUID) -> None:
     location = await _callback(harness, "x", state="forged", code="fake-code")
     assert location.endswith("code=OAUTH_STATE_INVALID")
     state, binding, _ = await _start(harness, user_id, ["gmail.readonly"])
@@ -119,7 +116,7 @@ async def test_unknown_or_expired_state(harness: Harness, user_id: uuid.UUID) ->
     )
 
 
-async def test_browser_binding_required(harness: Harness, user_id: uuid.UUID) -> None:
+async def test_browser_binding_required(harness: Any, user_id: uuid.UUID) -> None:
     """Login CSRF: a victim's browser without the binding cookie cannot finish the flow."""
     state, _, _ = await _start(harness, user_id, ["gmail.readonly"])
     assert (await _callback(harness, None, state=state, code="fake-code")).endswith(
@@ -132,7 +129,7 @@ async def test_browser_binding_required(harness: Harness, user_id: uuid.UUID) ->
     assert harness.google.token_requests == []
 
 
-async def test_denied_consent_and_bad_code(harness: Harness, user_id: uuid.UUID) -> None:
+async def test_denied_consent_and_bad_code(harness: Any, user_id: uuid.UUID) -> None:
     state, binding, _ = await _start(harness, user_id, ["gmail.readonly"])
     assert (await _callback(harness, binding, state=state, error="access_denied")).endswith(
         "code=OAUTH_DENIED"
@@ -144,12 +141,14 @@ async def test_denied_consent_and_bad_code(harness: Harness, user_id: uuid.UUID)
 
 
 async def test_partial_grant_and_reconnect_replaces(
-    harness: Harness, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+    harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
     state, binding, _ = await _start(harness, user_id, ["gmail.readonly", "spreadsheets"])
     await _callback(harness, binding, state=state, code="fake-code:gmail.readonly")
     headers = harness.agent(["google.spreadsheets"])
-    resp = await harness.client.get("/agent/v1/google/sheets/values?range=A1", headers=headers)
+    resp = await harness.client.post(
+        f"{SDK}/google/sheets/values:get", headers=headers, json=_range(harness, "A1")
+    )
     assert resp.status_code == 409 and resp.json()["error"]["code"] == "NEEDS_CONNECTION"
 
     await harness.connect_google(user_id)  # incremental consent grants both
@@ -160,14 +159,14 @@ async def test_partial_grant_and_reconnect_replaces(
 
 
 async def test_expired_refresh_needs_reconnect(
-    harness: Harness, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+    harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
     """Google test mode expires refresh tokens after seven days."""
     await harness.connect_google(user_id)
     harness.google.revoked.update(harness.google.refresh_grants)
     harness.app.state.broker.google._access.clear()
     headers = harness.agent(["google.gmail.readonly"])
-    resp = await harness.client.get("/agent/v1/google/gmail/messages", headers=headers)
+    resp = await harness.client.get(GMAIL, headers=headers)
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "NEEDS_CONNECTION"
     listing = await harness.client.get("/internal/v1/connections", headers=harness.service_headers)
@@ -177,7 +176,7 @@ async def test_expired_refresh_needs_reconnect(
         assert "connection.google.expired" in (await db.scalars(select(AuditEvent.action))).all()
 
 
-async def test_access_token_refresh_and_401_retry(harness: Harness, user_id: uuid.UUID) -> None:
+async def test_access_token_refresh_and_401_retry(harness: Any, user_id: uuid.UUID) -> None:
     await harness.connect_google(user_id)
     connector = harness.app.state.broker.google
     [conn_id] = connector._access
@@ -185,13 +184,13 @@ async def test_access_token_refresh_and_401_retry(harness: Harness, user_id: uui
     # Google rejects the cached token with 401; the broker refreshes once and retries.
     connector._access[conn_id] = ("stale", time.monotonic() + 3600)
     headers = harness.agent(["google.gmail.readonly"])
-    resp = await harness.client.get("/agent/v1/google/gmail/messages", headers=headers)
+    resp = await harness.client.get(GMAIL, headers=headers)
     assert resp.status_code == 200, resp.text
     assert [r["grant_type"] for r in harness.google.token_requests] == ["refresh_token"]
 
 
 async def test_test_and_disconnect_revokes(
-    harness: Harness, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+    harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
     await harness.connect_google(user_id)
     tested = await harness.client.post(
@@ -210,63 +209,82 @@ async def test_test_and_disconnect_revokes(
         assert (await db.scalars(select(OAuthConnection))).all() == []
         assert (await db.scalars(select(EncryptedSecret))).all() == []
     headers = harness.agent(["google.gmail.readonly"])
-    resp = await harness.client.get("/agent/v1/google/gmail/messages", headers=headers)
+    resp = await harness.client.get(GMAIL, headers=headers)
     assert resp.json()["error"]["code"] == "NEEDS_CONNECTION"
 
 
-async def test_gmail_list_paginates_and_get_sanitizes(harness: Harness, user_id: uuid.UUID) -> None:
+async def test_gmail_list_paginates_and_get_passes_through(
+    harness: Any, user_id: uuid.UUID
+) -> None:
     await harness.connect_google(user_id)
     headers = harness.agent(["google.gmail.readonly"])
     ids: list[str] = []
     page: str | None = None
     while True:
         params = {"maxResults": "3", **({"pageToken": page} if page else {})}
-        resp = await harness.client.get(
-            "/agent/v1/google/gmail/messages", params=params, headers=headers
-        )
+        resp = await harness.client.get(GMAIL, params=params, headers=headers)
         assert resp.status_code == 200, resp.text
+        assert resp.json()["resultSizeEstimate"] == 8
         ids += [m["id"] for m in resp.json()["messages"]]
-        page = resp.json()["nextPageToken"]
+        page = resp.json().get("nextPageToken")
         if not page:
             break
     assert len(ids) == len(set(ids)) == 8
 
-    resp = await harness.client.get("/agent/v1/google/gmail/messages/m-html", headers=headers)
-    message = resp.json()
-    assert message["body"] == "Security alert" and message["subject"] == "Security alert"
-    assert message["link"].endswith("#all/t-m-html")
-    missing = await harness.client.get("/agent/v1/google/gmail/messages/nope", headers=headers)
+    promos = await harness.client.get(
+        GMAIL, params={"labelIds": ["INBOX", "CATEGORY_PROMOTIONS"]}, headers=headers
+    )
+    assert [m["id"] for m in promos.json()["messages"]] == ["m-promo"]
+
+    resp = await harness.client.get(f"{GMAIL}/m-html", headers=headers)
+    assert resp.json() == harness.google.messages["m-html"]  # format=full, unmodified
+    missing = await harness.client.get(f"{GMAIL}/nope", headers=headers)
     assert missing.status_code == 404
-    bad = await harness.client.get("/agent/v1/google/gmail/messages/..%2Fx", headers=headers)
+    bad = await harness.client.get(f"{GMAIL}/..%2Fx", headers=headers)
     assert bad.status_code in (404, 422)
 
 
-async def test_sheets_use_configured_spreadsheet_only(harness: Harness, user_id: uuid.UUID) -> None:
+def _range(h: Any, cells: str, values: list[list[Any]] | None = None) -> dict[str, Any]:
+    body: dict[str, Any] = {"spreadsheetId": h.SPREADSHEET, "range": cells}
+    if values is not None:
+        body["values"] = values
+    return body
+
+
+async def test_sheets_use_configured_spreadsheet_only(harness: Any, user_id: uuid.UUID) -> None:
     await harness.connect_google(user_id)
     headers = harness.agent(["google.spreadsheets"])
+    formula = [['=IMPORTXML("http://x")', 1, True, None]]
     append = await harness.client.post(
-        "/agent/v1/google/sheets/values:append",
+        f"{SDK}/google/sheets/values:append",
         headers=headers,
-        json={"range": "Results!A:H", "values": [['=IMPORTXML("http://x")', 1, True, None]]},
+        json=_range(harness, "Results!A:H", formula),
     )
     assert append.status_code == 200, append.text
     assert append.json()["updatedRows"] == 1
     rows = harness.google.sheets[harness.SPREADSHEET]["Results"]
-    assert rows == [['=IMPORTXML("http://x")', 1, True, None]]
-    update = await harness.client.put(
-        "/agent/v1/google/sheets/values",
+    assert rows == formula
+    update = await harness.client.post(
+        f"{SDK}/google/sheets/values:update",
         headers=headers,
-        json={"range": "Results!A1", "values": [["done"]]},
+        json=_range(harness, "Results!A1", [["done"]]),
     )
     assert update.status_code == 200 and rows[0] == ["done"]
-    read = await harness.client.get(
-        "/agent/v1/google/sheets/values", params={"range": "Results!A1:D"}, headers=headers
+    read = await harness.client.post(
+        f"{SDK}/google/sheets/values:get", headers=headers, json=_range(harness, "Results!A1:D")
     )
     assert read.json()["values"] == [["done"]]
+
+    other = await harness.client.post(
+        f"{SDK}/google/sheets/values:append",
+        headers=headers,
+        json={"spreadsheetId": "someone-elses-sheet", "range": "A:A", "values": [["x"]]},
+    )
+    assert other.status_code == 403 and other.json()["error"]["code"] == "PERMISSION_DENIED"
     assert set(harness.google.sheets) == {harness.SPREADSHEET}
 
 
-async def test_sheets_input_is_raw(harness: Harness, user_id: uuid.UUID) -> None:
+async def test_sheets_input_is_raw(harness: Any, user_id: uuid.UUID) -> None:
     await harness.connect_google(user_id)
     seen: list[httpx.Request] = []
     handle = harness.google.handle
@@ -275,43 +293,33 @@ async def test_sheets_input_is_raw(harness: Harness, user_id: uuid.UUID) -> None
         seen.append(request)
         return handle(request)
 
-    harness.google.handle = spy  # type: ignore[method-assign]
+    harness.google.handle = spy
     headers = harness.agent(["google.spreadsheets"])
     await harness.client.post(
-        "/agent/v1/google/sheets/values:append",
+        f"{SDK}/google/sheets/values:append",
         headers=headers,
-        json={"range": "Results!A:A", "values": [["=1+1"]]},
+        json=_range(harness, "Results!A:A", [["=1+1"]]),
     )
     assert seen[-1].url.params["valueInputOption"] == "RAW"
 
 
-async def test_sheet_writes_stop_when_cancelled(harness: Harness, user_id: uuid.UUID) -> None:
-    await harness.connect_google(user_id)
-    headers = harness.agent(["google.spreadsheets"])
-    harness.run["cancelRequested"] = True
-    resp = await harness.client.post(
-        "/agent/v1/google/sheets/values:append",
-        headers=headers,
-        json={"range": "A:A", "values": [["x"]]},
-    )
-    assert resp.status_code == 409 and resp.json()["error"]["code"] == "CANCELLED"
-
-
-async def test_sheets_need_configured_spreadsheet(harness: Harness, user_id: uuid.UUID) -> None:
+async def test_sheets_need_configured_spreadsheet(harness: Any, user_id: uuid.UUID) -> None:
     await harness.connect_google(user_id)
     headers = harness.agent(["google.spreadsheets"], config={})
-    resp = await harness.client.get("/agent/v1/google/sheets/values?range=A1", headers=headers)
+    resp = await harness.client.post(
+        f"{SDK}/google/sheets/values:get", headers=headers, json=_range(harness, "A1")
+    )
     assert resp.status_code == 409 and resp.json()["error"]["code"] == "NEEDS_CONFIGURATION"
 
 
 async def test_no_secret_reaches_the_logs(
-    harness: Harness, user_id: uuid.UUID, caplog: pytest.LogCaptureFixture
+    harness: Any, user_id: uuid.UUID, caplog: pytest.LogCaptureFixture
 ) -> None:
     with caplog.at_level(logging.DEBUG):
         await harness.connect_google(user_id)
         harness.app.state.broker.google._access.clear()  # force a refresh
         headers = harness.agent(["google.gmail.readonly"])
-        await harness.client.get("/agent/v1/google/gmail/messages/m-plain", headers=headers)
+        await harness.client.get(f"{GMAIL}/m-plain", headers=headers)
         await harness.client.delete(
             "/internal/v1/connections/google",
             params={"userId": str(user_id)},

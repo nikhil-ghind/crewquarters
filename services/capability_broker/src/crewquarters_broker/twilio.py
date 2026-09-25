@@ -1,12 +1,13 @@
 """Twilio outbound calls with a fixed script (PLAN.md section 12.1).
 
-* The broker, not the agent, builds the TwiML. The first sentence always discloses an
-  automated demo call; the owner-approved script and a bounded speech gather follow.
+* The broker, not the agent, builds the TwiML: the owner-approved disclosure first, then
+  the owner-approved script (the agent may only fill in ``{name}``) inside a bounded
+  speech gather.
 * Every callback must carry a valid ``X-Twilio-Signature`` computed over the original
   public URL (``CQ_PUBLIC_BASE_URL`` + path + query), and its CallSid must match.
 * A call is keyed by (run, idempotency key). A retry returns the same call and never
-  redials. If Twilio's answer to the create request is lost, the call is ``IN_DOUBT``
-  and is never retried automatically.
+  redials. If Twilio's answer to the create request is lost, the call is ``IN_DOUBT``:
+  the agent gets ``OUTCOME_UNKNOWN`` and the call is never retried automatically.
 * Full phone numbers are used once to place the call and are never stored or logged.
 """
 
@@ -24,16 +25,16 @@ from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
 import httpx
+from crewquarters_secret_store import Keyring
+from crewquarters_secret_store import db as secret_db
+from crewquarters_secret_store.db import ProviderProfile
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crewquarters_broker.config import BrokerSettings
-from crewquarters_broker.errors import needs_connection, permission_denied, provider_error
+from crewquarters_broker.errors import needs_connection, permission_denied
 from crewquarters_broker.models import TelephonyCall
-from crewquarters_secret_store import Keyring
-from crewquarters_secret_store import db as secret_db
-from crewquarters_secret_store.db import ProviderProfile
 from crewquarters_shared import audit
 from crewquarters_shared.errors import PlatformError, invalid, not_found
 from crewquarters_shared.redaction import mask_phone
@@ -43,12 +44,13 @@ log = logging.getLogger("crewquarters.broker.twilio")
 
 API_URL = "https://api.twilio.com/2010-04-01"
 CALLBACK_PATH = "/api/v1/callbacks/twilio"
-DISCLOSURE = "Hello. This is an automated demo call from Crewquarters."
+DISCLOSURE = "Hello. This is an automated demo call from Crewquarters."  # when none is configured
 E164 = re.compile(r"^\+[1-9]\d{7,14}$")
 ACCOUNT_SID = re.compile(r"^AC[0-9a-fA-F]{32}$")
 TERMINAL = frozenset({"completed", "busy", "no-answer", "failed", "canceled"})
 _RANK = {"CREATING": 0, "IN_DOUBT": 0, "queued": 1, "initiated": 2, "ringing": 3, "in-progress": 4}
-_OUTCOMES = {"busy": "busy", "no-answer": "no_answer", "failed": "failed", "canceled": "canceled"}
+# Internal states reported in Twilio's vocabulary (broker-sdk.openapi.yaml, Call.state).
+_REPORTED = {"CREATING": "queued", "IN_DOUBT": "failed"}
 MAX_TRANSCRIPT = 500
 
 
@@ -59,10 +61,10 @@ def signature(auth_token: str, url: str, params: Mapping[str, str]) -> str:
     return base64.b64encode(digest).decode()
 
 
-def voice_twiml(script: str, gather_url: str, response_seconds: int) -> str:
+def voice_twiml(disclosure: str, script: str, gather_url: str, response_seconds: int) -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8"?><Response>'
-        f"<Say>{escape(DISCLOSURE)}</Say>"
+        f"<Say>{escape(disclosure)}</Say>"
         f'<Gather input="speech" method="POST" action={quoteattr(gather_url)} '
         f'timeout="{response_seconds}" speechTimeout="auto">'
         f"<Say>{escape(script)}</Say></Gather>"
@@ -76,25 +78,30 @@ GATHER_TWIML = (
 )
 
 
-def outcome(call: TelephonyCall) -> str:
-    if call.state == "IN_DOUBT":
-        return "in_doubt"
-    if call.state == "completed":
-        return "answered_speech" if call.transcript else "answered_no_speech"
-    return _OUTCOMES.get(call.state, "pending")
-
-
 def view(call: TelephonyCall) -> dict[str, Any]:
+    """The contract's ``Call``; the full number is never returned."""
     return {
         "id": str(call.id),
         "idempotencyKey": call.idempotency_key,
-        "to": f"***{call.destination_last4}",
-        "state": call.state,
-        "outcome": outcome(call),
+        "toMasked": f"***{call.destination_last4}",
+        "state": _REPORTED.get(call.state, call.state),
+        "answered": call.state in ("in-progress", "completed") or call.transcript is not None,
+        "speechCaptured": call.transcript is not None,
         "transcript": call.transcript,
+        "durationSeconds": call.duration_seconds,
+        "errorCode": call.error_code,
         "createdAt": call.created_at,
         "updatedAt": call.updated_at,
     }
+
+
+def outcome_unknown(call_id: uuid.UUID) -> PlatformError:
+    return PlatformError(
+        "OUTCOME_UNKNOWN",
+        "Twilio did not confirm the call. It will not be retried automatically.",
+        503,
+        {"callId": str(call_id)},
+    )
 
 
 class TelephonyService:
@@ -223,12 +230,13 @@ class TelephonyService:
         run_id: uuid.UUID,
         idempotency_key: str,
         to: str,
+        disclosure: str,
         script: str,
         response_seconds: int,
         max_calls: int,
     ) -> dict[str, Any]:
         if not E164.match(to):
-            raise invalid("INVALID_INPUT", "The destination must be an E.164 phone number.")
+            raise invalid("INVALID_REQUEST", "The destination must be an E.164 phone number.")
         if self.settings.provider_mode == "live" and to not in self.settings.twilio_allowed_numbers:
             raise permission_denied(
                 "Calls are limited to verified numbers in CQ_TWILIO_ALLOWED_NUMBERS.",
@@ -238,6 +246,8 @@ class TelephonyService:
         async with self.sessions() as db:
             existing = await self._by_key(db, run_id, idempotency_key)
             if existing is not None:
+                if existing.state == "IN_DOUBT":
+                    raise outcome_unknown(existing.id)
                 return view(existing)
             count = await db.scalar(
                 select(func.count())
@@ -254,6 +264,7 @@ class TelephonyService:
                 idempotency_key=idempotency_key,
                 destination_hash=self._destination_hash(to),
                 destination_last4=to[-4:],
+                disclosure=disclosure,
                 script=script,
                 response_seconds=response_seconds,
                 state="CREATING",
@@ -284,19 +295,14 @@ class TelephonyService:
                 auth=(creds["accountSid"], creds["authToken"]),
             )
         except httpx.HTTPError:
-            await self._set(call.id, state="IN_DOUBT")
-            raise PlatformError(
-                "PROVIDER_IN_DOUBT",
-                "Twilio did not confirm the call. It will not be retried automatically.",
-                503,
-                {"callId": str(call.id)},
-            ) from None
-        if resp.status_code >= 500:
-            await self._set(call.id, state="IN_DOUBT")
-            raise provider_error("Twilio", resp.status_code)
+            await self._set(call.id, state="IN_DOUBT", error_code="OUTCOME_UNKNOWN")
+            raise outcome_unknown(call.id) from None
+        if resp.status_code >= 500:  # Twilio may or may not have placed it
+            await self._set(call.id, state="IN_DOUBT", error_code="OUTCOME_UNKNOWN")
+            raise outcome_unknown(call.id)
         if resp.status_code >= 400:  # rejected: no call was placed
             log.warning("twilio rejected call %s with status %s", call.id, resp.status_code)
-            return await self._set(call.id, state="failed")
+            return await self._set(call.id, state="failed", error_code="PROVIDER_REJECTED")
         body = resp.json()
         sid, state = str(body["sid"]), str(body.get("status") or "queued")
         result = await self._set(call.id, provider_sid=sid, state=state)
@@ -334,7 +340,7 @@ class TelephonyService:
     async def voice(self, call_id: uuid.UUID, params: Mapping[str, str]) -> str:
         call = await self._callback_call(call_id, params)
         gather_url = f"{self.settings.public_base_url.rstrip('/')}{CALLBACK_PATH}/gather/{call.id}"
-        return voice_twiml(call.script, gather_url, call.response_seconds)
+        return voice_twiml(call.disclosure, call.script, gather_url, call.response_seconds)
 
     async def gather(self, call_id: uuid.UUID, params: Mapping[str, str]) -> str:
         await self._callback_call(call_id, params)
@@ -355,6 +361,11 @@ class TelephonyService:
             assert call is not None
             if _advances(call.state, new):
                 call.state = new
+                duration = params.get("CallDuration", "")
+                if duration.isdigit():
+                    call.duration_seconds = int(duration)
+                if new == "failed":
+                    call.error_code = params.get("ErrorCode") or "CALL_FAILED"
             await db.commit()
 
     # --- Internals ------------------------------------------------------------------------

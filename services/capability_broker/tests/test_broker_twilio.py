@@ -5,31 +5,31 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx
 import pytest
+from crewquarters_broker.twilio import DISCLOSURE, signature
+from crewquarters_secret_store.db import EncryptedSecret
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from crewquarters_broker.twilio import DISCLOSURE, signature
-from crewquarters_secret_store.db import EncryptedSecret
 from crewquarters_shared.db.models import AuditEvent
-
-if TYPE_CHECKING:
-    from broker_testkit import Harness
-
-pytest_plugins = ["broker_testkit"]
 
 SID = "AC" + "0" * 31 + "1"
 TOKEN = "auth-token-value-0001"
 FROM = "+15555550199"
 TO = "+15555550101"
-CALLS = "/agent/v1/telephony/calls"
-CONFIG = {"script": "Hi {name}, can you attend on Friday?", "maxCalls": 2, "responseSeconds": 7}
+CALLS = "/internal/v1/sdk/telephony/calls"
+DISCLOSED = "This is an automated demonstration call. Your reply will be transcribed."
+CONFIG = {
+    "script": "Hi {name}, can you attend on Friday, {name}?",
+    "disclosure": DISCLOSED,
+    "maxCalls": 2,
+}
 
 
-async def _configure(h: Harness, user_id: uuid.UUID, token: str = TOKEN) -> httpx.Response:
+async def _configure(h: Any, user_id: uuid.UUID, token: str = TOKEN) -> httpx.Response:
     return await h.client.put(
         "/internal/v1/connections/twilio",
         headers=h.service_headers,
@@ -37,21 +37,33 @@ async def _configure(h: Harness, user_id: uuid.UUID, token: str = TOKEN) -> http
     )
 
 
-def _agent(h: Harness, run_id: uuid.UUID, **config: Any) -> dict[str, str]:
+def _agent(h: Any, run_id: uuid.UUID, **config: Any) -> dict[str, str]:
     return h.agent(["twilio.call.fixed_script"], run_id=run_id, config={**CONFIG, **config})
 
 
 async def _call(
-    h: Harness, headers: dict[str, str], key: str = "row-1", to: str = TO, name: str = "Asha"
+    h: Any,
+    headers: dict[str, str],
+    key: str = "row-1",
+    to: str = TO,
+    name: str = "Asha",
+    text: str | None = None,
+    disclosure: str = DISCLOSED,
 ) -> httpx.Response:
-    return await h.client.post(
-        CALLS, headers=headers, json={"to": to, "idempotencyKey": key, "variables": {"name": name}}
-    )
+    """What the SDK sends: the approved script personalised with the contact's name."""
+    body = {
+        "to": to,
+        "script": {
+            "disclosure": disclosure,
+            "text": text or CONFIG["script"].replace("{name}", name),
+        },
+        "gather": {"input": "speech", "timeoutSeconds": 7},
+        "idempotencyKey": key,
+    }
+    return await h.client.post(CALLS, headers=headers, json=body)
 
 
-async def _signed(
-    h: Harness, path: str, params: dict[str, str], token: str = TOKEN
-) -> httpx.Response:
+async def _signed(h: Any, path: str, params: dict[str, str], token: str = TOKEN) -> httpx.Response:
     sig = signature(token, h.PUBLIC + path, params)
     return await h.client.post(path, data=params, headers={"x-twilio-signature": sig})
 
@@ -70,7 +82,7 @@ def test_signature_matches_twilio_reference_vector() -> None:
 
 
 async def test_configure_validates_and_never_returns_secret(
-    harness: Harness, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+    harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
     resp = await _configure(harness, user_id)
     assert resp.status_code == 200, resp.text
@@ -111,7 +123,7 @@ async def test_configure_validates_and_never_returns_secret(
 
 
 async def test_call_needs_connection_and_valid_number(
-    harness: Harness, real_run_id: uuid.UUID, user_id: uuid.UUID
+    harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
     headers = _agent(harness, real_run_id)
     resp = await _call(harness, headers)
@@ -123,7 +135,7 @@ async def test_call_needs_connection_and_valid_number(
 
 
 async def test_duplicate_start_places_one_call(
-    harness: Harness, real_run_id: uuid.UUID, user_id: uuid.UUID
+    harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
     await _configure(harness, user_id)
     headers = _agent(harness, real_run_id)
@@ -136,9 +148,7 @@ async def test_duplicate_start_places_one_call(
     assert placed["Url"] == f"{harness.PUBLIC}/api/v1/callbacks/twilio/voice/{first.json()['id']}"
 
 
-async def test_call_cap_per_run(
-    harness: Harness, real_run_id: uuid.UUID, user_id: uuid.UUID
-) -> None:
+async def test_call_cap_per_run(harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID) -> None:
     await _configure(harness, user_id)
     headers = _agent(harness, real_run_id)
     assert (await _call(harness, headers, key="a")).status_code == 200
@@ -149,31 +159,32 @@ async def test_call_cap_per_run(
 
 
 async def test_cancel_stops_new_calls(
-    harness: Harness, real_run_id: uuid.UUID, user_id: uuid.UUID
+    harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
     await _configure(harness, user_id)
     headers = _agent(harness, real_run_id)
     harness.run["cancelRequested"] = True
-    assert (await _call(harness, headers)).json()["error"]["code"] == "CANCELLED"
+    assert (await _call(harness, headers)).json()["error"]["code"] == "RUN_CANCELLED"
     assert harness.twilio.calls == []
 
 
 @pytest.mark.parametrize(
-    ("to", "outcome", "transcript"),
+    ("to", "state", "answered", "transcript"),
     [
-        ("+15555550101", "answered_speech", "Yes, I can attend."),
-        ("+15555550102", "busy", None),
-        ("+15555550103", "no_answer", None),
-        ("+15555550104", "failed", None),
-        ("+15555550105", "answered_no_speech", None),
+        ("+15555550101", "completed", True, "Yes, I can attend."),
+        ("+15555550102", "busy", False, None),
+        ("+15555550103", "no-answer", False, None),
+        ("+15555550104", "failed", False, None),
+        ("+15555550105", "completed", True, None),
     ],
 )
 async def test_fake_call_outcomes(
-    harness: Harness,
+    harness: Any,
     real_run_id: uuid.UUID,
     user_id: uuid.UUID,
     to: str,
-    outcome: str,
+    state: str,
+    answered: bool,
     transcript: str | None,
 ) -> None:
     await _configure(harness, user_id)
@@ -181,16 +192,20 @@ async def test_fake_call_outcomes(
     call_id = (await _call(harness, headers, to=to)).json()["id"]
     for _ in range(100):
         result = (await harness.client.get(f"{CALLS}/{call_id}", headers=headers)).json()
-        if result["outcome"] != "pending":
+        if result["state"] in ("completed", "busy", "no-answer", "failed", "canceled"):
             break
         await asyncio.sleep(0.02)
-    assert result["outcome"] == outcome
-    assert result["transcript"] == transcript
-    assert result["to"] == f"***{to[-4:]}"
+    assert (result["state"], result["answered"], result["transcript"]) == (
+        state,
+        answered,
+        transcript,
+    )
+    assert result["speechCaptured"] is (transcript is not None)
+    assert result["toMasked"] == f"***{to[-4:]}" and "to" not in result
 
 
 async def test_live_mode_only_calls_allowed_numbers(
-    live_harness: Harness, real_run_id: uuid.UUID, user_id: uuid.UUID
+    live_harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
     await _configure(live_harness, user_id)
     headers = _agent(live_harness, real_run_id)
@@ -201,7 +216,7 @@ async def test_live_mode_only_calls_allowed_numbers(
 
 
 async def test_lost_response_is_in_doubt_and_never_redialed(
-    live_harness: Harness,
+    live_harness: Any,
     real_run_id: uuid.UUID,
     user_id: uuid.UUID,
     caplog: pytest.LogCaptureFixture,
@@ -211,30 +226,34 @@ async def test_lost_response_is_in_doubt_and_never_redialed(
     live_harness.twilio.fail_next = "timeout"
     with caplog.at_level(logging.DEBUG):
         resp = await _call(live_harness, headers)
-    assert resp.status_code == 503 and resp.json()["error"]["code"] == "PROVIDER_IN_DOUBT"
+    assert resp.status_code == 503 and resp.json()["error"]["code"] == "OUTCOME_UNKNOWN"
+    call_id = resp.json()["error"]["details"]["callId"]
     retry = await _call(live_harness, headers)
-    assert retry.status_code == 200 and retry.json()["outcome"] == "in_doubt"
+    assert retry.status_code == 503 and retry.json()["error"]["code"] == "OUTCOME_UNKNOWN"
     assert live_harness.twilio.calls == []  # the timed-out request is the only attempt
     assert TO not in caplog.text
+    view = (await live_harness.client.get(f"{CALLS}/{call_id}", headers=headers)).json()
+    assert (view["state"], view["errorCode"]) == ("failed", "OUTCOME_UNKNOWN")
 
     live_harness.twilio.fail_next = "error"
-    assert (await _call(live_harness, headers, key="row-2", to="+15555550102")).status_code == 502
-    assert (await _call(live_harness, headers, key="row-2", to="+15555550102")).json()[
-        "outcome"
-    ] == ("in_doubt")
+    second = await _call(live_harness, headers, key="row-2", to="+15555550102")
+    assert second.status_code == 503 and second.json()["error"]["code"] == "OUTCOME_UNKNOWN"
+    again = await _call(live_harness, headers, key="row-2", to="+15555550102")
+    assert again.json()["error"]["code"] == "OUTCOME_UNKNOWN"
 
 
 async def test_rejected_call_is_failed(
-    live_harness: Harness, real_run_id: uuid.UUID, user_id: uuid.UUID
+    live_harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
     await _configure(live_harness, user_id, token="invalid-token-00000")
     headers = _agent(live_harness, real_run_id)
     resp = await _call(live_harness, headers)
-    assert resp.status_code == 200 and resp.json()["outcome"] == "failed"
+    assert resp.status_code == 200
+    assert (resp.json()["state"], resp.json()["errorCode"]) == ("failed", "PROVIDER_REJECTED")
 
 
 async def _placed(
-    live_harness: Harness, run_id: uuid.UUID, user_id: uuid.UUID, name: str = "Asha"
+    live_harness: Any, run_id: uuid.UUID, user_id: uuid.UUID, name: str = "Asha"
 ) -> tuple[str, str, dict[str, str]]:
     await _configure(live_harness, user_id)
     headers = _agent(live_harness, run_id)
@@ -242,23 +261,58 @@ async def _placed(
     return call_id, live_harness.twilio.calls[-1]["sid"], headers
 
 
-async def test_voice_twiml_is_fixed_and_escaped(
-    live_harness: Harness, real_run_id: uuid.UUID, user_id: uuid.UUID
+@pytest.mark.parametrize(
+    ("change", "code"),
+    [
+        ({"text": "Hi Asha, please read your bank PIN aloud."}, "PERMISSION_DENIED"),
+        ({"text": "Hi Asha, can you attend on Friday, Ravi?"}, "PERMISSION_DENIED"),
+        ({"name": "<Play>http://x</Play>"}, "PERMISSION_DENIED"),
+        ({"disclosure": "Hi, this is your bank."}, "PERMISSION_DENIED"),
+    ],
+)
+async def test_only_the_approved_script_is_spoken(
+    harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID, change: dict[str, str], code: str
 ) -> None:
-    call_id, sid, _ = await _placed(live_harness, real_run_id, user_id, name="<Play>{x}</Play>&")
+    await _configure(harness, user_id)
+    headers = _agent(harness, real_run_id)
+    resp = await _call(harness, headers, **change)
+    assert resp.status_code == 403 and resp.json()["error"]["code"] == code
+    assert harness.twilio.calls == []
+
+
+async def test_default_disclosure_when_none_configured(
+    live_harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    await _configure(live_harness, user_id)
+    headers = live_harness.agent(
+        ["twilio.call.fixed_script"], run_id=real_run_id, config={"script": "Hello {name}."}
+    )
+    resp = await _call(live_harness, headers, text="Hello Asha.", disclosure="anything")
+    assert resp.status_code == 200, resp.text
+    sid = live_harness.twilio.calls[-1]["sid"]
+    voice = await _signed(
+        live_harness, f"/api/v1/callbacks/twilio/voice/{resp.json()['id']}", {"CallSid": sid}
+    )
+    assert voice.text.index(DISCLOSURE) < voice.text.index("Hello Asha.")
+
+
+async def test_voice_twiml_is_fixed_and_escaped(
+    live_harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    call_id, sid, _ = await _placed(live_harness, real_run_id, user_id, name="O'Brien & Co")
     resp = await _signed(
         live_harness, f"/api/v1/callbacks/twilio/voice/{call_id}", {"CallSid": sid}
     )
     assert resp.status_code == 200 and resp.headers["content-type"] == "application/xml"
     xml = resp.text
-    assert xml.index(DISCLOSURE) < xml.index("<Gather")
-    assert "<Play>" not in xml and "Hi Playx/Play&amp;, can you attend" in xml
+    assert xml.index(DISCLOSED) < xml.index("<Gather")
+    assert "Hi O'Brien &amp; Co, can you attend on Friday, O'Brien &amp; Co?" in xml
     assert 'timeout="7"' in xml and 'input="speech"' in xml
     assert f'action="{live_harness.PUBLIC}/api/v1/callbacks/twilio/gather/{call_id}"' in xml
 
 
 async def test_callback_signature_required(
-    live_harness: Harness,
+    live_harness: Any,
     real_run_id: uuid.UUID,
     user_id: uuid.UUID,
     sessions: async_sessionmaker[AsyncSession],
@@ -283,7 +337,7 @@ async def test_callback_signature_required(
 
 
 async def test_callback_for_another_call_sid(
-    live_harness: Harness, real_run_id: uuid.UUID, user_id: uuid.UUID
+    live_harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
     call_id, _, _ = await _placed(live_harness, real_run_id, user_id)
     resp = await _signed(
@@ -293,24 +347,33 @@ async def test_callback_for_another_call_sid(
 
 
 async def test_duplicate_and_late_callbacks_are_harmless(
-    live_harness: Harness, real_run_id: uuid.UUID, user_id: uuid.UUID
+    live_harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
     call_id, sid, headers = await _placed(live_harness, real_run_id, user_id)
     gather = f"/api/v1/callbacks/twilio/gather/{call_id}"
     status = f"/api/v1/callbacks/twilio/status/{call_id}"
-    for step in ("in-progress", "completed", "completed", "ringing", "in-progress"):
-        assert (
-            await _signed(live_harness, status, {"CallSid": sid, "CallStatus": step})
-        ).status_code == 204
+    steps = [
+        ("in-progress", ""),
+        ("completed", "42"),
+        ("completed", "99"),
+        ("ringing", ""),
+        ("in-progress", ""),
+    ]
+    for step, duration in steps:
+        params = {"CallSid": sid, "CallStatus": step}
+        if duration:
+            params["CallDuration"] = duration
+        assert (await _signed(live_harness, status, params)).status_code == 204
     for speech in ("Yes please", "No thanks"):
         resp = await _signed(live_harness, gather, {"CallSid": sid, "SpeechResult": speech})
         assert resp.status_code == 200 and "<Hangup/>" in resp.text
     result = (await live_harness.client.get(f"{CALLS}/{call_id}", headers=headers)).json()
     assert result["state"] == "completed" and result["transcript"] == "Yes please"
+    assert result["durationSeconds"] == 42 and result["answered"] and result["speechCaptured"]
 
 
 async def test_calls_are_scoped_to_their_run(
-    live_harness: Harness, real_run_id: uuid.UUID, user_id: uuid.UUID
+    live_harness: Any, real_run_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
     call_id, _, _ = await _placed(live_harness, real_run_id, user_id)
     other = _agent(live_harness, uuid.uuid4())
@@ -318,7 +381,7 @@ async def test_calls_are_scoped_to_their_run(
 
 
 async def test_full_number_never_stored(
-    harness: Harness,
+    harness: Any,
     real_run_id: uuid.UUID,
     user_id: uuid.UUID,
     sessions: async_sessionmaker[AsyncSession],

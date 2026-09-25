@@ -67,11 +67,15 @@ class TelephonyCall(Base):
     provider_sid: Mapped[str | None] = mapped_column(Text, unique=True)
     destination_hash: Mapped[str] = mapped_column(Text, nullable=False)
     destination_last4: Mapped[str] = mapped_column(Text, nullable=False)
+    disclosure: Mapped[str] = mapped_column(Text, nullable=False)
     script: Mapped[str] = mapped_column(Text, nullable=False)
     response_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     # CREATING until Twilio accepts the call; IN_DOUBT if that request's outcome is unknown.
     state: Mapped[str] = mapped_column(Text, nullable=False, default="CREATING")
     transcript: Mapped[str | None] = mapped_column(Text)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    # OUTCOME_UNKNOWN, PROVIDER_REJECTED, or Twilio's ErrorCode for a failed call.
+    error_code: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

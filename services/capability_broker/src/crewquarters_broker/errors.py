@@ -1,7 +1,8 @@
 """Error responses in the platform shape ``{"error": {code, message, requestId, details}}``.
 
-Codes map to the SDK's typed exceptions: ``PERMISSION_DENIED``, ``NEEDS_CONNECTION``,
-``CANCELLED``, ``RATE_LIMITED``, ``INVALID_INPUT``.
+Codes follow ``packages/contracts/broker-sdk.openapi.yaml``, which the SDK maps to its typed
+exceptions: ``CAPABILITY_DENIED``/``PERMISSION_DENIED``, ``NEEDS_CONNECTION``,
+``RUN_CANCELLED``, ``RATE_LIMITED``, ``INVALID_REQUEST``, ``OUTCOME_UNKNOWN``.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ def install(app: FastAPI) -> None:
             {"path": "/" + "/".join(str(p) for p in e["loc"][1:]), "message": e["msg"]}
             for e in exc.errors()
         ][:20]
-        body = _body(request, "INVALID_INPUT", "The request is invalid.", {"errors": errors})
+        body = _body(request, "INVALID_REQUEST", "The request is invalid.", {"errors": errors})
         return JSONResponse(body, status_code=422)
 
     @app.exception_handler(StarletteHTTPException)
@@ -51,6 +52,15 @@ def install(app: FastAPI) -> None:
 
 def unauthenticated(message: str = "A valid capability token is required.") -> PlatformError:
     return PlatformError("UNAUTHENTICATED", message, 401)
+
+
+def capability_denied(capability: str) -> PlatformError:
+    return PlatformError(
+        "CAPABILITY_DENIED",
+        f"This run is not allowed to use {capability}.",
+        403,
+        {"capability": capability},
+    )
 
 
 def permission_denied(message: str, **details: Any) -> PlatformError:

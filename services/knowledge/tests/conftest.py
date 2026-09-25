@@ -1,28 +1,26 @@
-"""Knowledge test fixtures and generated documents. Registered with
-``pytest_plugins = ["knowledge_testkit"]``; not a conftest, because every ``conftest.py``
-shares one module name and would shadow the root conftest."""
+"""Fixtures and generated documents for the knowledge service tests."""
 
 from __future__ import annotations
 
 import io
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 import httpx
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from crewquarters_knowledge.config import KnowledgeSettings
 from crewquarters_knowledge.embeddings import HashingEmbedder
 from crewquarters_knowledge.main import create_app
 from crewquarters_knowledge.models import Document, DocumentChunk, KnowledgeBase
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from crewquarters_shared.config import Settings
 from crewquarters_shared.db.base import Base
 
 
-def make_pdf(pages: list[str]) -> bytes:
+def build_pdf(pages: list[str]) -> bytes:
     """A minimal PDF with one Helvetica text line per page (an empty string gives a page
     with no text layer, like a scan)."""
     objects: list[bytes] = []
@@ -54,7 +52,7 @@ def make_pdf(pages: list[str]) -> bytes:
     return out.getvalue()
 
 
-def make_docx(heading: str, paragraphs: list[str], table: list[list[str]] | None = None) -> bytes:
+def build_docx(heading: str, paragraphs: list[str], table: list[list[str]] | None = None) -> bytes:
     import docx
 
     document = docx.Document()
@@ -132,6 +130,16 @@ async def knowledge(
     async with h.app.router.lifespan_context(h.app):
         yield h
     await h.client.aclose()
+
+
+@pytest.fixture
+def make_pdf() -> Callable[[list[str]], bytes]:
+    return build_pdf
+
+
+@pytest.fixture
+def make_docx() -> Callable[..., bytes]:
+    return build_docx
 
 
 @pytest.fixture

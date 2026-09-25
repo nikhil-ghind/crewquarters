@@ -181,12 +181,14 @@ class FakeGoogle:
             q = request.url.params.get("q", "")
             after = re.search(r"after:(\d+)", q)
             before = re.search(r"before:(\d+)", q)
+            labels = set(request.url.params.get_list("labelIds"))
             ids = sorted(
                 (
                     m
                     for m in self.messages.values()
                     if (not after or int(m["internalDate"]) >= int(after.group(1)) * 1000)
                     and (not before or int(m["internalDate"]) < int(before.group(1)) * 1000)
+                    and labels <= set(m["labelIds"])
                 ),
                 key=lambda m: m["internalDate"],
                 reverse=True,
@@ -195,7 +197,8 @@ class FakeGoogle:
             size = int(request.url.params.get("maxResults") or 100)
             page = ids[start : start + size]
             body: dict[str, Any] = {
-                "messages": [{"id": m["id"], "threadId": m["threadId"]} for m in page]
+                "messages": [{"id": m["id"], "threadId": m["threadId"]} for m in page],
+                "resultSizeEstimate": len(ids),
             }
             if start + size < len(ids):
                 body["nextPageToken"] = str(start + size)

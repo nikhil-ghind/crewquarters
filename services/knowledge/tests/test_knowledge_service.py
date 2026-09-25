@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Any
-
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from collections.abc import Callable
+from typing import Any
 
 from crewquarters_knowledge.models import DocumentChunk
 from crewquarters_knowledge.service import EVIDENCE_PREAMBLE
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from crewquarters_shared.db.models import Job
-
-if TYPE_CHECKING:
-    from knowledge_testkit import KnowledgeHarness
-
-pytest_plugins = ["knowledge_testkit"]
 
 POLICY = b"""# Cancellation
 Customers may cancel their subscription at any time. Cancellation terms: refunds are
@@ -30,7 +26,7 @@ INJECTION = (
 )
 
 
-async def _ready(k: KnowledgeHarness, kb: str, name: str, content: bytes) -> dict[str, Any]:
+async def _ready(k: Any, kb: str, name: str, content: bytes) -> dict[str, Any]:
     resp = await k.upload(kb, name, content)
     assert resp.status_code == 202, resp.text
     await k.drain()
@@ -39,16 +35,19 @@ async def _ready(k: KnowledgeHarness, kb: str, name: str, content: bytes) -> dic
     return dict(doc)
 
 
-async def test_service_token_required(knowledge: KnowledgeHarness) -> None:
+async def test_service_token_required(knowledge: Any) -> None:
     resp = await knowledge.client.get(
         "/internal/v1/knowledge-bases", headers={"authorization": "Bearer nope"}
     )
     assert resp.status_code == 401
 
 
-async def test_upload_ingest_and_cite(knowledge: KnowledgeHarness, owner_id: uuid.UUID) -> None:
-    from knowledge_testkit import make_docx, make_pdf
-
+async def test_upload_ingest_and_cite(
+    knowledge: Any,
+    owner_id: uuid.UUID,
+    make_pdf: Callable[[list[str]], bytes],
+    make_docx: Callable[..., bytes],
+) -> None:
     kb = await knowledge.create_kb(owner_id)
     policy = await _ready(knowledge, kb, "policy.md", POLICY)
     assert "path" not in policy and policy["extracted"]["chunks"] == 1
@@ -58,7 +57,7 @@ async def test_upload_ingest_and_cite(knowledge: KnowledgeHarness, owner_id: uui
 
     result = await knowledge.query(kb, "What are the cancellation terms and refunds?", topK=2)
     top = result["passages"][0]  # type: ignore[index]
-    assert top["documentName"] == "policy.md" and top["documentId"] == policy["id"]
+    assert top["document"] == {"id": policy["id"], "name": "policy.md"}
     assert top["location"] == "Cancellation (line 1) to Shipping (line 5)"
     assert uuid.UUID(top["citationId"]) and 0 < top["score"] <= 1
     assert "documents_dir" not in str(result) and ".md" not in top["citationId"]
@@ -67,25 +66,21 @@ async def test_upload_ingest_and_cite(knowledge: KnowledgeHarness, owner_id: uui
     assert f'<passage id="{top["citationId"]}" document="policy.md"' in context
 
     pdf_hit = (await knowledge.query(kb, "support hours", topK=1))["passages"][0]  # type: ignore[index]
-    assert pdf_hit["documentName"] == "faq.pdf" and pdf_hit["location"] == "page 1"
+    assert pdf_hit["document"]["name"] == "faq.pdf" and pdf_hit["location"] == "page 1"
 
 
-async def test_retrieval_is_scoped_to_one_kb(
-    knowledge: KnowledgeHarness, owner_id: uuid.UUID
-) -> None:
+async def test_retrieval_is_scoped_to_one_kb(knowledge: Any, owner_id: uuid.UUID) -> None:
     mine = await knowledge.create_kb(owner_id, "Mine")
     other = await knowledge.create_kb(owner_id, "Other")
     await _ready(knowledge, mine, "a.txt", b"Alpha project budget is small.")
     secret = await _ready(knowledge, other, "b.txt", b"Alpha project secret budget figures.")
     result = await knowledge.query(mine, "alpha project secret budget", topK=10)
-    assert {p["documentName"] for p in result["passages"]} == {"a.txt"}  # type: ignore[attr-defined]
+    assert {p["document"]["name"] for p in result["passages"]} == {"a.txt"}  # type: ignore[attr-defined]
     only = await knowledge.query(other, "alpha", filters={"documentIds": [secret["id"]]})
-    assert [p["documentId"] for p in only["passages"]] == [secret["id"]]  # type: ignore[attr-defined]
+    assert [p["document"]["id"] for p in only["passages"]] == [secret["id"]]  # type: ignore[attr-defined]
 
 
-async def test_passage_text_cannot_forge_evidence(
-    knowledge: KnowledgeHarness, owner_id: uuid.UUID
-) -> None:
+async def test_passage_text_cannot_forge_evidence(knowledge: Any, owner_id: uuid.UUID) -> None:
     kb = await knowledge.create_kb(owner_id)
     await _ready(knowledge, kb, "notes.txt", INJECTION)
     context = str((await knowledge.query(kb, "ignore previous instructions"))["context"])
@@ -94,7 +89,7 @@ async def test_passage_text_cannot_forge_evidence(
     assert context.count("</passage>") == 1
 
 
-async def test_context_token_budget(knowledge: KnowledgeHarness, owner_id: uuid.UUID) -> None:
+async def test_context_token_budget(knowledge: Any, owner_id: uuid.UUID) -> None:
     kb = await knowledge.create_kb(owner_id)
     body = " ".join(f"budget{i}" for i in range(3000)).encode()
     await _ready(knowledge, kb, "long.txt", body)
@@ -103,7 +98,7 @@ async def test_context_token_budget(knowledge: KnowledgeHarness, owner_id: uuid.
     assert len(passages) == 1 and passages[0]["text"].count("budget") <= 800  # type: ignore[index]
 
 
-async def test_upload_rejections(knowledge: KnowledgeHarness, owner_id: uuid.UUID) -> None:
+async def test_upload_rejections(knowledge: Any, owner_id: uuid.UUID) -> None:
     kb = await knowledge.create_kb(owner_id)
     await _ready(knowledge, kb, "a.txt", b"same bytes")
     dup = await knowledge.upload(kb, "copy.txt", b"same bytes")
@@ -126,7 +121,7 @@ async def test_upload_rejections(knowledge: KnowledgeHarness, owner_id: uuid.UUI
 
 
 async def test_traversal_name_stays_inside_documents_dir(
-    knowledge: KnowledgeHarness, owner_id: uuid.UUID
+    knowledge: Any, owner_id: uuid.UUID
 ) -> None:
     kb = await knowledge.create_kb(owner_id)
     doc = await _ready(knowledge, kb, "../../outside.txt", b"contained")
@@ -135,9 +130,9 @@ async def test_traversal_name_stays_inside_documents_dir(
     assert [p.parent.name for p in files] == [kb]
 
 
-async def test_scanned_pdf_fails_visibly(knowledge: KnowledgeHarness, owner_id: uuid.UUID) -> None:
-    from knowledge_testkit import make_pdf
-
+async def test_scanned_pdf_fails_visibly(
+    knowledge: Any, owner_id: uuid.UUID, make_pdf: Callable[[list[str]], bytes]
+) -> None:
     kb = await knowledge.create_kb(owner_id)
     resp = await knowledge.upload(kb, "scan.pdf", make_pdf([""]))
     await knowledge.drain()
@@ -147,7 +142,7 @@ async def test_scanned_pdf_fails_visibly(knowledge: KnowledgeHarness, owner_id: 
 
 
 async def test_delete_and_reindex(
-    knowledge: KnowledgeHarness, owner_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+    knowledge: Any, owner_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
     kb = await knowledge.create_kb(owner_id)
     doc = await _ready(knowledge, kb, "a.txt", b"Refund policy text.")
@@ -173,7 +168,7 @@ async def test_delete_and_reindex(
 
 
 async def test_embedding_failure_is_retried(
-    knowledge: KnowledgeHarness, owner_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+    knowledge: Any, owner_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
     kb = await knowledge.create_kb(owner_id)
     worker = knowledge.app.state.worker
@@ -191,7 +186,7 @@ async def test_embedding_failure_is_retried(
         assert job.state == "available" and job.attempts == 1
 
 
-async def test_profile_mismatch(knowledge: KnowledgeHarness, owner_id: uuid.UUID) -> None:
+async def test_profile_mismatch(knowledge: Any, owner_id: uuid.UUID) -> None:
     kb = await knowledge.create_kb(owner_id)
     knowledge.app.state.knowledge.embedder.profile = "local.embedding.other"
     resp = await knowledge.client.post(
@@ -200,7 +195,7 @@ async def test_profile_mismatch(knowledge: KnowledgeHarness, owner_id: uuid.UUID
     assert resp.status_code == 409 and resp.json()["error"]["code"] == "EMBEDDING_PROFILE_MISMATCH"
 
 
-async def test_duplicate_kb_name(knowledge: KnowledgeHarness, owner_id: uuid.UUID) -> None:
+async def test_duplicate_kb_name(knowledge: Any, owner_id: uuid.UUID) -> None:
     await knowledge.create_kb(owner_id, "Same")
     resp = await knowledge.client.post(
         "/internal/v1/knowledge-bases", json={"ownerId": str(owner_id), "name": "Same"}

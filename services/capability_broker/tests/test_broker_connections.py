@@ -3,30 +3,24 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from typing import Any
 
 from crewquarters_secret_store import db as secret_db
 from crewquarters_secret_store.db import EncryptedSecret, ProviderProfile
-
-if TYPE_CHECKING:
-    from broker_testkit import Harness
-
-pytest_plugins = ["broker_testkit"]
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 PROFILES = "/internal/v1/provider-profiles"
 KEY = "placeholder-api-key-aaaaaaaa"
 
 
-async def test_listing_requires_service_token(harness: Harness) -> None:
+async def test_listing_requires_service_token(harness: Any) -> None:
     assert (await harness.client.get("/internal/v1/connections")).status_code == 401
     bad = {"authorization": "Bearer wrong"}
     assert (await harness.client.get("/internal/v1/connections", headers=bad)).status_code == 401
 
 
-async def test_empty_listing_matches_control_api_contract(harness: Harness) -> None:
+async def test_empty_listing_matches_control_api_contract(harness: Any) -> None:
     resp = await harness.client.get("/internal/v1/connections", headers=harness.service_headers)
     assert [c["provider"] for c in resp.json()] == ["google", "twilio", "openai", "anthropic"]
     for row in resp.json():
@@ -37,7 +31,7 @@ async def test_empty_listing_matches_control_api_contract(harness: Harness) -> N
 
 
 async def test_profile_key_is_encrypted_for_the_gateway(
-    harness: Harness, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+    harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
     resp = await harness.client.post(
         PROFILES,
@@ -86,7 +80,7 @@ async def test_profile_key_is_encrypted_for_the_gateway(
     assert missing.status_code == 404
 
 
-async def test_disabled_profile_status(harness: Harness, user_id: uuid.UUID) -> None:
+async def test_disabled_profile_status(harness: Any, user_id: uuid.UUID) -> None:
     await harness.client.post(
         PROFILES,
         headers=harness.service_headers,
@@ -103,7 +97,7 @@ async def test_disabled_profile_status(harness: Harness, user_id: uuid.UUID) -> 
     assert anthropic["status"] == "DISABLED" and anthropic["grantedCapabilities"] == []
 
 
-async def test_profiles_reject_other_providers(harness: Harness, user_id: uuid.UUID) -> None:
+async def test_profiles_reject_other_providers(harness: Any, user_id: uuid.UUID) -> None:
     resp = await harness.client.post(
         PROFILES,
         headers=harness.service_headers,
