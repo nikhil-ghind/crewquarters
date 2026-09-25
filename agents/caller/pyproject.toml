@@ -1,0 +1,16 @@
+[project]
+name = "crewquarters-agent-caller"
+version = "0.1.0"
+description = "Caller agent: consenting Google Sheets rows, operator approval, fixed-script Twilio calls, results back to Sheets"
+requires-python = ">=3.12"
+dependencies = ["crewquarters-sdk", "tzdata>=2024.1"]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/caller_agent"]
+
+[tool.uv.sources]
+crewquarters-sdk = { workspace = true }

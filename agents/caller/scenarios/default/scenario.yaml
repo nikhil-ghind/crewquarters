@@ -1,0 +1,19 @@
+name: caller-default
+timezone: Asia/Kolkata
+sheets:
+  spreadsheets:
+    demo-sheet:
+      Contacts:
+        - [name, phone_e164, consent, status]
+        - [Asha, "+15555550101", "yes", ""]
+        - [Ben, "+15555550102", "no", ""]
+        - [Chen, "+15555550103", "yes", ""]
+      Results: []
+twilio:
+  outcomes:
+    "+15555550101": {status: completed, speech: "Yes, I'll be there"}
+    "+15555550103": {status: completed}
+inputs:
+  autoAnswers:
+    - keyPattern: "confirm-calls-v1:*"
+      data: {choice: approve}

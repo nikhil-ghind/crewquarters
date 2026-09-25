@@ -77,3 +77,10 @@ def test_same_idempotency_key_places_one_call() -> None:
     c = twilio.create("run-2", "+15555550101", SCRIPT, GATHER, "call:run-1:2")
     assert a["id"] == b["id"] != c["id"]
     assert twilio.calls_by_number() == {"+15555550101": 2}
+
+
+def test_ring_polls_keeps_a_call_ringing() -> None:
+    twilio = TwilioProvider()
+    twilio.load({"+15555550301": {"status": "completed", "ringPolls": 3}})
+    call = twilio.create("run-1", "+15555550301", SCRIPT, GATHER, "k")
+    assert poll_to_end(twilio, call["id"]) == ["ringing", "ringing", "ringing", "in-progress", "completed"]

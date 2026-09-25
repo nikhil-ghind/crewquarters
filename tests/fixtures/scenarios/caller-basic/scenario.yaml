@@ -1,0 +1,23 @@
+name: caller-basic
+timezone: Asia/Kolkata
+sheets:
+  spreadsheets:
+    caller-sheet:
+      Contacts:
+        - [name, phone_e164, consent, status]
+        - [Asha, "+15555550101", "yes", ""]
+        - [Ben, "+15555550102", "no", ""]
+        - [Chen, "+15555550103", "Yes", "ready"]
+        - [Dana, "5550104", "yes", ""]
+        - [Eve, "+15555550105", "consented", "pending"]
+        - [Fay, "+15555550106", "yes", "done"]
+        - []
+        - [Gus, "+15555550101", "yes", ""]
+        - [Hal, "+15555550107", "yes", ""]
+      Results: []
+twilio:
+  outcomes:
+    "+15555550101": {status: completed, speech: "Yes, I'll be there"}
+    "+15555550103": {status: completed}
+    "+15555550105": {status: busy}
+    "+15555550107": {status: completed}

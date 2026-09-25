@@ -33,12 +33,13 @@ class FakeCall:
         return self.steps[self.step]
 
 
-def _steps(status: str) -> list[str]:
+def _steps(status: str, ring_polls: int = 1) -> list[str]:
+    ringing = ["ringing"] * max(1, ring_polls)
     if status == "completed":
-        return ["queued", "ringing", "in-progress", "completed"]
+        return ["queued", *ringing, "in-progress", "completed"]
     if status == "failed":
         return ["queued", "failed"]
-    return ["queued", "ringing", status]
+    return ["queued", *ringing, status]
 
 
 class TwilioProvider:
@@ -67,7 +68,7 @@ class TwilioProvider:
             script=script,
             gather=gather,
             outcome=outcome,
-            steps=_steps(str(outcome.get("status", "failed"))),
+            steps=_steps(str(outcome.get("status", "failed")), int(outcome.get("ringPolls", 1))),
             created_at=now,
             updated_at=now,
         )

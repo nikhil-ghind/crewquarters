@@ -34,6 +34,7 @@ wheels = [
 
 [manifest]
 members = [
+    "crewquarters-agent-caller",
     "crewquarters-agent-contract-probe",
     "crewquarters-agent-gmail-digest",
     "crewquarters-contracts",
@@ -330,6 +331,21 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36" },
     { name = "tzdata", specifier = ">=2024.2" },
+]
+
+[[package]]
+name = "crewquarters-agent-caller"
+version = "0.1.0"
+source = { editable = "agents/caller" }
+dependencies = [
+    { name = "crewquarters-sdk" },
+    { name = "tzdata" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "crewquarters-sdk", editable = "packages/python_sdk" },
+    { name = "tzdata", specifier = ">=2024.1" },
 ]
 
 [[package]]

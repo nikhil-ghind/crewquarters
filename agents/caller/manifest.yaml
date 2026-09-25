@@ -1,0 +1,110 @@
+apiVersion: crewquarters/v1alpha1
+kind: Agent
+metadata:
+  id: caller
+  name: Caller
+  version: 0.1.0
+  description: Calls consenting recipients from a Google Sheet with a fixed, disclosed script after operator approval.
+  publisher: Crewquarters (Person 5)
+spec:
+  # `crewctl build --push` pins this to the pushed digest.
+  image: localhost:5001/crewquarters/caller@sha256:REQUIRED_DIGEST
+  entrypoint: ["python", "-m", "caller_agent"]
+  architectures: ["linux/amd64", "linux/arm64"]
+  triggers: ["manual"]
+  permissions:
+    connectors:
+      google: ["spreadsheets"]
+      twilio: ["voice.call"]
+    userInput: true
+  resources:
+    cpu: 0.5
+    memoryMb: 256
+    activeTimeoutSeconds: 3600
+    maxInputWaitSeconds: 86400
+  configurationSchema:
+    type: object
+    required: [spreadsheetId]
+    properties:
+      spreadsheetId:
+        type: string
+        minLength: 1
+        x-crewquarters-widget: spreadsheet
+      inputRange:
+        type: string
+        default: Contacts!A2:D
+        description: "Columns name, phone_e164, consent, status, starting at a data row."
+      resultRange:
+        type: string
+        default: Results!A:H
+      script:
+        type: string
+        maxLength: 1000
+        default: "Hello {name}. This is an automated demo call from the Crewquarters team. Please say a short reply after the tone."
+        description: Fixed script; only the {name} placeholder is allowed.
+        x-crewquarters-widget: textarea
+      disclosure:
+        type: string
+        maxLength: 500
+        default: "This is an automated demonstration call. Your spoken reply will be transcribed."
+        x-crewquarters-widget: textarea
+      maxCalls:
+        type: integer
+        minimum: 1
+        maximum: 10
+        default: 3
+      responseSeconds:
+        type: integer
+        minimum: 5
+        maximum: 60
+        default: 20
+      callTimeoutSeconds:
+        type: integer
+        minimum: 10
+        maximum: 900
+        default: 180
+        x-crewquarters-group: Advanced
+      callPollSeconds:
+        type: number
+        minimum: 0.05
+        maximum: 10
+        default: 2
+        x-crewquarters-group: Advanced
+      timezone:
+        type: string
+        default: Asia/Kolkata
+        x-crewquarters-widget: timezone
+  result:
+    renderer: crewquarters.caller/v1
+    schema:
+      type: object
+      required: [operatorDecision, summary, rows]
+      properties:
+        operatorDecision: {enum: [approved, cancelled, not_required]}
+        summary:
+          type: object
+          required: [called, answered, responsesCaptured, skipped, failed]
+          properties:
+            called: {type: integer}
+            answered: {type: integer}
+            responsesCaptured: {type: integer}
+            skipped: {type: integer}
+            failed: {type: integer}
+        rows:
+          type: array
+          items:
+            type: object
+            required: [row, name, phoneMasked, consent]
+            properties:
+              row: {type: integer}
+              name: {type: string}
+              phoneMasked: {type: string, pattern: "^••••"}
+              consent: {enum: [validated, skipped]}
+              skipReason: {type: [string, "null"]}
+              callStatus:
+                enum: [answered_speech, answered_no_speech, busy, no_answer, failed, canceled, timeout, null]
+              callSid: {type: [string, "null"]}
+              transcript: {type: [string, "null"]}
+              sheetWrite: {enum: [written, pending_retry, failed, null]}
+              completedAt: {type: [string, "null"]}
+              error: {type: [string, "null"]}
