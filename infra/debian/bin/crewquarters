@@ -7,8 +7,208 @@ COMPOSE_FILE="$SHARE/compose/compose.appliance.yaml"
 export PYTHONPATH=/usr/lib/crewquarters/python
 
 compose() {
-    docker compose -p crewquarters -f "$COMPOSE_FILE" \
-        --env-file "$ETC/crewquarters.env" --env-file "$ETC/secrets.env" "$@"
+    if [ -f "$LAN_ENV" ]; then
+        # LAN HTTPS mode: lan-https.env overrides crewquarters.env (see lan_https_* below).
+        docker compose -p crewquarters -f "$COMPOSE_FILE" -f "$SHARE/compose/compose.lan-https.yaml" \
+            --env-file "$ETC/crewquarters.env" --env-file "$ETC/secrets.env" \
+            --env-file "$LAN_ENV" "$@"
+    else
+        docker compose -p crewquarters -f "$COMPOSE_FILE" \
+            --env-file "$ETC/crewquarters.env" --env-file "$ETC/secrets.env" "$@"
+    fi
+}
+
+# --- LAN HTTPS mode (PLAN.md sections 10.1 and 14; docs/runbooks/lan-https.md) -----------
+# Kept apart from the other subcommands. State: /etc/crewquarters/tls (device CA and
+# certificate) and /etc/crewquarters/lan-https.env (overrides crewquarters.env, which is a
+# conffile and is never edited). /var/lib/crewquarters/public holds what the unprivileged
+# desktop launcher may read: the UI address and, in this mode, the CA certificate.
+LAN_ENV="$ETC/lan-https.env"
+TLS_DIR="$ETC/tls"
+PUBLIC_DIR=/var/lib/crewquarters/public
+LAN_TLS=/usr/lib/crewquarters/lan-tls.sh
+
+lan_https_usage() {
+    cat <<USAGE
+Usage: crewquarters lan-https <command>
+  enable [--hostname NAME] [--ip ADDR]... [--bind ADDR] [--http-port PORT] [--no-restart]
+        Serve the UI on the LAN over HTTPS (port 443) with a certificate from a device CA
+        (created once, kept across re-issues). NAME defaults to this host's name; the
+        certificate covers NAME, NAME.local, localhost and the LAN addresses (default:
+        every private IPv4 address of this host). Re-run it after an address change or
+        to renew the certificate. HTTP (PORT, default 80) redirects to HTTPS.
+  disable [--forget-ca] [--no-restart]
+        Back to http://localhost only. The CA is kept unless --forget-ca.
+  status                show the mode, address, certificate expiry and CA fingerprint
+USAGE
+}
+
+# Private IPv4 addresses of this host, excluding container bridges and loopback.
+lan_https_host_ips() {
+    if command -v ip >/dev/null 2>&1; then
+        ip -4 -o addr show scope global 2>/dev/null \
+            | awk '$2 !~ /^(docker|br-|veth|cqa-|cqm-|virbr)/ {sub(/\/.*/, "", $4); print $4}'
+    else
+        hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -v '^172\.1[7-9]\.' || true
+    fi
+}
+
+lan_https_private() {
+    case "$1" in
+        10.*|192.168.*|169.254.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) return 0 ;;
+        100.6[4-9].*|100.[7-9][0-9].*|100.1[01][0-9].*|100.12[0-7].*) return 0 ;;
+    esac
+    return 1
+}
+
+# Writes the launcher's UI address (and, in LAN HTTPS mode, the public CA certificate).
+lan_https_publish() {
+    install -d -m 0755 "$PUBLIC_DIR"
+    if [ -f "$LAN_ENV" ]; then
+        url=$(sed -n 's/^CQ_PUBLIC_BASE_URL=//p' "$LAN_ENV" | tail -n 1)
+        install -m 0644 "$TLS_DIR/ca.crt" "$PUBLIC_DIR/ca.crt"
+    else
+        port=$(sed -n 's/^CQ_HTTP_PORT=//p' "$ETC/crewquarters.env" 2>/dev/null | tail -n 1)
+        url="http://localhost:${port:-8080}"
+        rm -f "$PUBLIC_DIR/ca.crt"
+    fi
+    printf '%s\n' "$url" > "$PUBLIC_DIR/ui-url.new"
+    chmod 0644 "$PUBLIC_DIR/ui-url.new"
+    mv "$PUBLIC_DIR/ui-url.new" "$PUBLIC_DIR/ui-url"
+}
+
+# Applies a mode change to a running stack (recreates only what changed).
+lan_https_apply() {
+    if [ "$1" = no ]; then
+        echo "Not restarting. Apply with: sudo crewquarters up"
+    # The appliance stack is owned by crewquarters.service; other Compose projects that
+    # happen to share the name (a developer stack) are never touched.
+    elif [ -d /run/systemd/system ] && systemctl is-active --quiet crewquarters.service; then
+        echo "Applying to the running stack..."
+        compose up -d --wait
+    else
+        echo "The stack is not running; the change applies when it starts."
+    fi
+}
+
+lan_https_enable() {
+    name=$(hostname -s 2>/dev/null || hostname)
+    ips="" bind=0.0.0.0 http_port=80 restart=yes
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --hostname) name="${2:?--hostname needs a value}"; shift 2 ;;
+            --ip) ips="$ips ${2:?--ip needs an address}"; shift 2 ;;
+            --bind) bind="${2:?--bind needs an address}"; shift 2 ;;
+            --http-port) http_port="${2:?--http-port needs a port}"; shift 2 ;;
+            --no-restart) restart=no; shift ;;
+            *) lan_https_usage; exit 2 ;;
+        esac
+    done
+    if [ -z "$ips" ]; then
+        for ip in $(lan_https_host_ips); do
+            if lan_https_private "$ip"; then ips="$ips $ip"; fi
+        done
+    fi
+    [ -n "$ips" ] || echo "crewquarters: WARNING no LAN address found; the certificate covers names only (use --ip)." >&2
+    [ "$(id -u)" = 0 ] || { echo "Run as root: sudo crewquarters lan-https enable" >&2; exit 1; }
+
+    install -d -m 0750 -o root -g crewquarters "$TLS_DIR"
+    # shellcheck disable=SC2086  # the address list is split on purpose
+    "$LAN_TLS" issue "$TLS_DIR" "$name" $ips
+    chown root:root "$TLS_DIR/ca.key" && chmod 0600 "$TLS_DIR/ca.key"
+    chown root:crewquarters "$TLS_DIR/server.key" && chmod 0640 "$TLS_DIR/server.key"
+    chown root:crewquarters "$TLS_DIR/ca.crt" "$TLS_DIR/server.crt" "$TLS_DIR/ca.hostname"
+
+    primary=$("$LAN_TLS" primary "$name")
+    base="https://$primary"
+    origins=""
+    for n in $("$LAN_TLS" names "$name") $ips; do
+        origins="$origins,\"https://$n\""
+    done
+    tmp="$LAN_ENV.new"
+    {
+        echo "# Written by 'crewquarters lan-https enable'; removed by 'disable'. Overrides"
+        echo "# crewquarters.env for the Compose stack. Do not edit: re-run enable instead."
+        echo "CQ_LAN_HTTPS=true"
+        echo "CQ_LAN_HOSTNAME=$name"
+        echo "CQ_BIND_ADDRESS=$bind"
+        echo "CQ_HTTP_PORT=$http_port"
+        echo "CQ_PUBLIC_BASE_URL=$base"
+        echo "CQ_PUBLIC_ORIGINS=[${origins#,}]"
+        echo "CQ_COOKIE_SECURE=true"
+    } > "$tmp"
+    chown root:crewquarters "$tmp" && chmod 0640 "$tmp"
+    mv "$tmp" "$LAN_ENV"
+    lan_https_publish
+
+    fingerprint=$("$LAN_TLS" fingerprint "$TLS_DIR")
+    echo
+    echo "LAN HTTPS mode is on."
+    echo "  Open:                $base/setup"
+    for ip in $ips; do echo "                       https://$ip/setup"; done
+    echo "  CA fingerprint:      SHA-256 $fingerprint"
+    echo "  Trust the device CA: download http://$primary/crewquarters-ca.crt (or copy"
+    echo "                       $PUBLIC_DIR/ca.crt), check that its SHA-256 fingerprint"
+    echo "                       matches the one above, then install it as a trusted root:"
+    echo "                       /usr/share/doc/crewquarters/lan-https.md"
+    echo "  One-time owner code: sudo crewquarters bootstrap-token"
+    echo "  Google sign-in:      register $base/api/v1/connections/google/callback"
+    echo "                       (Google accepts only public domain names, not .local; see the runbook)"
+    echo
+    lan_https_apply "$restart"
+}
+
+lan_https_disable() {
+    forget=no restart=yes
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --forget-ca) forget=yes; shift ;;
+            --no-restart) restart=no; shift ;;
+            *) lan_https_usage; exit 2 ;;
+        esac
+    done
+    [ "$(id -u)" = 0 ] || { echo "Run as root: sudo crewquarters lan-https disable" >&2; exit 1; }
+    was_on=no
+    [ -f "$LAN_ENV" ] && was_on=yes
+    rm -f "$LAN_ENV"
+    if [ "$forget" = yes ]; then
+        rm -rf "$TLS_DIR"
+        echo "Device CA and certificate deleted. Remove the CA from devices that trusted it."
+    fi
+    lan_https_publish
+    echo "LAN HTTPS mode is off. The UI is at $(cat "$PUBLIC_DIR/ui-url") (this computer only)."
+    # The HTTPS listener and the LAN port must go away even if the stack was started in
+    # LAN mode, so a running stack is always re-applied.
+    if [ "$was_on" = yes ]; then lan_https_apply "$restart"; fi
+}
+
+lan_https_status() {
+    if [ -f "$LAN_ENV" ]; then
+        echo "LAN HTTPS mode: on"
+        sed -n 's/^CQ_PUBLIC_BASE_URL=/  URL:            /p; s/^CQ_BIND_ADDRESS=/  Listening on:   /p' "$LAN_ENV"
+    else
+        echo "LAN HTTPS mode: off ($(cat "$PUBLIC_DIR/ui-url" 2>/dev/null || echo http://localhost:8080))"
+    fi
+    if [ -f "$TLS_DIR/server.crt" ]; then
+        echo "  Certificate:    $(openssl x509 -in "$TLS_DIR/server.crt" -noout -enddate | sed 's/notAfter=/valid until /')"
+        openssl x509 -in "$TLS_DIR/server.crt" -noout -ext subjectAltName 2>/dev/null \
+            | sed -n '2s/^ */  Names:          /p'
+        echo "  CA fingerprint: SHA-256 $("$LAN_TLS" fingerprint "$TLS_DIR")"
+    fi
+}
+
+lan_https() {
+    sub="${1:-status}"
+    [ $# -gt 0 ] && shift
+    case "$sub" in
+        enable) lan_https_enable "$@" ;;
+        disable) lan_https_disable "$@" ;;
+        status) lan_https_status ;;
+        # Used by postinst and `up`: refresh what the desktop launcher reads.
+        publish) lan_https_publish ;;
+        *) lan_https_usage; exit 2 ;;
+    esac
 }
 
 usage() {
@@ -18,12 +218,15 @@ Usage: crewquarters <command>
   up | down | restart      start or stop the platform stack
   tunnel up|down|status    callback tunnel (profile callbacks; needs CQ_TUNNEL_TOKEN);
                            exposes only the OAuth/Twilio callback paths. Stop it after demos.
+  lan-https enable|disable|status
+                           serve the UI on the LAN over HTTPS with a device CA
+                           (docs: /usr/share/doc/crewquarters/lan-https.md)
   status                   service health and runtime checks
   logs [service]           follow logs
   bootstrap-token          print a one-time owner setup code
   load-bundle FILE         import images from an offline bundle (.tar.zst)
   wait-runtime             wait until the runtime daemon socket exists (systemd)
-  open                     open the setup UI in a browser
+  open                     open the UI in a browser (setup on first use)
   version
 USAGE
 }
@@ -41,8 +244,10 @@ case "$cmd" in
             curl -s --unix-socket /run/crewquarters/runtime.sock http://runtime/ >/dev/null 2>&1 || true
             sleep 2
         fi
+        lan_https_publish
         compose up -d --wait ;;
     down) compose --profile callbacks down ;;
+    lan-https) lan_https "$@" ;;
     tunnel)
         case "${1:-status}" in
             up)

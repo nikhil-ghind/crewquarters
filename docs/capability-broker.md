@@ -56,6 +56,7 @@ The run and attempt always come from the token. JSON is camelCase. Errors use th
 - **Knowledge and Sheets.** The agent sends `knowledgeBaseId` or `spreadsheetId`. The broker accepts it only if it equals the installation config's `knowledgeBaseId` or `spreadsheetId`, and otherwise returns `PERMISSION_DENIED`. Sheets values are written with `valueInputOption=RAW`, so untrusted text is never evaluated as a formula.
 - **Sheets ranges.** A read (`values:get`) must lie inside the config's `inputRange`, and a write (`values:update`, `values:append`) inside its `resultRange`, on the same tab. Ranges are A1 notation and must name their tab (`Contacts!A2:D`, `'My tab'!B3`). Missing bounds are open, so `Results!A:H` allows every row of columns A-H; tab names and column letters ignore case.
   - Outside the configured range: `PERMISSION_DENIED` with `details.key`. Not A1 with a tab: `INVALID_REQUEST`. The config has no such range, or an invalid one: `NEEDS_CONFIGURATION`.
+  - The fake platform's broker enforces the same spreadsheet and range rules, with the same codes, statuses and `details` (`packages/fake_platform/src/crewquarters_fake/broker/sheet_scope.py`, checked against this broker by `test_sheets_scope_parity.py`).
   - The caller agent reads `inputRange` and writes `resultRange!A1:H1` and `resultRange!A<row>:H<row>`, which fit its defaults. Google appends below the table it finds in the range, so `resultRange` should be open-ended downwards.
   - The Gmail digest agent does not use Sheets.
 - **Gmail.** `GET /google/gmail/messages` passes `labelIds` and returns `resultSizeEstimate`. `GET /google/gmail/messages/{id}` returns Gmail's `format=full` message unmodified. It's untrusted content, and the SDK parses MIME and reduces HTML to text.
@@ -80,7 +81,7 @@ The run and attempt always come from the token. JSON is camelCase. Errors use th
   - A call whose create response was lost is `failed` with `errorCode: OUTCOME_UNKNOWN`, and creating it again with the same key returns `OUTCOME_UNKNOWN`.
   - Twilio can call back before the broker has recorded its answer, or after that answer was lost. The callback URL carries the broker's call id, so a signed callback for a call that has no CallSid yet (still creating, or `OUTCOME_UNKNOWN`) adopts Twilio's CallSid, provided `To` (when sent) ends in the call's last four digits. The callee hears the disclosure and script as usual, the call continues to report progress, and creating it again with the same key returns it. Only the first CallSid is adopted.
   - The first transcript wins, and late or duplicate status callbacks never move a call backwards.
-- **Callback hardening.** A body over 64 KiB is refused with `413` before it is read (from `Content-Length`, or while streaming). A request without a well-formed signature is rejected without decrypting anything, and the Twilio credentials used for signature checks are cached for 60 seconds. Every rejection increments `cq_broker_callback_rejections_total`. The audit log gets at most one `callback.twilio.rejected` row per reason (`missing_signature`, `malformed_signature`, `bad_signature`) per minute, whose `count` covers the rejections since the previous row.
+- **Callback hardening.** A body over 64 KiB is refused with `413` before it is read (from `Content-Length`, or while streaming). A request without a well-formed signature is rejected without decrypting anything, and the Twilio credentials used for signature checks are cached for 60 seconds. Every rejection increments `cq_broker_callback_rejections_total`. The audit log gets at most one `callback.twilio.rejected` row per reason (`missing_signature`, `malformed_signature`, `bad_signature`) per minute, whose `count` covers the rejections since the previous row. Signatures are checked against `CQ_TWILIO_CALLBACK_BASE_URL` (the tunnel origin Twilio was given; falls back to `CQ_PUBLIC_BASE_URL`) plus the request path and query.
 - **Legal compliance:** nothing here makes a call legally compliant. Restrict live tests to consenting, verified team numbers (`CQ_TWILIO_ALLOWED_NUMBERS`).
 
 ## Internal API for the control API (`/internal/v1`)
@@ -151,7 +152,8 @@ These are in addition to the shared `CQ_*` settings the broker also reads: `CQ_D
 | --- | --- | --- | --- | --- | --- |
 | `CQ_MASTER_KEY_FILE` | path | none (dev key) | **yes** (the file) | demo-cpu, dgx | Master keyring, mode 0600, mounted read-only into the broker and the model gateway only |
 | `CQ_PROVIDER_MODE` | `fake` \| `live` | `fake` | no | all | `fake` serves Google and Twilio from built-in fakes |
-| `CQ_PUBLIC_BASE_URL` | URL | `http://localhost:8080` | no | all | Public origin for the OAuth redirect and Twilio callbacks; must match exactly |
+| `CQ_PUBLIC_BASE_URL` | URL | `http://localhost:8080` | no | all | The browser's origin: the Google OAuth redirect and the post-OAuth return; must match the registered URI exactly |
+| `CQ_TWILIO_CALLBACK_BASE_URL` | URL | unset (= `CQ_PUBLIC_BASE_URL`) | no | all | Public origin for Twilio callback URLs and Twilio signature validation (the tunnel) |
 | `CQ_CONTROL_API_URL` | URL | `http://control-api:8080` | no | all | Control API internal routes |
 | `CQ_KNOWLEDGE_URL` | URL | `http://knowledge:8000` | no | all | Knowledge service internal routes |
 | `CQ_GOOGLE_CLIENT_ID` | string | empty | no | demo-cpu, dgx | OAuth web client ID |

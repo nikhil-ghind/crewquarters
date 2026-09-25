@@ -1,8 +1,13 @@
 [Desktop Entry]
 Type=Application
+Version=1.0
 Name=Crewquarters
-Comment=Your own local AI crew
+GenericName=Local AI agents
+Comment=Open Crewquarters: setup on first use, then the dashboard
 Exec=/usr/share/crewquarters/launch.sh
+TryExec=/usr/share/crewquarters/launch.sh
 Icon=utilities-system-monitor
 Terminal=false
-Categories=Utility;System;
+StartupNotify=false
+Categories=System;
+Keywords=AI;agents;setup;

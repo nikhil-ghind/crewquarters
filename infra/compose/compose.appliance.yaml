@@ -11,7 +11,8 @@
 # Edge: the proxy is the only published port. It serves the UI, sends /api/* to the
 # control API and the OAuth/Twilio callbacks to the capability broker, and answers 404 for
 # /internal/* (docs/runbooks/proxy.md). Profile `callbacks` adds a Cloudflare tunnel that
-# can reach only the callback paths.
+# can reach only the callback paths. LAN HTTPS mode (`crewquarters lan-https enable`) adds
+# the override compose.lan-https.yaml: TLS on 443 with a device CA (docs/runbooks/lan-https.md).
 #
 # Secrets: /etc/crewquarters/master.key (root:crewquarters 0640) is bind-mounted read-only
 # into exactly two services, the capability broker and the model gateway (PLAN.md 10.2);
@@ -38,7 +39,12 @@ x-platform-env: &platform-env
   CQ_BROKER_URL: http://capability-broker:8000
   CQ_KNOWLEDGE_URL: http://knowledge:8000
   CQ_CONTROL_API_URL: http://control-api:8080
+  # The browser's origin: Google OAuth redirect (ADR 0009). LAN HTTPS mode sets it to
+  # https://<name> in /etc/crewquarters/lan-https.env.
   CQ_PUBLIC_BASE_URL: ${CQ_PUBLIC_BASE_URL:-http://localhost:8080}
+  # Twilio callbacks and signature checks: the tunnel's https:// origin. Empty: use
+  # CQ_PUBLIC_BASE_URL.
+  CQ_TWILIO_CALLBACK_BASE_URL: ${CQ_TWILIO_CALLBACK_BASE_URL:-}
   # Shared by the control API (upload proxy) and the knowledge service; the proxy allows
   # 26 MiB on the upload route (infra/proxy/nginx.conf).
   CQ_MAX_UPLOAD_BYTES: ${CQ_MAX_UPLOAD_BYTES:-26214400}

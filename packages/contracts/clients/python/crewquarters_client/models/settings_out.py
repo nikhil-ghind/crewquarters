@@ -21,9 +21,11 @@ class SettingsOut:
     Attributes:
         timezone (str):
         idle_unload_seconds (int):
-        callback_base_url (str): Read-only: set by CQ_PUBLIC_BASE_URL, the single source the capability broker uses for
-            the OAuth redirect and Twilio callbacks.
-        callback_urls (SettingsOutCallbackurls): Exact URLs to register: googleRedirectUri, twilioCallbackBase.
+        callback_base_url (str): Read-only: set by CQ_PUBLIC_BASE_URL, the origin the owner's browser uses. The
+            capability broker builds the Google OAuth redirect from it, and the Twilio callbacks too unless
+            CQ_TWILIO_CALLBACK_BASE_URL is set.
+        callback_urls (SettingsOutCallbackurls): Exact URLs to register: googleRedirectUri (from CQ_PUBLIC_BASE_URL) and
+            twilioCallbackBase (from CQ_TWILIO_CALLBACK_BASE_URL, else CQ_PUBLIC_BASE_URL).
         setup_completed (bool):
         setup_state (SettingsOutSetupstate): Server-side first-run wizard progress (resumes after refresh/OAuth).
         versions (SettingsOutVersions): Per-setting version for optimistic updates.

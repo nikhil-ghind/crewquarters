@@ -56,9 +56,13 @@ class Settings(BaseSettings):
 
     broker_url: str = "http://capability-broker:8000"
     knowledge_url: str = "http://knowledge:8000"
-    # The one public origin for OAuth redirects and Twilio callbacks. The broker builds
-    # every callback URL from it; the control API reports it read-only in /settings.
+    # The origin the owner's browser uses (http://localhost:8080, or the LAN HTTPS name).
+    # The broker builds the Google OAuth redirect from it; the control API reports it
+    # read-only in /settings (docs/adr/0009-callback-base-url.md).
     public_base_url: str = "http://localhost:8080"
+    # The public HTTPS origin Twilio calls back on (the callback tunnel). Unset: Twilio
+    # uses public_base_url. Twilio signs the exact URL, so the broker validates against it.
+    twilio_callback_base_url: str | None = None
     # Per-document upload limit, shared with the knowledge service (CQ_MAX_UPLOAD_BYTES).
     max_upload_bytes: int = 25 * 1024 * 1024
     heartbeat_timeout_seconds: int = 30
@@ -71,6 +75,10 @@ class Settings(BaseSettings):
     reconciler_interval_seconds: float = 2.0
     scheduler_metrics_host: str = "127.0.0.1"
     scheduler_metrics_port: int = 9101
+
+    def twilio_base_url(self) -> str:
+        """Origin for Twilio callback URLs and signature checks, without a trailing slash."""
+        return (self.twilio_callback_base_url or self.public_base_url).rstrip("/")
 
     def allowed_origins(self) -> set[str]:
         """``public_origins`` plus the origin of ``public_base_url``, so the UI works at the

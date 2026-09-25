@@ -80,6 +80,22 @@ fi
 # uid 10001 + group_add CQ_SOCKET_GID) can read it. Keyring.from_file refuses "other" access.
 chown root:crewquarters /etc/crewquarters/master.key && chmod 0640 /etc/crewquarters/master.key
 
+# LAN HTTPS mode (PLAN.md sections 10.1 and 14.2; docs/runbooks/lan-https.md). Opt-in at
+# install time for a headless device:
+#   sudo CREWQUARTERS_HEADLESS=yes [CREWQUARTERS_LAN_HOSTNAME=name] apt install ./crewquarters_*.deb
+# or later with `sudo crewquarters lan-https enable`. An existing mode is kept on upgrade.
+if [ "${CREWQUARTERS_HEADLESS:-no}" = "yes" ] && [ ! -f /etc/crewquarters/lan-https.env ]; then
+    if [ -n "${CREWQUARTERS_LAN_HOSTNAME:-}" ]; then
+        /usr/bin/crewquarters lan-https enable --no-restart --hostname "$CREWQUARTERS_LAN_HOSTNAME" \
+            || echo "crewquarters: WARNING LAN HTTPS mode could not be enabled" >&2
+    else
+        /usr/bin/crewquarters lan-https enable --no-restart \
+            || echo "crewquarters: WARNING LAN HTTPS mode could not be enabled" >&2
+    fi
+fi
+# What the unprivileged desktop launcher reads: the UI address (and the public CA cert).
+/usr/bin/crewquarters lan-https publish || true
+
 if command -v systemd-tmpfiles >/dev/null 2>&1; then
     systemd-tmpfiles --create /usr/lib/tmpfiles.d/crewquarters.conf || true
 fi
@@ -105,6 +121,15 @@ PYTHONPATH=/usr/lib/crewquarters/python python3 -m crewquarters_runtime.cli pref
 
 echo
 echo "Crewquarters $VERSION installed."
-echo "  Open the setup UI:     http://localhost:8080/setup  (or the Crewquarters desktop launcher)"
+if [ -f /etc/crewquarters/lan-https.env ]; then
+    /usr/bin/crewquarters lan-https status || true
+    echo "  Open the setup UI:     $(cat /var/lib/crewquarters/public/ui-url)/setup"
+else
+    echo "  Open the setup UI:     $(cat /var/lib/crewquarters/public/ui-url 2>/dev/null || echo http://localhost:8080)/setup  (or the Crewquarters desktop launcher)"
+    if [ -d /run/systemd/system ] && [ "$(systemctl get-default 2>/dev/null)" != graphical.target ]; then
+        echo "  No desktop detected:   to set up from another computer, run"
+        echo "                         sudo crewquarters lan-https enable"
+    fi
+fi
 echo "  One-time owner code:   sudo crewquarters bootstrap-token"
 exit 0

@@ -4,7 +4,7 @@ Architecture: @ARCH@
 Maintainer: Crewquarters <crewquarters@localhost>
 Section: admin
 Priority: optional
-Depends: python3 (>= 3.10), adduser, iptables, curl, zstd
+Depends: python3 (>= 3.10), adduser, iptables, curl, zstd, openssl
 Recommends: docker-ce | docker.io, docker-compose-plugin | docker-compose-v2
 Homepage: https://github.com/nikhil-ghind/crewquarters
 Description: Crewquarters - your own local AI crew

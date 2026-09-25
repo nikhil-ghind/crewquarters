@@ -30,6 +30,8 @@ class BrokerSettings(Settings):
 
     @property
     def google_redirect_uri(self) -> str:
+        """Google redirects the owner's browser, so this uses the browser's origin
+        (``CQ_PUBLIC_BASE_URL``), never the Twilio tunnel (``twilio_base_url()``)."""
         return f"{self.public_base_url.rstrip('/')}/api/v1/connections/google/callback"
 
     def keyring(self) -> Keyring:

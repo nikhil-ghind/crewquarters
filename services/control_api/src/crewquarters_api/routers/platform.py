@@ -33,6 +33,7 @@ from crewquarters_api.pagination import (
     page_in_memory,
 )
 from crewquarters_shared import audit
+from crewquarters_shared.config import Settings
 from crewquarters_shared.cron import validate_timezone
 from crewquarters_shared.db.models import AuditEvent, Setting
 from crewquarters_shared.errors import conflict, invalid, not_found
@@ -282,22 +283,22 @@ SETTING_DEFAULTS: dict[str, tuple[str, Any]] = {
     "setupCompleted": ("boolean", False),
     "setupState": ("object", {}),
 }
-# The broker builds the OAuth redirect and Twilio callback URLs from CQ_PUBLIC_BASE_URL at
-# startup, and Twilio signatures cover the exact URL, so the callback base is read-only
-# here: one source of truth (docs/adr/0009-callback-base-url.md).
+# The broker builds the Google OAuth redirect from CQ_PUBLIC_BASE_URL (the browser's origin)
+# and the Twilio callback URLs from CQ_TWILIO_CALLBACK_BASE_URL (the tunnel; falls back to
+# CQ_PUBLIC_BASE_URL). Twilio signatures cover the exact URL, so both are read-only here:
+# the environment is the one source of truth (docs/adr/0009-callback-base-url.md).
 TWILIO_CALLBACK_PATH = "/api/v1/callbacks/twilio"
 GOOGLE_CALLBACK_PATH = "/api/v1/connections/google/callback"
 
 
-def callback_urls(public_base_url: str) -> dict[str, str]:
-    base = public_base_url.rstrip("/")
+def callback_urls(settings: Settings) -> dict[str, str]:
     return {
-        "googleRedirectUri": base + GOOGLE_CALLBACK_PATH,
-        "twilioCallbackBase": base + TWILIO_CALLBACK_PATH,
+        "googleRedirectUri": settings.public_base_url.rstrip("/") + GOOGLE_CALLBACK_PATH,
+        "twilioCallbackBase": settings.twilio_base_url() + TWILIO_CALLBACK_PATH,
     }
 
 
-async def _settings_out(db: AsyncSession, public_base_url: str) -> schemas.SettingsOut:
+async def _settings_out(db: AsyncSession, settings: Settings) -> schemas.SettingsOut:
     rows = {
         s.key: s
         for s in (await db.scalars(select(Setting).where(Setting.key.in_(SETTING_DEFAULTS)))).all()
@@ -307,8 +308,8 @@ async def _settings_out(db: AsyncSession, public_base_url: str) -> schemas.Setti
     return schemas.SettingsOut(
         timezone=values["timezone"],
         idle_unload_seconds=values["idleUnloadSeconds"],
-        callback_base_url=public_base_url.rstrip("/"),
-        callback_urls=callback_urls(public_base_url),
+        callback_base_url=settings.public_base_url.rstrip("/"),
+        callback_urls=callback_urls(settings),
         setup_completed=values["setupCompleted"],
         setup_state=values["setupState"],
         versions=versions,
@@ -323,7 +324,7 @@ async def get_settings_route(
     state: AppState = Depends(app_state),
     db: AsyncSession = Depends(get_db),
 ) -> schemas.SettingsOut:
-    return await _settings_out(db, state.settings.public_base_url)
+    return await _settings_out(db, state.settings)
 
 
 @router.patch(
@@ -389,9 +390,7 @@ async def patch_settings(
         metadata={"keys": sorted(updates)},
     )
     await db.flush()
-    return await idempotency.finish(
-        db, idem, 200, await _settings_out(db, state.settings.public_base_url)
-    )
+    return await idempotency.finish(db, idem, 200, await _settings_out(db, state.settings))
 
 
 # --- Health and status ------------------------------------------------------------------

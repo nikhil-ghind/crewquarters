@@ -531,11 +531,13 @@ class SettingsOut(ApiModel):
     timezone: str
     idle_unload_seconds: int
     callback_base_url: str = Field(
-        description="Read-only: set by CQ_PUBLIC_BASE_URL, the single source the capability "
-        "broker uses for the OAuth redirect and Twilio callbacks."
+        description="Read-only: set by CQ_PUBLIC_BASE_URL, the origin the owner's browser uses. "
+        "The capability broker builds the Google OAuth redirect from it, and the Twilio "
+        "callbacks too unless CQ_TWILIO_CALLBACK_BASE_URL is set."
     )
     callback_urls: dict[str, str] = Field(
-        description="Exact URLs to register: googleRedirectUri, twilioCallbackBase."
+        description="Exact URLs to register: googleRedirectUri (from CQ_PUBLIC_BASE_URL) and "
+        "twilioCallbackBase (from CQ_TWILIO_CALLBACK_BASE_URL, else CQ_PUBLIC_BASE_URL)."
     )
     setup_completed: bool
     setup_state: dict[str, Any] = Field(

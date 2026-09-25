@@ -2846,12 +2846,12 @@ export interface components {
             idleUnloadSeconds: number;
             /**
              * Callbackbaseurl
-             * @description Read-only: set by CQ_PUBLIC_BASE_URL, the single source the capability broker uses for the OAuth redirect and Twilio callbacks.
+             * @description Read-only: set by CQ_PUBLIC_BASE_URL, the origin the owner's browser uses. The capability broker builds the Google OAuth redirect from it, and the Twilio callbacks too unless CQ_TWILIO_CALLBACK_BASE_URL is set.
              */
             callbackBaseUrl: string;
             /**
              * Callbackurls
-             * @description Exact URLs to register: googleRedirectUri, twilioCallbackBase.
+             * @description Exact URLs to register: googleRedirectUri (from CQ_PUBLIC_BASE_URL) and twilioCallbackBase (from CQ_TWILIO_CALLBACK_BASE_URL, else CQ_PUBLIC_BASE_URL).
              */
             callbackUrls: {
                 [key: string]: string;
