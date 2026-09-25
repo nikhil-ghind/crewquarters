@@ -1,10 +1,11 @@
 #!/bin/sh
 # Build the offline demo bundle (PLAN.md section 14.2):
 #   crewquarters-offline_<version>_<arch>.tar.zst = .deb + pinned OCI image archive +
-#   SHA256SUMS (+ SBOMs when syft is installed) (+ an optional validated model directory).
+#   SHA256SUMS (+ SBOMs when syft is installed) (+ an optional validated model directory)
+#   (+ the pinned embedding model, imported by `crewquarters load-bundle`).
 # usage: infra/debian/build-offline-bundle.sh VERSION ARCH [--with-vllm] [--model DIR]
-# The platform image crewquarters/platform:VERSION must exist locally for ARCH
-# (docker buildx build --platform linux/ARCH --load ...).
+# The images crewquarters/platform:VERSION and crewquarters/proxy:VERSION must exist
+# locally for ARCH (docker buildx build --platform linux/ARCH --load ...).
 set -eu
 VERSION="${1:?version}"; ARCH="${2:?arch}"; shift 2
 ROOT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
@@ -20,7 +21,10 @@ WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
 DEB=$("$ROOT_DIR/infra/debian/build-deb.sh" "$VERSION" "$ARCH")
 cp "$DEB" "$WORK/"
 PG=$(grep -o 'pgvector/pgvector@sha256:[a-f0-9]*' "$ROOT_DIR/infra/compose/compose.appliance.yaml")
-IMAGES="crewquarters/platform:$VERSION $PG"
+# The edge proxy image (nginx + web UI) is built like the platform image:
+#   docker buildx build --platform linux/ARCH -f infra/docker/proxy.Dockerfile \
+#     -t crewquarters/proxy:VERSION --load .
+IMAGES="crewquarters/platform:$VERSION crewquarters/proxy:$VERSION $PG"
 for profile in "$ROOT_DIR"/catalog/models/dgx/*.json; do
     img=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['launch']['image'])" "$profile")
     [ "$WITH_VLLM" = yes ] && IMAGES="$IMAGES $img"
@@ -37,6 +41,22 @@ if command -v syft >/dev/null 2>&1; then
 fi
 if [ -n "$MODEL_DIR" ]; then
     mkdir -p "$WORK/models"; cp -r "$MODEL_DIR" "$WORK/models/"
+fi
+# The pinned CPU embedding model (knowledge service), fetched and checksum-verified by the
+# platform image's own `cq-knowledge fetch-model`. Skipped with a warning when the image
+# predates that command (the appliance then downloads it on first start).
+EMB="$WORK/embedding-models"
+mkdir -p "$EMB"; chmod 0777 "$EMB"
+if timeout 60 docker run --rm --platform "linux/$ARCH" "crewquarters/platform:$VERSION" \
+        cq-knowledge fetch-model --help >/dev/null 2>&1; then
+    docker run --rm --platform "linux/$ARCH" -v "$EMB:/models" \
+        -e CQ_EMBEDDING_MODE=local -e CQ_EMBEDDING_MODEL_DIR=/models -e CQ_EMBEDDING_CACHE_DIR=/models \
+        "crewquarters/platform:$VERSION" cq-knowledge fetch-model
+    chmod 0755 "$EMB"
+else
+    echo "WARNING: cq-knowledge fetch-model is not available in crewquarters/platform:$VERSION;" \
+        "the bundle has no embedding model." >&2
+    rm -rf "$EMB"
 fi
 (cd "$WORK" && find . -type f ! -name SHA256SUMS -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS)
 OUT="$ROOT_DIR/dist/crewquarters-offline_${VERSION}_${ARCH}.tar.zst"

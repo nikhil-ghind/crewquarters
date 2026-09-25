@@ -14,8 +14,13 @@ Routes (``/internal/v1``, service credential required; never routed by the proxy
     GET    /memory                     reserve / serving limit / reservations / host free
     POST   /leases                     {"modelId", "holderType": "chat", "holderId", "label"}
     DELETE /leases/holders/{type}/{id} release a holder's leases
-    POST   /llm/chat                   normalized request; "stream": true -> SSE
+    POST   /llm/chat                   normalized request; "stream": true -> SSE;
+                                       "idempotencyKey" -> replayed for duplicates
+    POST   /provider-profiles/{id}/test  check a stored OpenAI/Anthropic key
     GET    /metrics                    Prometheus text
+
+Every response carries ``X-Request-Id`` (the caller's, when it sends a sane one); error
+envelopes and ChatResponses without a provider request ID use it as ``requestId``.
 """
 
 from __future__ import annotations
@@ -30,24 +35,30 @@ import socket
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 from sqlalchemy import text
+from starlette.datastructures import Headers, MutableHeaders
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from crewquarters_gateway import catalog
+from crewquarters_gateway import catalog, credentials
 from crewquarters_gateway.config import GatewaySettings, get_gateway_settings
 from crewquarters_gateway.control import ControlApiClient
-from crewquarters_gateway.credentials import CredentialProvider, NoCredentials
+from crewquarters_gateway.credentials import CloudProfile, CredentialProvider
+from crewquarters_gateway.idempotency import IdempotencyStore, request_key
 from crewquarters_gateway.inference import InferenceService
 from crewquarters_gateway.manager import JOB_LOAD, JOB_UNLOAD, ModelManager
 from crewquarters_gateway.runtime import DaemonModelRuntime, InProcessModelRuntime, ModelRuntime
-from crewquarters_shared import jobs
+from crewquarters_secret_store.db import ProviderProfile
+from crewquarters_shared import audit, jobs
 from crewquarters_shared.config import Settings, get_settings
 from crewquarters_shared.db import create_engine, session_factory
-from crewquarters_shared.errors import PlatformError, invalid
+from crewquarters_shared.errors import PlatformError, invalid, not_found
 from crewquarters_shared.logs import configure_logging
 from crewquarters_shared.metrics import CONTENT_TYPE
 
@@ -107,13 +118,17 @@ class Gateway:
         )
         self.manager = ModelManager(self.sessions, self.runtime, settings)
         self.control = control or ControlApiClient(settings.control_api_url, token)
+        self.credentials = credentials or _credentials_from_settings(self.sessions, settings)
         self.inference = InferenceService(
             self.sessions,
             self.manager,
             self.control,
-            credentials or NoCredentials(),
+            self.credentials,
             settings,
             shared.capability_signing_key.get_secret_value(),
+        )
+        self.idempotency = IdempotencyStore(
+            settings.idempotency_ttl_seconds, settings.idempotency_max_entries
         )
         self.metrics = GatewayMetrics()
         self.worker_id = f"gateway:{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:6]}"
@@ -198,6 +213,78 @@ class Gateway:
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stop.wait(), timeout=2)
 
+    async def test_provider_profile(self, profile_id: str) -> dict[str, Any]:
+        """Check a stored OpenAI/Anthropic key with one minimal authenticated call and
+        record the outcome. Definite rejections (401/403, unreadable key) mark the profile
+        ``ERROR``; transient failures (rate limits, provider outages, network) are reported
+        as ``ERROR`` but do not demote a profile that was ``CONNECTED``."""
+        try:
+            pid = uuid.UUID(profile_id)
+        except ValueError:
+            raise not_found("Provider profile", profile_id) from None
+        async with self.sessions() as db:
+            row = await db.get(ProviderProfile, pid)
+            if row is None or row.provider not in credentials.CLOUD_PROVIDERS:
+                raise not_found("Provider profile", profile_id)
+            profile, previous = CloudProfile.from_row(row), row.status
+        status, detail, definite = "CONNECTED", None, False
+        key = await self.credentials.api_key(profile.provider, profile, cached=False)
+        if not key:
+            status, definite = "ERROR", True
+            detail = getattr(self.credentials, "reason", None) or "The stored key cannot be read."
+        else:
+            adapter = self.inference.adapter_for(
+                profile.provider,
+                key,
+                profile.allowed_models[0] if profile.allowed_models else "",
+                self.settings.provider_test_timeout_seconds,
+                max_retries=0,
+            )
+            try:
+                await adapter.verify()
+            except PlatformError as exc:
+                provider_status = exc.details.get("providerStatus")
+                status = "ERROR"
+                definite = provider_status in (401, 403)
+                detail = (
+                    "The provider rejected the key."
+                    if definite
+                    else f"{exc.message} Try again later."
+                )
+        del key
+        if isinstance(self.credentials, credentials.SecretStoreCredentials):
+            self.credentials.forget(profile.secret_id)
+        checked = datetime.now(UTC)
+        # A transient failure does not demote a working profile out of routing.
+        transient = status == "ERROR" and not definite and previous == "CONNECTED"
+        stored = previous if transient else status
+        async with self.sessions() as db, db.begin():
+            row = await db.get(ProviderProfile, pid)
+            if row is None:
+                raise not_found("Provider profile", profile_id)
+            row.status = stored
+            row.last_checked_at = checked
+            audit.record(
+                db,
+                action=f"connection.{profile.provider}.tested",
+                actor_type="service",
+                actor_id="model-gateway",
+                target_type="provider_profile",
+                target_id=pid,
+                outcome="success" if status == "CONNECTED" else "failure",
+                metadata={"status": status},
+            )
+        log.info(
+            "provider profile tested",
+            extra={
+                "event": "provider_profile.tested",
+                "provider": profile.provider,
+                "profile_id": str(pid),
+                "status": status,
+            },
+        )
+        return {"status": status, "detail": detail, "checkedAt": checked.isoformat()}
+
     async def update_gauges(self) -> None:
         models = await self.manager.list_models()
         for model in models:
@@ -240,19 +327,35 @@ def create_app(gateway: Gateway | None = None, *, background: bool = True) -> Fa
     )
     app.state.gateway = gw
 
+    def error_body(request: Request, code: str, message: str, details: Any) -> dict[str, Any]:
+        return {
+            "error": {
+                "code": code,
+                "message": message,
+                "requestId": _request_id(request),
+                "details": details,
+            }
+        }
+
     @app.exception_handler(PlatformError)
     async def platform_error(request: Request, exc: PlatformError) -> JSONResponse:
+        headers = {"X-Request-Id": _request_id(request)}
         return JSONResponse(
-            {
-                "error": {
-                    "code": exc.code,
-                    "message": exc.message,
-                    "requestId": None,
-                    "details": exc.details,
-                }
-            },
+            error_body(request, exc.code, exc.message, exc.details),
             status_code=exc.status_code,
+            headers=headers,
         )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        code = "NOT_FOUND" if exc.status_code == 404 else "HTTP_ERROR"
+        return JSONResponse(
+            error_body(request, code, str(exc.detail), {}),
+            status_code=exc.status_code,
+            headers={"X-Request-Id": _request_id(request)},
+        )
+
+    app.add_middleware(RequestIdMiddleware)
 
     async def service_auth(request: Request) -> None:
         header = request.headers.get("authorization", "")
@@ -376,23 +479,47 @@ def create_app(gateway: Gateway | None = None, *, background: bool = True) -> Fa
             if holder.get("type") != "chat" or not holder.get("id"):
                 raise PlatformError("UNAUTHENTICATED", "Runs must present a capability token.", 401)
             caller = gw.inference.chat_caller(str(holder["id"]), str(holder.get("label") or "Chat"))
+        rid = _request_id(request)
+        key = request_key(caller.holder_type, caller.holder_id, body)
         if not body.get("stream"):
-            response = await gw.inference.chat(caller, body)
-            _observe(gw, response)
-            return response
-        # Prepare (authorize, reserve, load) before the 200 is sent so failures are
-        # ordinary HTTP errors rather than a truncated stream.
-        prepared = await gw.inference.prepare(caller, body)
+
+            async def once() -> dict[str, Any]:
+                response = await gw.inference.chat(caller, body)
+                _observe(gw, response)
+                return _with_request_id(response, rid)
+
+            if key is None:
+                return await once()
+            return await gw.idempotency.run(key, body, once)
+        # A keyed stream holds its key until the stream ends (released in events()).
+        claim = contextlib.ExitStack()
+        if key is not None:
+            claim.enter_context(gw.idempotency.claim_stream(key, body))
+        try:
+            # Prepare (authorize, reserve, load) before the 200 is sent so failures are
+            # ordinary HTTP errors rather than a truncated stream.
+            prepared = await gw.inference.prepare(caller, body)
+        except BaseException:
+            claim.close()
+            raise
 
         async def events() -> AsyncIterator[str]:
-            async for event in gw.inference.stream(prepared):
-                if event["type"] == "done":
-                    _observe(gw, event["response"])
-                yield f"event: {event['type']}\ndata: {json.dumps(event, default=str)}\n\n"
+            try:
+                async for event in gw.inference.stream(prepared):
+                    if event["type"] == "done":
+                        event["response"] = _with_request_id(event["response"], rid)
+                        _observe(gw, event["response"])
+                    yield f"event: {event['type']}\ndata: {json.dumps(event, default=str)}\n\n"
+            finally:
+                claim.close()
 
         return StreamingResponse(
             events(), media_type="text/event-stream", headers={"Cache-Control": "no-store"}
         )
+
+    @app.post(f"{PREFIX}/provider-profiles/{{profile_id}}/test", dependencies=auth)
+    async def test_provider_profile(profile_id: str) -> dict[str, Any]:
+        return await gw.test_provider_profile(profile_id)
 
     @app.get(f"{PREFIX}/metrics", dependencies=auth)
     async def metrics() -> PlainTextResponse:
@@ -400,6 +527,56 @@ def create_app(gateway: Gateway | None = None, *, background: bool = True) -> Fa
         return PlainTextResponse(generate_latest(gw.metrics.registry), media_type=CONTENT_TYPE)
 
     return app
+
+
+def _credentials_from_settings(sessions: Any, settings: GatewaySettings) -> CredentialProvider:
+    return credentials.from_settings(
+        sessions, settings.master_key_file, settings.credential_cache_seconds
+    )
+
+
+def _sane_request_id(incoming: str) -> str:
+    """The caller's X-Request-Id when it is sane, else a new one."""
+    if 8 <= len(incoming) <= 128 and incoming.isascii() and incoming.isprintable():
+        return incoming
+    return uuid.uuid4().hex
+
+
+class RequestIdMiddleware:
+    """Pure ASGI (streams are passed through untouched): assigns the request ID and
+    echoes it in ``X-Request-Id``."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        rid = _sane_request_id(Headers(scope=scope).get("x-request-id", ""))
+        scope.setdefault("state", {})["request_id"] = rid
+
+        async def send_with_id(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["X-Request-Id"] = rid
+            await send(message)
+
+        await self.app(scope, receive, send_with_id)
+
+
+def _request_id(request: Request) -> str:
+    existing = getattr(request.state, "request_id", None)
+    if existing:
+        return str(existing)
+    rid = _sane_request_id(request.headers.get("x-request-id", ""))
+    request.state.request_id = rid
+    return rid
+
+
+def _with_request_id(response: dict[str, Any], rid: str) -> dict[str, Any]:
+    if not response.get("requestId"):
+        response = {**response, "requestId": rid}
+    return response
 
 
 def _observe(gw: Gateway, response: dict[str, Any]) -> None:

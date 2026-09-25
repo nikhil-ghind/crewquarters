@@ -23,7 +23,7 @@ Each run gets:
 - a non-root user (65532), a read-only root filesystem, and a 64 MiB `noexec` tmpfs at `/tmp`;
 - all capabilities dropped, `no-new-privileges`, not privileged, private IPC, and an init process;
 - CPU, memory (no swap) and PID limits;
-- the internal agent network in isolated gateway mode, with no route to the host, the LAN, the internet or other networks;
+- the internal agent network in isolated gateway mode, with no route to the host, the LAN, the internet or other networks. The daemon creates this network (`cq-agents`) at startup. The capability broker is the only other member: Compose attaches it as an external network with the alias `capability-broker`, so `PLATFORM_BROKER_URL=http://capability-broker:8000` resolves and nothing else does. The model gateway joins `cq-models` the same way;
 - only `PLATFORM_*` environment variables;
 - one read-only bind mount: its non-secret config at `/run/crewquarters/config.json`.
 

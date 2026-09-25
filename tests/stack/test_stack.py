@@ -311,6 +311,6 @@ async def test_agent_run_in_real_container_with_brokered_model_call(stack: Stack
         json={"profile": "local.general", "messages": [{"role": "user", "content": "again"}]},
         headers={"X-Capability-Token": token},
     )
-    assert stale.status_code == 403 and stale.json()["error"]["code"] == "RUN_NOT_ACTIVE"
+    assert stale.status_code == 409 and stale.json()["error"]["code"] == "RUN_NOT_ACTIVE"
     await owner.post(f"/api/v1/models/{SMALL}/unload", json={"force": True})
     await poll_model(owner, "memoryState", "NOT_LOADED")

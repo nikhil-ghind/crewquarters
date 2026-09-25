@@ -58,6 +58,34 @@ Profiles: **dev** = laptop Compose with fakes; **demo-cpu** = laptop end-to-end;
 | `CQ_GATEWAY_DAILY_CLOUD_TOKEN_BUDGET` | int | `0` (off) | no | all | Daily cloud tokens per provider |
 | `CQ_GATEWAY_ANTHROPIC_DEFAULT_MODEL` | string | `claude-opus-5` | no | all | Model for `anthropic.default` |
 | `CQ_GATEWAY_ANTHROPIC_FALLBACKS` | bool | `true` | no | all | Anthropic server-side refusal fallback |
-| `CQ_GATEWAY_OPENAI_MODELS` / `CQ_GATEWAY_ANTHROPIC_MODELS` | JSON | `{}` | no | all | Cloud profile name to model id |
+| `CQ_GATEWAY_OPENAI_MODELS` / `CQ_GATEWAY_ANTHROPIC_MODELS` | JSON | `{}` | no | all | Operator override: cloud profile name to model ID. Otherwise the provider profile's `allowedModels` apply (docs/model-gateway.md) |
 | `CQ_GATEWAY_HOST` / `CQ_GATEWAY_PORT` | string / int | `127.0.0.1` / `8090` | no | Compose: `0.0.0.0` | Gateway listen address |
+| `CQ_GATEWAY_WAIT_READY_SECONDS` | int | `900` | no | all | Longest wait for a cold local model; first link of the timeout chain (docs/model-gateway.md, "Timeouts") |
+| `CQ_GATEWAY_REQUEST_TIMEOUT_SECONDS` | float | `300` | no | all | One local or cloud model request. Keep wait-ready + request below the broker's 1260 s |
+| `CQ_MASTER_KEY_FILE` (gateway) | path | unset (cloud disabled) | **yes** (the file) | demo-cpu, dgx; dev Compose | Device keyring shared with the capability broker; the gateway decrypts OpenAI/Anthropic keys with it. Unset: cloud profiles return `NEEDS_CONNECTION`. Also accepted as `CQ_GATEWAY_MASTER_KEY_FILE` |
+| `CQ_GATEWAY_CREDENTIAL_CACHE_SECONDS` | float | `60` | no | all | How long a decrypted provider key stays in memory; `0` disables the cache |
+| `CQ_GATEWAY_PROVIDER_TEST_TIMEOUT_SECONDS` | float | `15` | no | all | Timeout of `POST /internal/v1/provider-profiles/{id}/test` provider calls |
+| `CQ_GATEWAY_IDEMPOTENCY_TTL_SECONDS` | float | `3600` | no | all | How long a keyed `/llm/chat` result is replayed (in-process store) |
+| `CQ_GATEWAY_IDEMPOTENCY_MAX_ENTRIES` | int | `2000` | no | all | Completed keyed results kept in memory |
+
+## Deployment (Compose, proxy, appliance)
+
+Compose interpolation variables, plus the service URLs the stack wires together. The appliance reads these from `/etc/crewquarters/crewquarters.env` (conffile) and `/etc/crewquarters/secrets.env` (generated, 0640 `root:crewquarters`). Proxy routing: docs/runbooks/proxy.md.
+
+| Variable | Type | Default | Secret | Set by | Purpose |
+| --- | --- | --- | --- | --- | --- |
+| `CQ_KNOWLEDGE_URL` | string | `http://knowledge:8000` | no | all | Knowledge service URL for the control API and the broker |
+| `CQ_CONTROL_API_URL` | string | `http://control-api:8080` | no | all | Control API URL for the broker |
+| `CQ_PUBLIC_BASE_URL` | URL | `http://localhost:8080` | no | dgx (tunnel) | Public origin of the proxy; the broker builds the Google redirect URI and Twilio callback URLs from it. With a callback tunnel, the tunnel's `https://` hostname |
+| `CQ_HTTP_PORT` | int | `8080` | no | all | Host port the proxy publishes (the only published HTTP port) |
+| `CQ_BIND_ADDRESS` | string | `127.0.0.1` | no | dgx (LAN mode) | Host address the proxy publishes on (appliance) |
+| `CQ_POSTGRES_PORT` | int | `55432` | no | dev | Host port of the dev database (laptop Compose only) |
+| `CQ_PLATFORM_IMAGE` | string | dev: `crewquarters/platform:dev`; appliance: `crewquarters/platform` (tag `CQ_VERSION`) | no | all | Platform image |
+| `CQ_PROXY_IMAGE` | string | dev: `crewquarters/proxy:dev`; appliance: `crewquarters/proxy` (tag `CQ_VERSION`) | no | all | Edge proxy image (nginx + web UI, `infra/docker/proxy.Dockerfile`) |
+| `CQ_KEY_GID` | int | `10500` | no | dev | Group that owns the dev keyring (`root:CQ_KEY_GID 0640`); only the broker and the gateway get it through `group_add` |
+| `CQ_SOCKET_GID` | int | set by postinst | no | dgx | Host `crewquarters` group ID: runtime socket access, and read access to `master.key`, `documents` and `embedding-models` |
+| `CQ_PROVIDER_MODE` | `fake` \| `live` | dev `fake`, appliance `live` | no | all | Broker provider mode (docs/capability-broker.md) |
+| `CQ_EMBEDDING_MODE` | `fake` \| `local` | dev `fake`, appliance `local` | no | all | Knowledge embeddings; `local` makes the `knowledge-model` init service run `cq-knowledge fetch-model` |
+| `CQ_EMBEDDING_MODEL_DIR` | path | `/var/lib/crewquarters/embedding-models` (Compose) | no | all | Pinned embedding model directory: a named volume (dev) or the host directory (appliance, `2770 root:crewquarters`). `CQ_EMBEDDING_CACHE_DIR` is set to the same path |
+| `CQ_TUNNEL_TOKEN` | secret string | empty | **yes** | demo only | Cloudflare tunnel token for the `callbacks` profile (`crewquarters tunnel up`); keep it in `secrets.env` |
 | `CQ_RUNTIME_*` | | | token: yes | host | Runtime daemon settings; see docs/runtime-daemon.md |

@@ -15,6 +15,11 @@ from crewquarters.errors import InvalidInput, PermissionDenied, error_from_respo
 
 ROLES = frozenset({"system", "user", "assistant"})
 
+# How long an LLM call may wait for the broker. The chain must grow outward (see
+# docs/model-gateway.md, "Timeouts"): model gateway = cold load (900 s) + request (300 s)
+# < broker -> gateway (1260 s) < SDK -> broker (this value).
+LLM_TIMEOUT_SECONDS = 1320.0
+
 
 class Usage(WireModel):
     input_tokens: int = 0
@@ -87,7 +92,10 @@ class ChatStream:
 
     async def _iterate(self) -> AsyncIterator[str]:
         async for event, data in self._transport.stream_sse(
-            "/llm/chat:stream", operation="llm.stream", json=self._body, read_timeout=300
+            "/llm/chat:stream",
+            operation="llm.stream",
+            json=self._body,
+            read_timeout=LLM_TIMEOUT_SECONDS,
         ):
             if event == "delta":
                 yield str(data.get("text", ""))
@@ -183,7 +191,7 @@ class LLMClient:
             operation="llm.chat",
             idempotent=idempotency_key is not None,
             json=body,
-            read_timeout=300,
+            read_timeout=LLM_TIMEOUT_SECONDS,
         )
         return _parse(data, response_model)
 

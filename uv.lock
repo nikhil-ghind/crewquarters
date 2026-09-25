@@ -425,6 +425,7 @@ version = "0.1.0"
 source = { editable = "services/model_gateway" }
 dependencies = [
     { name = "anthropic" },
+    { name = "crewquarters-secret-store" },
     { name = "crewquarters-shared" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -434,6 +435,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.70" },
+    { name = "crewquarters-secret-store", editable = "packages/secret_store" },
     { name = "crewquarters-shared", editable = "packages/shared_python" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },

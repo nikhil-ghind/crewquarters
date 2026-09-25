@@ -5,6 +5,7 @@ description = "Crewquarters model gateway: model catalog, leases, admission cont
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "crewquarters-shared",
+    "crewquarters-secret-store",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "httpx>=0.27",
@@ -16,6 +17,7 @@ cq-gateway = "crewquarters_gateway.main:run"
 
 [tool.uv.sources]
 crewquarters-shared = { workspace = true }
+crewquarters-secret-store = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

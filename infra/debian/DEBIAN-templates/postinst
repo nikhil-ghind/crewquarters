@@ -18,7 +18,10 @@ install -d -m 0755 /var/lib/crewquarters
 install -d -m 0750 -o crewquarters-runtime -g crewquarters-runtime \
     /var/lib/crewquarters/models /var/lib/crewquarters/runs
 install -d -m 0700 -o 999 -g 999 /var/lib/crewquarters/postgres
-install -d -m 0750 -o root -g crewquarters /var/lib/crewquarters/documents
+# Knowledge service data (container uid 10001 + group crewquarters via group_add): group
+# writable and setgid so every file it creates stays in the crewquarters group.
+install -d -m 2770 -o root -g crewquarters /var/lib/crewquarters/documents \
+    /var/lib/crewquarters/embedding-models
 install -d -m 0700 /var/lib/crewquarters/backups
 install -d -m 0750 /var/log/crewquarters
 
@@ -73,6 +76,8 @@ elif [ "$(stat -c %s /etc/crewquarters/master.key)" = 32 ] \
         > /etc/crewquarters/master.key.new )
     mv /etc/crewquarters/master.key.new /etc/crewquarters/master.key
 fi
+# Group-readable so the two containers that mount it (capability broker, model gateway;
+# uid 10001 + group_add CQ_SOCKET_GID) can read it. Keyring.from_file refuses "other" access.
 chown root:crewquarters /etc/crewquarters/master.key && chmod 0640 /etc/crewquarters/master.key
 
 if command -v systemd-tmpfiles >/dev/null 2>&1; then
@@ -85,7 +90,8 @@ if [ -d /run/systemd/system ]; then
     systemctl restart crewquarters-netguard.service || echo "crewquarters: WARNING netguard failed" >&2
     systemctl restart crewquarters-runtime.socket || true
     systemctl try-restart crewquarters-runtime.service || true
-    if docker image inspect "crewquarters/platform:$VERSION" >/dev/null 2>&1; then
+    if docker image inspect "crewquarters/platform:$VERSION" >/dev/null 2>&1 \
+            && docker image inspect "crewquarters/proxy:$VERSION" >/dev/null 2>&1; then
         systemctl restart --no-block crewquarters.service || true
     else
         echo "crewquarters: platform images are not loaded yet."

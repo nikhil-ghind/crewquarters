@@ -8,7 +8,10 @@ Callers:
 * **Chat** (the control API, service credential): names a chat holder. Chat is
   local-only.
 
-Cloud routing is never automatic: a cloud profile must be requested explicitly.
+Cloud routing is never automatic: a cloud profile must be requested explicitly, and an
+enabled provider profile (Connections) must hold the key. The provider profile's
+``allowedModels`` restrict which models ``<provider>.<name>`` may resolve to and its
+``budgets`` (``dailyTokens``, ``perRunTokens``) apply on top of the gateway-wide limits.
 """
 
 from __future__ import annotations
@@ -37,7 +40,8 @@ from crewquarters_gateway.adapters import (
 )
 from crewquarters_gateway.config import GatewaySettings
 from crewquarters_gateway.control import ACTIVE_RUN_STATES, ControlApiClient
-from crewquarters_gateway.credentials import CredentialProvider
+from crewquarters_gateway.credentials import CloudProfile, CredentialProvider
+from crewquarters_gateway.idempotency import FinalError
 from crewquarters_gateway.manager import ModelManager
 from crewquarters_shared import audit, capability
 from crewquarters_shared.db.models_gateway import LlmUsage, ModelCatalogEntry
@@ -56,6 +60,7 @@ class Prepared:
     target: str
     reserved: int
     adapter: Adapter | None
+    cloud: CloudProfile | None = None
 
 
 @dataclass(frozen=True)
@@ -95,7 +100,7 @@ class InferenceService:
             claims = capability.verify(token, self.signing_key)
         except jwt.InvalidTokenError as exc:
             raise PlatformError(
-                "INVALID_CAPABILITY_TOKEN", "The capability token is invalid or expired.", 401
+                "UNAUTHENTICATED", "The capability token is invalid or expired.", 401
             ) from exc
         run = await self.control.get_run(claims.run_id, max_age=2.0)
         if (
@@ -104,7 +109,7 @@ class InferenceService:
             or run["currentAttempt"] != claims.attempt
             or run.get("capabilityTokenId") != claims.token_id
         ):
-            raise PlatformError("RUN_NOT_ACTIVE", "This token's run attempt is not active.", 403)
+            raise PlatformError("RUN_NOT_ACTIVE", "This token's run attempt is not active.", 409)
         return Caller(
             holder_type="run",
             holder_id=claims.run_id,
@@ -120,7 +125,9 @@ class InferenceService:
 
     # --- profile resolution -----------------------------------------------------------
 
-    def _resolve(self, caller: Caller, profile: str) -> tuple[str, str]:
+    def _resolve(
+        self, caller: Caller, profile: str, cloud: CloudProfile | None = None
+    ) -> tuple[str, str]:
         """Return (provider, target) where target is a local model id or a cloud model."""
         provider = profile.split(".", 1)[0]
         if provider == "local":
@@ -128,38 +135,66 @@ class InferenceService:
             if profile in DEFAULT_VARIANTS:  # family request
                 variant = (caller.model_bindings or {}).get(profile) or DEFAULT_VARIANTS[profile]
             if caller.holder_type == "run" and f"llm.profile:{variant}" not in caller.capabilities:
-                raise PlatformError("PERMISSION_DENIED", f"This run may not use {variant}.", 403)
+                raise _capability_denied(f"llm.profile:{variant}")
             return "local", variant
         if provider in CLOUD_PROVIDERS:
             if caller.holder_type != "run":
                 raise PlatformError("PERMISSION_DENIED", "Chat is local-only.", 403)
-            if (
-                f"cloud.{provider}" not in caller.capabilities
-                or f"llm.profile:{profile}" not in caller.capabilities
-            ):
-                raise PlatformError(
-                    "PERMISSION_DENIED", f"This run was not approved to use {profile}.", 403
-                )
-            name = profile.split(".", 1)[1]
-            models = (
-                self.settings.openai_models
-                if provider == "openai"
-                else self.settings.anthropic_models
-            )
-            model = models.get(name)
-            if model is None and provider == "anthropic" and name == "default":
-                model = self.settings.anthropic_default_model
-            if model is None:
-                raise PlatformError(
-                    "CLOUD_PROFILE_NOT_CONFIGURED", f"No model is configured for {profile}.", 409
-                )
-            return provider, model
+            for needed in (f"cloud.{provider}", f"llm.profile:{profile}"):
+                if needed not in caller.capabilities:
+                    raise _capability_denied(needed)
+            return provider, self._cloud_model(provider, profile, cloud)
         raise invalid("UNKNOWN_MODEL_PROFILE", f"Unknown model profile {profile}.")
+
+    def _cloud_model(self, provider: str, profile: str, cloud: CloudProfile | None) -> str:
+        """``<provider>.<name>`` -> model id.
+
+        1. Operator override: ``CQ_GATEWAY_<PROVIDER>_MODELS[name]``.
+        2. ``default``: the profile's first allowed model, else (Anthropic only)
+           ``CQ_GATEWAY_ANTHROPIC_DEFAULT_MODEL``.
+        3. A name listed in the profile's ``allowedModels`` is that model.
+        A non-empty ``allowedModels`` also restricts the result of 1 and 2.
+        """
+        name = profile.split(".", 1)[1] if "." in profile else ""
+        overrides = (
+            self.settings.openai_models if provider == "openai" else self.settings.anthropic_models
+        )
+        allowed = cloud.allowed_models if cloud is not None else ()
+        model = overrides.get(name)
+        if model is None and name == "default":
+            if allowed:
+                model = allowed[0]
+            elif provider == "anthropic":
+                model = self.settings.anthropic_default_model
+        if model is None and name in allowed:
+            model = name
+        if model is None:
+            raise PlatformError(
+                "NEEDS_CONFIGURATION",
+                f"No model is configured for {profile}. Add it to the {provider} "
+                "connection's allowed models.",
+                409,
+                {"provider": provider, "profile": profile},
+            )
+        if allowed and model not in allowed:
+            raise PlatformError(
+                "PERMISSION_DENIED",
+                f"{model} is not an allowed model of the {provider} connection.",
+                403,
+                {"provider": provider, "model": model},
+            )
+        return model
 
     # --- budgets and usage ------------------------------------------------------------
 
-    async def _check_budgets(self, caller: Caller, provider: str) -> None:
-        """Recorded usage plus every in-flight reservation (including this request's)."""
+    async def _check_budgets(
+        self, caller: Caller, provider: str, cloud: CloudProfile | None = None
+    ) -> None:
+        """Recorded usage plus every in-flight reservation (including this request's).
+
+        Cloud calls also honour the provider profile's ``perRunTokens`` (this run's use
+        of the provider) and ``dailyTokens`` (the smaller of it and
+        ``CQ_GATEWAY_DAILY_CLOUD_TOKEN_BUDGET`` applies)."""
         async with self.sessions() as db:
             if caller.holder_type == "run":
                 used = await db.scalar(
@@ -172,18 +207,46 @@ class InferenceService:
                     raise PlatformError(
                         "RUN_TOKEN_BUDGET_EXCEEDED", "This run has used its token budget.", 429
                     )
-            if provider in CLOUD_PROVIDERS and self.settings.daily_cloud_token_budget > 0:
+            if provider not in CLOUD_PROVIDERS:
+                return
+            per_run = cloud.budget("perRunTokens") if cloud is not None else None
+            if per_run is not None and caller.holder_type == "run":
+                used = await db.scalar(
+                    select(
+                        func.coalesce(func.sum(LlmUsage.input_tokens + LlmUsage.output_tokens), 0)
+                    ).where(
+                        LlmUsage.holder_type == "run",
+                        LlmUsage.holder_id == caller.holder_id,
+                        LlmUsage.provider == provider,
+                    )
+                )
+                if int(used or 0) + self._reserved[("run", caller.holder_id)] > per_run:
+                    raise PlatformError(
+                        "RUN_TOKEN_BUDGET_EXCEEDED",
+                        f"This run has used its {provider} token budget.",
+                        429,
+                        {"provider": provider, "limit": "perRunTokens"},
+                    )
+            limits = [
+                v
+                for v in (
+                    self.settings.daily_cloud_token_budget,
+                    cloud.budget("dailyTokens") if cloud is not None else None,
+                )
+                if v is not None and v > 0
+            ]
+            if limits:
                 used = await db.scalar(
                     select(
                         func.coalesce(func.sum(LlmUsage.input_tokens + LlmUsage.output_tokens), 0)
                     ).where(LlmUsage.provider == provider, LlmUsage.day == date.today())
                 )
-                if (
-                    int(used or 0) + self._reserved_provider[provider]
-                    > self.settings.daily_cloud_token_budget
-                ):
+                if int(used or 0) + self._reserved_provider[provider] > min(limits):
                     raise PlatformError(
-                        "CLOUD_BUDGET_EXCEEDED", f"Today's {provider} token budget is used up.", 429
+                        "CLOUD_BUDGET_EXCEEDED",
+                        f"Today's {provider} token budget is used up.",
+                        429,
+                        {"provider": provider, "limit": "dailyTokens"},
                     )
 
     async def _record(
@@ -258,21 +321,32 @@ class InferenceService:
             endpoint.base_url, endpoint.served_model, self.settings.request_timeout_seconds
         )
 
-    async def _cloud_adapter(self, provider: str, model: str) -> Adapter:
-        key = await self.credentials.api_key(provider)
+    async def _cloud_adapter(
+        self, provider: str, model: str, profile: CloudProfile | None = None
+    ) -> Adapter:
+        key = await self.credentials.api_key(provider, profile)
         if not key:
+            reason = getattr(self.credentials, "reason", None)
             raise PlatformError(
-                "CLOUD_PROVIDER_NOT_CONFIGURED",
-                f"No {provider} key is configured. Add one in Connections.",
+                "NEEDS_CONNECTION",
+                reason or f"No usable {provider} key is configured. Add one in Connections.",
                 409,
+                {"provider": provider},
             )
+        return self.adapter_for(provider, key, model, self.settings.request_timeout_seconds)
+
+    def adapter_for(
+        self, provider: str, key: str, model: str, timeout: float, *, max_retries: int = 2
+    ) -> OpenAIAdapter | AnthropicAdapter:
+        """Build a cloud adapter (tests replace this to inject mocked transports)."""
         if provider == "openai":
-            return OpenAIAdapter(key, model, self.settings.request_timeout_seconds)
+            return OpenAIAdapter(key, model, timeout)
         return AnthropicAdapter(
             key,
             model,
-            self.settings.request_timeout_seconds,
+            timeout,
             fallbacks=self.settings.anthropic_fallbacks,
+            max_retries=max_retries,
         )
 
     def _request(self, body: dict[str, Any]) -> ChatRequest:
@@ -318,17 +392,20 @@ class InferenceService:
         if needed). Runs before any response starts, so failures are proper HTTP errors."""
         profile = str(body.get("profile", ""))
         request = self._request(body)
-        provider, target = self._resolve(caller, profile)
+        cloud = None
+        if caller.holder_type == "run" and profile.split(".", 1)[0] in CLOUD_PROVIDERS:
+            cloud = await self.credentials.profile(profile.split(".", 1)[0])
+        provider, target = self._resolve(caller, profile, cloud)
         estimate = self._estimate(request)
         # Reserve before the (awaiting) budget check so parallel requests see each other.
         self._reserve(caller, provider, estimate)
-        prepared = Prepared(caller, request, profile, provider, target, estimate, None)
+        prepared = Prepared(caller, request, profile, provider, target, estimate, None, cloud)
         try:
-            await self._check_budgets(caller, provider)
+            await self._check_budgets(caller, provider, cloud)
             prepared.adapter = await (
                 self._local_adapter(caller, target)
                 if provider == "local"
-                else self._cloud_adapter(provider, target)
+                else self._cloud_adapter(provider, target, cloud)
             )
         except BaseException:
             self._unreserve(prepared)
@@ -345,15 +422,17 @@ class InferenceService:
         await self._record(
             prepared.caller, result, prepared.provider, result.model, outcome, result.latency_ms
         )
+        # FinalError: the provider produced (and billed) this outcome, so an idempotent
+        # retry replays it instead of calling the provider again.
         if result.finish_reason == "refusal":
-            raise PlatformError(
+            raise FinalError(
                 "MODEL_REFUSED",
                 "The model declined this request.",
                 422,
                 {"category": result.refusal_category, "provider": prepared.provider},
             )
         if result.structured_error:
-            raise PlatformError(
+            raise FinalError(
                 "STRUCTURED_OUTPUT_INVALID",
                 result.structured_error,
                 502,
@@ -437,3 +516,12 @@ class InferenceService:
             outcome,
             int((time.perf_counter() - started) * 1000),
         )
+
+
+def _capability_denied(capability: str) -> PlatformError:
+    return PlatformError(
+        "CAPABILITY_DENIED",
+        f"This run is not allowed to use {capability}.",
+        403,
+        {"capability": capability},
+    )
