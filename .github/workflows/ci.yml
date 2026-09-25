@@ -192,3 +192,44 @@ jobs:
           done
           docker buildx build --platform linux/arm64 -f packages/fake_platform/Dockerfile -t crewq/fake-platform:arm64 --load .
           docker run --rm --platform linux/arm64 crewq/fake-platform:arm64 --help
+
+  # --- Person 4: web UI (apps/web) ---------------------------------------------------------
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Generated API types match openapi.yaml
+        run: npm run gen:api:check
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+      - name: No provider/model/internal hosts in the bundle
+        run: npm run check:bundle
+      - name: Unit and component tests
+        run: npm test
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Playwright against the mocked API (flows, reconnect, degraded, axe, responsive)
+        run: npx playwright test
+        env:
+          CI: "1"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+            apps/web/e2e/screenshots
+          if-no-files-found: ignore
+          retention-days: 14
