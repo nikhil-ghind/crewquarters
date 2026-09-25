@@ -79,7 +79,9 @@ The run and attempt always come from the token. JSON is camelCase. Errors use th
 | `POST /connections/google/test` | Refresh now; an expired grant becomes `NEEDS_ATTENTION` |
 | `DELETE /connections/google?userId=` | Revoke at Google, then delete the connection and secret |
 | `PUT /connections/twilio` | `{userId, accountSid, authToken, fromNumber}`: save (or replace), then validate without calling |
-| `POST /connections/twilio/test` / `DELETE /connections/twilio?userId=` | Validate / delete |
+| `POST /connections/twilio/test` / `DELETE /connections/twilio?userId=` | Validate without calling / delete |
+| `POST /connections/twilio/test-call` | `{userId, to, confirm: true}`: a live call that speaks a fixed test message. The UI must ask the owner first. At most one a minute (`429` with `Retry-After`); in live mode only allowed numbers; audited with the number masked; not tied to a run |
+| `GET /metrics` | Prometheus text (below) |
 | `GET/POST /provider-profiles`, `DELETE /provider-profiles/{id}?userId=` | OpenAI and Anthropic keys. The broker only encrypts them; the model gateway decrypts and tests them |
 
 Responses never contain secret values.
@@ -113,6 +115,18 @@ The callback requires that cookie, so an attacker cannot make the owner's browse
 - **Rotation:** add a new line, then call `db.replace()` to re-encrypt a secret under it.
 - **Who decrypts:** the broker decrypts only Google and Twilio secrets, and the model gateway decrypts only OpenAI and Anthropic keys (`db.load(..., provider=...)`). Plaintext never travels between services.
 - **Development:** the `dev` profile uses a fixed, insecure development key when no file is set. Every other profile refuses to start without one.
+
+## Metrics
+
+`GET /internal/v1/metrics` (service token) returns Prometheus text. Labels are route templates, providers, and codes: never IDs, tokens, or phone numbers.
+
+| Metric | Meaning |
+| --- | --- |
+| `cq_http_requests_total{method,route,status}`, `cq_http_request_duration_seconds` | Request volume, errors, latency |
+| `cq_broker_denials_total{code}` | Refused agent calls: `UNAUTHENTICATED`, `CAPABILITY_DENIED`, `PERMISSION_DENIED`, `RUN_NOT_ACTIVE`, `RUN_CANCELLED` |
+| `cq_broker_provider_requests_total{provider,outcome}`, `cq_broker_provider_request_duration_seconds{provider}` | Google and Twilio usage and latency; `outcome` is `2xx`, `4xx`, `5xx`, or `error` for transport failures |
+| `cq_broker_oauth_refresh_failures_total{provider,reason}` | `invalid_grant` means the owner must reconnect (seven-day test-mode expiry) |
+| `cq_broker_callback_rejections_total{provider}` | Twilio callbacks with a bad signature |
 
 ## Configuration
 

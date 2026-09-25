@@ -31,8 +31,14 @@ def _body(request: Request, code: str, message: str, details: dict[str, Any]) ->
 def install(app: FastAPI) -> None:
     @app.exception_handler(PlatformError)
     async def platform_error(request: Request, exc: PlatformError) -> JSONResponse:
+        request.app.state.broker.metrics.observe_error(exc.code)
+        headers = {}
+        if exc.status_code == 429 and "retryAfterSeconds" in exc.details:
+            headers["Retry-After"] = str(exc.details["retryAfterSeconds"])
         return JSONResponse(
-            _body(request, exc.code, exc.message, exc.details), status_code=exc.status_code
+            _body(request, exc.code, exc.message, exc.details),
+            status_code=exc.status_code,
+            headers=headers,
         )
 
     @app.exception_handler(RequestValidationError)

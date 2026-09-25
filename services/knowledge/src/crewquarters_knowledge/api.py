@@ -8,11 +8,13 @@ already authorized the knowledge base; this service enforces the KB scope of eve
 from __future__ import annotations
 
 import hmac
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from sqlalchemy import select
@@ -21,8 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from crewquarters_knowledge import service
 from crewquarters_knowledge.config import KnowledgeSettings
 from crewquarters_knowledge.embeddings import Embedder
+from crewquarters_knowledge.metrics import KnowledgeMetrics
 from crewquarters_knowledge.models import Document, KnowledgeBase
 from crewquarters_shared.errors import PlatformError, not_found
+from crewquarters_shared.metrics import CONTENT_TYPE
 
 
 class ApiModel(BaseModel):
@@ -46,6 +50,7 @@ class KnowledgeState:
     settings: KnowledgeSettings
     sessions: async_sessionmaker[AsyncSession]
     embedder: Embedder
+    metrics: KnowledgeMetrics
 
 
 def state_of(request: Request) -> KnowledgeState:
@@ -83,10 +88,10 @@ async def get_kb(kb_id: uuid.UUID, state: KnowledgeState = Depends(state_of)) ->
         return service.kb_view(await service.get_kb(db, kb_id))
 
 
-@router.delete("/knowledge-bases/{kb_id}", status_code=204, summary="Delete a KB and its files")
+@router.delete("/knowledge-bases/{kb_id}", status_code=204, summary="Delete a KB; files are purged")
 async def delete_kb(kb_id: uuid.UUID, state: KnowledgeState = Depends(state_of)) -> Response:
     async with state.sessions() as db:
-        await service.delete_kb(db, state.settings, kb_id)
+        await service.delete_kb(db, kb_id)
     return Response(status_code=204)
 
 
@@ -126,7 +131,7 @@ async def delete_document(
     document_id: uuid.UUID, state: KnowledgeState = Depends(state_of)
 ) -> Response:
     async with state.sessions() as db:
-        await service.delete_document(db, state.settings, document_id)
+        await service.delete_document(db, document_id)
     return Response(status_code=204)
 
 
@@ -138,8 +143,9 @@ async def reindex(document_id: uuid.UUID, state: KnowledgeState = Depends(state_
 
 @router.post("/knowledge-bases/{kb_id}/query", summary="Cited retrieval within one KB")
 async def query(kb_id: uuid.UUID, body: QueryIn, state: KnowledgeState = Depends(state_of)) -> Any:
+    started = time.perf_counter()
     async with state.sessions() as db:
-        return await service.query(
+        result = await service.query(
             db,
             state.embedder,
             kb_id,
@@ -148,3 +154,12 @@ async def query(kb_id: uuid.UUID, body: QueryIn, state: KnowledgeState = Depends
             body.max_context_tokens,
             body.filters.get("documentIds"),
         )
+    state.metrics.retrieval.observe(time.perf_counter() - started)
+    return result
+
+
+@router.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
+async def metrics(state: KnowledgeState = Depends(state_of)) -> PlainTextResponse:
+    async with state.sessions() as db:
+        await state.metrics.collect_database(db)
+    return PlainTextResponse(state.metrics.render(), media_type=CONTENT_TYPE)

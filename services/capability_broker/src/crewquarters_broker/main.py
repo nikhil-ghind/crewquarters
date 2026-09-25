@@ -3,22 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import text
 
 from crewquarters_broker import agent_api, callbacks, connections, errors, fakes
 from crewquarters_broker.config import BrokerSettings, get_settings
-from crewquarters_broker.deps import BrokerState
+from crewquarters_broker.deps import BrokerState, internal_auth
 from crewquarters_broker.google import GoogleConnector
 from crewquarters_broker.internal import InternalClient
+from crewquarters_broker.metrics import BrokerMetrics, MeteredTransport
 from crewquarters_broker.twilio import TelephonyService
 from crewquarters_shared.db import create_engine, session_factory
 from crewquarters_shared.logs import configure_logging
+from crewquarters_shared.metrics import CONTENT_TYPE
 
 PROVIDER_TIMEOUT_SECONDS = 20.0
 # A local model may cold-start before its first token (PLAN.md section 8).
@@ -43,7 +47,11 @@ def create_app(
     fake = settings.provider_mode == "fake"
     if fake and provider_transport is None:
         provider_transport = fakes.transport(fakes.FakeGoogle(), fakes.FakeTwilio())
-    http = httpx.AsyncClient(timeout=PROVIDER_TIMEOUT_SECONDS, transport=provider_transport)
+    metrics = BrokerMetrics()
+    http = httpx.AsyncClient(
+        timeout=PROVIDER_TIMEOUT_SECONDS,
+        transport=MeteredTransport(provider_transport or httpx.AsyncHTTPTransport(), metrics),
+    )
     control = InternalClient(settings.control_api_url, token, control_transport)
     knowledge = InternalClient(settings.knowledge_url, token, knowledge_transport)
     gateway = httpx.AsyncClient(
@@ -52,7 +60,7 @@ def create_app(
         timeout=httpx.Timeout(GATEWAY_TIMEOUT_SECONDS, connect=5.0),
         transport=gateway_transport,
     )
-    telephony = TelephonyService(settings, keyring, sessions, http)
+    telephony = TelephonyService(settings, keyring, sessions, http, metrics)
     simulations: set[asyncio.Task[None]] = set()
     if fake:
         telephony.on_created, simulations = fakes.call_simulator(telephony)
@@ -73,7 +81,7 @@ def create_app(
         title="Crewquarters Capability Broker",
         version="0.1.0",
         description=(
-            "Agent API (`/agent/v1`, capability token), connection management for the "
+            "SDK API (`/internal/v1/sdk`, capability token), connection management for the "
             "control API (`/internal/v1`, service token), and the public OAuth/Twilio "
             "callback paths."
         ),
@@ -88,8 +96,9 @@ def create_app(
         control=control,
         knowledge=knowledge,
         gateway=gateway,
-        google=GoogleConnector(settings, keyring, sessions, http),
+        google=GoogleConnector(settings, keyring, sessions, http, metrics),
         telephony=telephony,
+        metrics=metrics,
     )
     errors.install(app)
 
@@ -99,7 +108,12 @@ def create_app(
     ) -> Response:
         incoming = request.headers.get("x-request-id", "")
         request.state.request_id = incoming if 8 <= len(incoming) <= 128 else uuid.uuid4().hex
+        started = time.perf_counter()
         response = await call_next(request)
+        # The matched route template, never the raw path: IDs stay out of metrics.
+        route = str(getattr(request.scope.get("route"), "path", "unmatched"))
+        metrics.requests.labels(request.method, route, str(response.status_code)).inc()
+        metrics.latency.labels(request.method, route).observe(time.perf_counter() - started)
         response.headers["X-Request-Id"] = request.state.request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
@@ -113,6 +127,15 @@ def create_app(
         async with sessions() as db:
             await db.execute(text("SELECT 1"))
         return {"status": "ok"}
+
+    @app.get(
+        "/internal/v1/metrics",
+        dependencies=[Depends(internal_auth)],
+        response_class=PlainTextResponse,
+        include_in_schema=False,
+    )
+    async def metrics_text() -> PlainTextResponse:
+        return PlainTextResponse(metrics.render(), media_type=CONTENT_TYPE)
 
     app.include_router(agent_api.router)
     app.include_router(connections.router)

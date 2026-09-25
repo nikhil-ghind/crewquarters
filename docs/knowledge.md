@@ -30,7 +30,9 @@ The service indexes uploaded documents on the device and answers retrieval queri
    - Permanent problems mark it `FAILED` with `{code, message}`.
    - Other errors retry with backoff (`PENDING` plus `INGEST_RETRYING`), up to 3 attempts, and then `FAILED`.
 
-**Deletion.** Deleting a document or knowledge base removes the rows first, then the bytes. Re-indexing replaces all chunks.
+**Deletion (PLAN.md section 6.1).** Deleting a document or knowledge base removes the rows and, in the same transaction, queues a `knowledge.purge` job. The worker then overwrites each file with zeros, flushes it to disk, and removes it. A failure retries with backoff, up to 10 attempts, and a path outside `CQ_DOCUMENTS_DIR` is refused. Overwriting is best effort: SSDs and copy-on-write filesystems can keep old blocks, so the appliance also relies on full-disk encryption. Re-indexing replaces all chunks.
+
+Secrets are not files: they are ciphertext rows in `encrypted_secrets`, removed when a connection is deleted. Backups contain only ciphertext, and the master key is kept out of them.
 
 ## Embeddings
 
@@ -53,6 +55,7 @@ Callers are the control API (UI pages and uploads), the capability broker (agent
 | `GET /knowledge-bases/{id}/documents`, `GET/DELETE /documents/{id}` | States, extraction summary, errors |
 | `POST /documents/{id}/reindex` | Queue re-indexing |
 | `POST /knowledge-bases/{id}/query` | Retrieval (below) |
+| `GET /metrics` | Prometheus text: `cq_http_*`, `cq_knowledge_retrieval_duration_seconds` (target p95 < 1 s), `cq_knowledge_ingests_total{outcome}`, `cq_knowledge_ingest_duration_seconds`, `cq_knowledge_purges_total{outcome}`, `cq_knowledge_documents{state}`, `cq_knowledge_chunks`. Labels never carry names, IDs, or query text |
 
 Documents are returned as `{id, knowledgeBaseId, name, mime, bytes, sha256, state, extracted, error, createdAt, updatedAt}`. The filesystem path is never returned.
 

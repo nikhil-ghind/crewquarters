@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -17,7 +18,8 @@ from sqlalchemy import text
 from crewquarters_knowledge import api, embeddings
 from crewquarters_knowledge.config import KnowledgeSettings, get_settings
 from crewquarters_knowledge.embeddings import Embedder
-from crewquarters_knowledge.worker import IngestWorker
+from crewquarters_knowledge.metrics import KnowledgeMetrics
+from crewquarters_knowledge.worker import KnowledgeWorker
 from crewquarters_shared.db import create_engine, session_factory
 from crewquarters_shared.errors import PlatformError
 from crewquarters_shared.logs import configure_logging
@@ -44,7 +46,8 @@ def create_app(
     embedder = embedder or embeddings.create(settings.embedding_mode, settings.embedding_cache_dir)
     engine = create_engine(settings.database_url, settings.db_pool_size)
     sessions = session_factory(engine)
-    worker = IngestWorker(sessions, settings, embedder)
+    metrics = KnowledgeMetrics()
+    worker = KnowledgeWorker(sessions, settings, embedder, metrics)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -64,7 +67,7 @@ def create_app(
         docs_url=None,
         redoc_url=None,
     )
-    app.state.knowledge = api.KnowledgeState(settings, sessions, embedder)
+    app.state.knowledge = api.KnowledgeState(settings, sessions, embedder, metrics)
     app.state.worker = worker
 
     @app.exception_handler(PlatformError)
@@ -87,7 +90,12 @@ def create_app(
     ) -> Response:
         incoming = request.headers.get("x-request-id", "")
         request.state.request_id = incoming if 8 <= len(incoming) <= 128 else uuid.uuid4().hex
+        started = time.perf_counter()
         response = await call_next(request)
+        # The matched route template, never the raw path: IDs stay out of metrics.
+        route = str(getattr(request.scope.get("route"), "path", "unmatched"))
+        metrics.requests.labels(request.method, route, str(response.status_code)).inc()
+        metrics.latency.labels(request.method, route).observe(time.perf_counter() - started)
         response.headers["X-Request-Id"] = request.state.request_id
         return response
 

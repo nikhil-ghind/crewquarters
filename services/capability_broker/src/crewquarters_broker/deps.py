@@ -16,6 +16,7 @@ from crewquarters_broker.auth import Grant, authorize, bearer
 from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.google import GoogleConnector
 from crewquarters_broker.internal import InternalClient
+from crewquarters_broker.metrics import BrokerMetrics
 from crewquarters_broker.twilio import TelephonyService
 from crewquarters_shared.errors import PlatformError
 
@@ -36,6 +37,7 @@ class BrokerState:
     gateway: httpx.AsyncClient
     google: GoogleConnector
     telephony: TelephonyService
+    metrics: BrokerMetrics
 
 
 def broker_state(request: Request) -> BrokerState:

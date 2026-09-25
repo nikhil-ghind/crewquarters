@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.errors import needs_connection, permission_denied, provider_error
+from crewquarters_broker.metrics import BrokerMetrics
 from crewquarters_broker.models import OAuthConnection
 from crewquarters_shared import audit
 from crewquarters_shared.errors import PlatformError, invalid, not_found
@@ -74,11 +75,13 @@ class GoogleConnector:
         keyring: Keyring,
         sessions: async_sessionmaker[AsyncSession],
         http: httpx.AsyncClient,
+        metrics: BrokerMetrics,
     ) -> None:
         self.settings = settings
         self.keyring = keyring
         self.sessions = sessions
         self.http = http
+        self.metrics = metrics
         self._pending: dict[str, _Pending] = {}
         self._access: dict[uuid.UUID, tuple[str, float]] = {}
 
@@ -350,7 +353,11 @@ class GoogleConnector:
                 token = await self._token_request(
                     {"grant_type": "refresh_token", "refresh_token": refresh.decode()}
                 )
+            except PlatformError as exc:
+                self.metrics.oauth_refresh_failures.labels("google", exc.code).inc()
+                raise
             except _InvalidGrant:
+                self.metrics.oauth_refresh_failures.labels("google", "invalid_grant").inc()
                 conn.status, conn.status_detail = "NEEDS_ATTENTION", RECONNECT
                 self._access.pop(conn.id, None)
                 audit.record(

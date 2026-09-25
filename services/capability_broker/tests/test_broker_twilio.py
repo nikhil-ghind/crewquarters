@@ -393,3 +393,67 @@ async def test_full_number_never_stored(
         events = (await db.execute(text("SELECT * FROM audit_events"))).all()
     assert rows and TO not in str(rows) and TO[1:] not in str(rows)
     assert TO not in str(events)
+
+
+TEST_CALL = "/internal/v1/connections/twilio/test-call"
+
+
+async def test_test_call_needs_confirmation_and_a_valid_number(
+    harness: Any, user_id: uuid.UUID
+) -> None:
+    await _configure(harness, user_id)
+    body = {"userId": str(user_id), "to": TO, "confirm": False}
+    resp = await harness.client.post(TEST_CALL, json=body, headers=harness.service_headers)
+    assert resp.status_code == 422 and resp.json()["error"]["code"] == "CONFIRMATION_REQUIRED"
+    body = {"userId": str(user_id), "to": "5550101", "confirm": True}
+    resp = await harness.client.post(TEST_CALL, json=body, headers=harness.service_headers)
+    assert resp.status_code == 422
+    assert (await harness.client.post(TEST_CALL, json=body)).status_code == 401
+    assert harness.twilio.calls == []
+
+
+async def test_test_call_speaks_a_fixed_message_once_a_minute(
+    harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    await _configure(harness, user_id)
+    body = {"userId": str(user_id), "to": TO, "confirm": True}
+    resp = await harness.client.post(TEST_CALL, json=body, headers=harness.service_headers)
+    assert resp.status_code == 200 and resp.json() == {
+        "placed": True,
+        "to": "***0101",
+        "status": "queued",
+    }
+    [call] = harness.twilio.calls
+    assert "Crewquarters test call" in call["Twiml"] and "Url" not in call
+    again = await harness.client.post(TEST_CALL, json=body, headers=harness.service_headers)
+    assert again.status_code == 429 and again.headers["retry-after"] == "60"
+    assert len(harness.twilio.calls) == 1
+    async with sessions() as db:
+        event = (
+            await db.scalars(
+                select(AuditEvent).where(AuditEvent.action == "connection.twilio.test_call")
+            )
+        ).one()
+        assert event.metadata_["to"] == "***0101" and TO not in str(event.metadata_)
+
+
+async def test_test_call_in_live_mode_needs_an_allowed_number(
+    live_harness: Any, user_id: uuid.UUID
+) -> None:
+    await _configure(live_harness, user_id)
+    body = {"userId": str(user_id), "to": "+15555550177", "confirm": True}
+    resp = await live_harness.client.post(
+        TEST_CALL, json=body, headers=live_harness.service_headers
+    )
+    assert resp.status_code == 403 and live_harness.twilio.calls == []
+
+
+async def test_rejected_test_call_marks_the_connection(harness: Any, user_id: uuid.UUID) -> None:
+    await _configure(harness, user_id, token="invalid-token-00000")
+    body = {"userId": str(user_id), "to": TO, "confirm": True}
+    resp = await harness.client.post(TEST_CALL, json=body, headers=harness.service_headers)
+    assert resp.status_code == 502 and resp.json()["error"]["code"] == "PROVIDER_ERROR"
+    listing = await harness.client.get("/internal/v1/connections", headers=harness.service_headers)
+    assert next(c for c in listing.json() if c["provider"] == "twilio")["status"] == (
+        "NEEDS_ATTENTION"
+    )

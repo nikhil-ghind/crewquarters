@@ -19,6 +19,7 @@ import hmac
 import json
 import logging
 import re
+import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
@@ -34,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crewquarters_broker.config import BrokerSettings
 from crewquarters_broker.errors import needs_connection, permission_denied
+from crewquarters_broker.metrics import BrokerMetrics
 from crewquarters_broker.models import TelephonyCall
 from crewquarters_shared import audit
 from crewquarters_shared.errors import PlatformError, invalid, not_found
@@ -52,6 +54,10 @@ _RANK = {"CREATING": 0, "IN_DOUBT": 0, "queued": 1, "initiated": 2, "ringing": 3
 # Internal states reported in Twilio's vocabulary (broker-sdk.openapi.yaml, Call.state).
 _REPORTED = {"CREATING": "queued", "IN_DOUBT": "failed"}
 MAX_TRANSCRIPT = 500
+TEST_CALL_MESSAGE = (
+    "This is a Crewquarters test call confirming that calling works. No reply is needed. Goodbye."
+)
+TEST_CALL_INTERVAL_SECONDS = 60.0
 
 
 def signature(auth_token: str, url: str, params: Mapping[str, str]) -> str:
@@ -111,11 +117,14 @@ class TelephonyService:
         keyring: Keyring,
         sessions: async_sessionmaker[AsyncSession],
         http: httpx.AsyncClient,
+        metrics: BrokerMetrics,
     ) -> None:
         self.settings = settings
         self.keyring = keyring
         self.sessions = sessions
         self.http = http
+        self.metrics = metrics
+        self._last_test_call = -TEST_CALL_INTERVAL_SECONDS
         # Set by the fake provider mode to simulate Twilio's callbacks.
         self.on_created: Callable[[uuid.UUID, str, str], Awaitable[None]] | None = None
 
@@ -185,6 +194,68 @@ class TelephonyService:
             await db.commit()
         return await self.status()
 
+    async def test_call(self, user_id: uuid.UUID, to: str) -> dict[str, Any]:
+        """Place one call that speaks a fixed test message (PLAN.md section 13.10). The owner
+        confirms it in the UI; it is not tied to a run, needs no callbacks, and is limited
+        to one a minute and, in live mode, to the allowed numbers."""
+        self._check_destination(to)
+        now = time.monotonic()
+        if now - self._last_test_call < TEST_CALL_INTERVAL_SECONDS:
+            raise PlatformError(
+                "RATE_LIMITED",
+                "Wait a minute between test calls.",
+                429,
+                {"retryAfterSeconds": int(TEST_CALL_INTERVAL_SECONDS)},
+            )
+        creds = await self._credentials()
+        self._last_test_call = now
+        twiml = (
+            '<?xml version="1.0" encoding="UTF-8"?><Response>'
+            f"<Say>{escape(TEST_CALL_MESSAGE)}</Say><Hangup/></Response>"
+        )
+        try:
+            resp = await self.http.post(
+                f"{API_URL}/Accounts/{creds['accountSid']}/Calls.json",
+                data={"To": to, "From": creds["fromNumber"], "Twiml": twiml, "Timeout": "30"},
+                auth=(creds["accountSid"], creds["authToken"]),
+            )
+        except httpx.HTTPError:
+            raise PlatformError("PROVIDER_UNAVAILABLE", "Twilio is unreachable.", 503) from None
+        placed = resp.status_code < 300
+        async with self.sessions() as db:
+            profile = await self._profile(db)
+            assert profile is not None
+            profile.status = "CONNECTED" if placed else "ERROR"
+            profile.last_checked_at = utcnow()
+            audit.record(
+                db,
+                action="connection.twilio.test_call",
+                actor_type="user",
+                actor_id=user_id,
+                target_type="provider_profile",
+                target_id=profile.id,
+                outcome="success" if placed else "failure",
+                metadata={"to": mask_phone(to), "providerStatus": resp.status_code},
+            )
+            await db.commit()
+        if not placed:
+            raise PlatformError(
+                "PROVIDER_ERROR",
+                "Twilio did not accept the test call.",
+                502,
+                {"providerStatus": resp.status_code},
+            )
+        return {"placed": True, "to": mask_phone(to), "status": resp.json().get("status")}
+
+    def _check_destination(self, to: str) -> None:
+        if not E164.match(to):
+            raise invalid("INVALID_REQUEST", "The destination must be an E.164 phone number.")
+        if self.settings.provider_mode == "live" and to not in self.settings.twilio_allowed_numbers:
+            raise permission_denied(
+                "Calls are limited to verified numbers in CQ_TWILIO_ALLOWED_NUMBERS.",
+                to=mask_phone(to),
+            )
+
     async def disconnect(self, user_id: uuid.UUID) -> None:
         async with self.sessions() as db:
             profile = await self._profile(db)
@@ -235,13 +306,7 @@ class TelephonyService:
         response_seconds: int,
         max_calls: int,
     ) -> dict[str, Any]:
-        if not E164.match(to):
-            raise invalid("INVALID_REQUEST", "The destination must be an E.164 phone number.")
-        if self.settings.provider_mode == "live" and to not in self.settings.twilio_allowed_numbers:
-            raise permission_denied(
-                "Calls are limited to verified numbers in CQ_TWILIO_ALLOWED_NUMBERS.",
-                to=mask_phone(to),
-            )
+        self._check_destination(to)
         creds = await self._credentials()
         async with self.sessions() as db:
             existing = await self._by_key(db, run_id, idempotency_key)
@@ -326,6 +391,7 @@ class TelephonyService:
         url = f"{self.settings.public_base_url.rstrip('/')}{path_and_query}"
         expected = signature(creds["authToken"], url, params)
         if not sent_signature or not hmac.compare_digest(expected, sent_signature):
+            self.metrics.callback_rejections.labels("twilio").inc()
             async with self.sessions() as db:
                 audit.record(
                     db,

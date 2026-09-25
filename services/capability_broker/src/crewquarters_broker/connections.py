@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 from crewquarters_broker.deps import ApiModel, BrokerState, broker_state, internal_auth
 from crewquarters_shared import audit
-from crewquarters_shared.errors import not_found
+from crewquarters_shared.errors import invalid, not_found
 
 router = APIRouter(prefix="/internal/v1", dependencies=[Depends(internal_auth)])
 
@@ -40,6 +40,12 @@ class TwilioIn(ApiModel):
     account_sid: str
     auth_token: str
     from_number: str
+
+
+class TestCallIn(ApiModel):
+    user_id: uuid.UUID
+    to: str
+    confirm: bool
 
 
 class ProviderProfileIn(ApiModel):
@@ -132,6 +138,17 @@ async def twilio_configure(
 @router.post("/connections/twilio/test", summary="Validate Twilio without placing a call")
 async def twilio_test(state: BrokerState = Depends(broker_state)) -> dict[str, Any]:
     return await state.telephony.test()
+
+
+@router.post("/connections/twilio/test-call", summary="Place one confirmed test call")
+async def twilio_test_call(
+    body: TestCallIn, state: BrokerState = Depends(broker_state)
+) -> dict[str, Any]:
+    """A live call that leaves the device, so the UI must ask the owner first and send
+    ``confirm: true``. It speaks a fixed test message only."""
+    if not body.confirm:
+        raise invalid("CONFIRMATION_REQUIRED", "Confirm the test call first.")
+    return await state.telephony.test_call(body.user_id, body.to)
 
 
 @router.delete("/connections/twilio", status_code=204, summary="Delete Twilio credentials")

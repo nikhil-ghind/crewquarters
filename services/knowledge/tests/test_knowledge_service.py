@@ -158,10 +158,14 @@ async def test_delete_and_reindex(
     gone = await knowledge.client.delete(f"/internal/v1/documents/{doc['id']}")
     assert gone.status_code == 204
     assert (await knowledge.query(kb, "refund policy"))["passages"] == []
+    # The row is gone at once; the bytes go when the queued purge job runs.
+    assert any(p.is_file() for p in (knowledge.settings.documents_dir / kb).iterdir())
+    await knowledge.drain()
     assert not any(p.is_file() for p in (knowledge.settings.documents_dir / kb).iterdir())
 
     await _ready(knowledge, kb, "b.txt", b"Another file.")
     assert (await knowledge.client.delete(f"/internal/v1/knowledge-bases/{kb}")).status_code == 204
+    await knowledge.drain()
     assert not (knowledge.settings.documents_dir / kb).exists()
     async with sessions() as db:
         assert await db.scalar(select(func.count()).select_from(DocumentChunk)) == 0
