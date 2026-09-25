@@ -7,7 +7,7 @@
    keep their ``@sha256:REQUIRED_DIGEST`` placeholder; digests are machine-specific.
 2. tests/realstack/.generated/catalog/ (mounted as the control API's CQ_CATALOG_DIR):
    the bundled catalog/dev/*.yaml, the three pinned agents, and test-only variants of the
-   contract probe image (see ``VARIANTS``).
+   contract probe image (see ``variants``: ``realstack-oom``, ``realstack-crash``).
 """
 
 from __future__ import annotations
@@ -38,29 +38,47 @@ OOM_PROGRAM = (
     " while 1:b.append(b'x'*(8<<20));await asyncio.sleep(.05)\n"
     "a.serve()"
 )
+# Exits with code 3 before it hands shake, as an agent with a broken import would.
+CRASH_PROGRAM = "print('crashing before the handshake',flush=True);raise SystemExit(3)"
 
 
-def variants(probe: dict[str, Any]) -> list[dict[str, Any]]:
-    """Test-only catalog entries that reuse the pinned contract probe image."""
-    oom = copy.deepcopy(probe)
-    oom["metadata"].update(
-        id="realstack-oom",
-        name="Realstack OOM",
-        summary="Test only: allocates memory until the container is OOM-killed.",
-    )
-    oom["metadata"].pop("description", None)
-    oom["spec"]["entrypoint"] = ["python", "-c", OOM_PROGRAM]
-    oom["spec"]["resources"]["memoryMb"] = 64
-    oom["spec"]["permissions"] = {
+def _variant(
+    probe: dict[str, Any], agent_id: str, name: str, summary: str, program: str
+) -> dict[str, Any]:
+    variant = copy.deepcopy(probe)
+    variant["metadata"].update(id=agent_id, name=name, summary=summary)
+    variant["metadata"].pop("description", None)
+    variant["spec"]["entrypoint"] = ["python", "-c", program]
+    variant["spec"]["permissions"] = {
         "llmProfiles": [],
         "knowledge": [],
         "connectors": {},
         "cloudProviders": [],
         "userInput": False,
     }
-    oom["spec"]["configurationSchema"] = {"type": "object", "properties": {}}
-    oom["spec"].pop("resultSchema", None)
-    return [oom]
+    variant["spec"]["configurationSchema"] = {"type": "object", "properties": {}}
+    variant["spec"].pop("resultSchema", None)
+    return variant
+
+
+def variants(probe: dict[str, Any]) -> list[dict[str, Any]]:
+    """Test-only catalog entries that reuse the pinned contract probe image."""
+    oom = _variant(
+        probe,
+        "realstack-oom",
+        "Realstack OOM",
+        "Test only: allocates memory until the container is OOM-killed.",
+        OOM_PROGRAM,
+    )
+    oom["spec"]["resources"]["memoryMb"] = 64
+    crash = _variant(
+        probe,
+        "realstack-crash",
+        "Realstack crash",
+        "Test only: exits with code 3 before its handshake.",
+        CRASH_PROGRAM,
+    )
+    return [oom, crash]
 
 
 def main() -> int:

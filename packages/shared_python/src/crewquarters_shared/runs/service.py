@@ -551,12 +551,15 @@ async def fail_run(
     *,
     retryable: bool,
     interrupted: bool = False,
+    details: dict[str, Any] | None = None,
 ) -> None:
     """Platform-side failure (timeout, crash, dead job). Enqueues a container stop."""
     target = RunState.INTERRUPTED if interrupted else RunState.FAILED
     if RunState(run.state) in TERMINAL_STATES or not can_transition(run.state, target):
         return
-    error = {"code": code, "message": message, "retryable": retryable}
+    error: dict[str, Any] = {"code": code, "message": message, "retryable": retryable}
+    if details:
+        error["details"] = details
     await append_event(session, run, "run.error", error)
     await transition(session, run, target, error=error, retryable=retryable)
     attempt = await get_attempt(session, run.id, run.current_attempt)
@@ -572,6 +575,90 @@ async def fail_run(
                 dedupe_key=f"run:{run.id}:stop:{run.current_attempt}",
             )
     await close_pending_inputs(session, run, "cancelled")
+
+
+# States in which a container exit without a result fails the run. CANCELLING is left to the
+# cancel job, and terminal runs only get the exit code recorded.
+EXIT_FAILS_STATES = frozenset(
+    {RunState.PREPARING, RunState.LOADING_MODEL, RunState.RUNNING, RunState.WAITING_INPUT}
+)
+AGENT_OUT_OF_MEMORY = "AGENT_OUT_OF_MEMORY"
+AGENT_EXITED = "AGENT_EXITED"
+AGENT_EXITED_WITHOUT_RESULT = "AGENT_EXITED_WITHOUT_RESULT"
+SIGKILL_EXIT_CODE = 137  # 128 + SIGKILL, as the container's init reports it
+
+
+async def record_container_exit(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    attempt_no: int,
+    runtime_ref: str,
+    *,
+    exit_code: int | None,
+    oom_killed: bool,
+    memory_limit_bytes: int | None = None,
+) -> str | None:
+    """The runtime saw the attempt's container exit (ADR 0006, revision 1).
+
+    Records the exit code on the attempt. If the run is still active on this attempt, the
+    agent died without posting a result, so the run fails (retryable) with
+    ``AGENT_OUT_OF_MEMORY``, ``AGENT_EXITED`` or ``AGENT_EXITED_WITHOUT_RESULT``, and the error
+    code is returned. The SDK posts its result and waits for the answer before the process
+    exits, so a result is always committed before its container's exit can be observed; the
+    caller must observe the exit *before* calling this, and a run that already succeeded is
+    left alone.
+    """
+    run = await lock_run(session, run_id)
+    attempt = await get_attempt(session, run_id, attempt_no)
+    if attempt is None or attempt.runtime_ref != runtime_ref:
+        return None
+    if attempt.exit_code is None and exit_code is not None:
+        attempt.exit_code = exit_code
+    if run.current_attempt != attempt_no or run.state not in EXIT_FAILS_STATES:
+        return None
+    details: dict[str, Any] = {"exitCode": exit_code, "oomKilled": oom_killed}
+    # Docker sometimes loses the OOM flag: the kernel's kill and the exit race, and about 1 in
+    # 12 OOM kills reports OOMKilled=false with exit code 137 (Docker 29, cgroup v2). The
+    # platform stops a container only after its run has left these states, and apart from a
+    # Docker or host shutdown nothing else SIGKILLs an agent, so an unflagged SIGKILL is
+    # reported as a probable out-of-memory kill (details.oomKilled stays false).
+    if oom_killed or exit_code == SIGKILL_EXIT_CODE:
+        memory_mb = await _memory_limit_mb(session, run, memory_limit_bytes)
+        details["memoryLimitMb"] = memory_mb
+        limit = f"its {memory_mb} MiB memory limit" if memory_mb else "its memory limit"
+        code = AGENT_OUT_OF_MEMORY
+        if oom_killed:
+            message = (
+                f"The agent ran out of memory and was killed: it reached {limit} "
+                f"(exit code {exit_code})."
+            )
+        else:
+            message = (
+                f"The agent was killed (SIGKILL, exit code {exit_code}) without reporting a "
+                f"result, most likely for reaching {limit}. The runtime did not confirm the "
+                "out-of-memory kill."
+            )
+    elif exit_code == 0:
+        code = AGENT_EXITED_WITHOUT_RESULT
+        message = "The agent exited (exit code 0) without reporting a result."
+    else:
+        code = AGENT_EXITED
+        stage = " before its handshake" if run.state == RunState.PREPARING else ""
+        message = f"The agent exited with code {exit_code}{stage} without reporting a result."
+    # Retryable, like HEARTBEAT_LOST before it: the owner decides whether to retry.
+    await fail_run(session, run, code, message, retryable=True, details=details)
+    return code
+
+
+async def _memory_limit_mb(
+    session: AsyncSession, run: AgentRun, memory_limit_bytes: int | None
+) -> int | None:
+    if memory_limit_bytes:
+        return memory_limit_bytes // (1024 * 1024)
+    version = await session.get(AgentVersion, run.agent_version_id)
+    resources = ((version.manifest if version else {}).get("spec") or {}).get("resources") or {}
+    memory = resources.get("memoryMb")
+    return int(memory) if isinstance(memory, int | float) else None
 
 
 # --- Human input ----------------------------------------------------------------

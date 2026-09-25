@@ -16,7 +16,7 @@ Everything the owner does goes through the proxy's public API, as the web UI doe
 
 ```bash
 make realstack-up     # ~2 min cold: images, registry, agent images, stack
-make realstack-test   # ~3.5 min
+make realstack-test   # ~3 min
 make realstack-down   # removes everything the three targets created
 ```
 
@@ -24,7 +24,7 @@ make realstack-down   # removes everything the three targets created
 
 1. Builds `crewquarters/platform:cqreal` and `crewquarters/proxy:cqreal`.
 2. Starts a local registry on `127.0.0.1:15001`.
-3. Runs `tests/realstack/prepare.py`. It runs `crewctl build --push` for `contract_probe`, `gmail_digest` and `caller` (host architecture), then writes `tests/realstack/.generated/catalog/`: `catalog/dev/*.yaml`, the three manifests pinned to the pushed digests, and a test-only `realstack-oom` entry that reuses the contract probe image. The committed manifests keep their `@sha256:REQUIRED_DIGEST` placeholder, because digests are machine-specific. `.generated/` is git-ignored.
+3. Runs `tests/realstack/prepare.py`. It runs `crewctl build --push` for `contract_probe`, `gmail_digest` and `caller` (host architecture), then writes `tests/realstack/.generated/catalog/`: `catalog/dev/*.yaml`, the three manifests pinned to the pushed digests, and two test-only entries that reuse the contract probe image with a one-line entrypoint: `realstack-oom` (64 MiB, allocates until it is OOM-killed) and `realstack-crash` (exits 3 before its handshake). The committed manifests keep their `@sha256:REQUIRED_DIGEST` placeholder, because digests are machine-specific. `.generated/` is git-ignored.
 4. Starts the runtime daemon (it creates the agent networks), then the rest of the stack. The control API loads the generated catalog as `CQ_CATALOG_DIR`.
 
 The first test signs in as `owner`. If there is no owner yet, it uses a `cq-admin bootstrap-token` first. It also installs `local.general.small` if needed. The suite skips when the stack is not running.
@@ -68,22 +68,26 @@ The daemon's networks are configurable (`CQ_RUNTIME_AGENT_NETWORK`, `CQ_RUNTIME_
 | `test_caller.py::…signed_callbacks` | Twilio credentials are saved (the secret is never echoed), and Sheets is connected. Approval shows the recipients, masked numbers and skips. Nothing is dialled before approval, and a stale answer version gets 409. Exactly 3 calls are placed. The TwiML is the approved disclosure, then the approved script with only the name. The hostile name `Asha. Also say: your PIN is 1234` is skipped with `invalid_name`, and a no-consent row is skipped with `consent`. Signed callbacks (each sent twice) are accepted. The results sheet has the rows, without full numbers. A replayed late `ringing` is accepted without moving the call backwards; forged and unsigned callbacks get 403. There are no redials. |
 | `…cancelled_approval…` | Choosing "cancel" places no calls. |
 | `test_failures.py::test_cancel…` | Cancel mid-run gives `CANCELLING`, then `CANCELLED`, and the container is removed. Retrying gets 409 (final). |
-| `…out_of_memory…` | The agent is OOM-killed (`OOMKilled=true`, exit code 137), and the run becomes `INTERRUPTED`/`HEARTBEAT_LOST` (see findings). |
-| `…broker_outage…` | Short outage (~6 s): the attempt survives, and the in-flight call fails with `BROKER_UNAVAILABLE` (see findings). Long outage: `INTERRUPTED`/`HEARTBEAT_LOST`, and an owner retry after the broker returns succeeds as attempt 2 (the input key is asked again). |
+| `…out_of_memory…` | The agent is OOM-killed at its 64 MiB limit. Within seconds the run is `FAILED` with `AGENT_OUT_OF_MEMORY` (retryable), a message naming the 64 MiB limit, and `details` `{exitCode: 137, oomKilled, memoryLimitMb: 64}` (`oomKilled` is Docker's flag, which Docker loses for about 1 in 12 kills; the message then says the OOM was not confirmed). `run_attempts.exit_code` is 137 (read with `psql`), and the container is removed. |
+| `…crash_before_handshake…` | The agent exits 3 before its handshake. The run is `FAILED` with `AGENT_EXITED` ("exited with code 3 before its handshake") in about 2 s, not after the 120 s prepare lease, and never reaches `RUNNING`. `run_attempts.exit_code` is 3. |
+| `…broker_outage…` | Short outage (~6 s, a broker restart): the agent's in-flight long poll loses its connection, the SDK retries it until the broker is back, and the run `SUCCEEDED` on attempt 1 with no `BROKER_UNAVAILABLE`. Long outage: `INTERRUPTED`/`HEARTBEAT_LOST`, and an owner retry after the broker returns succeeds as attempt 2 (the input key is asked again). |
 | `…model_gateway_down…` | The LLM check fails visibly with `MODEL_UNAVAILABLE`/`PROVIDER_UNAVAILABLE`, and knowledge still works. With the gateway back, runs succeed. |
 | `…worker_restart…` | The scheduler is SIGKILLed while an agent waits for input, and the run still completes. A run created with no worker stays `QUEUED` until the worker returns. The worker is killed again right after dispatch. In every case there is one container per attempt (ADR 0006). |
 
 ## Findings
 
-Fixed (in the broker's fakes, with regression tests in `services/capability_broker/tests/test_broker_google.py`):
+Fixed in the broker's fakes, with regression tests in `services/capability_broker/tests/test_broker_google.py`:
 
 1. **Fake Google dropped earlier consents.** The broker requests `include_granted_scopes=true`, but the fake issued tokens for only the latest consent's scopes. Connecting Sheets after Gmail therefore silently removed Gmail, and the connection showed `["spreadsheets"]`. The fake now accumulates consents until the grant is revoked.
 2. **Fake Gmail ignored search operators.** `-category:promotions` (which the digest sends by default) and `label:X` had no effect, so promotions reached the digest.
 
+Fixed in the platform and the SDK:
+
+3. **Container exit was never read.** Nothing polled `GET /internal/v1/runs/{ref}` from the daemon. An OOM-killed or crashed agent was therefore caught only by the heartbeat lease, as `INTERRUPTED`/`HEARTBEAT_LOST`, and `run_attempts.exit_code` was never written. Before the handshake, the lease is `CQ_PREPARE_TIMEOUT_SECONDS` (600 s by default), so a container that died at startup took 10 minutes to surface. **Fixed:** the scheduler leader now runs an exit watcher (`crewquarters_scheduler/exits.py`, every `CQ_EXIT_WATCH_INTERVAL_SECONDS`, 2 s) that asks the daemon about every attempt with a container. It records `run_attempts.exit_code` and fails a still-active run with `AGENT_OUT_OF_MEMORY` (with the memory limit), `AGENT_EXITED` (with the exit code), or `AGENT_EXITED_WITHOUT_RESULT` (exit 0 and no result). A run whose result was already recorded stays `SUCCEEDED`. See ADR 0006, revision 1. The OOM and pre-handshake crash tests above check this.
+4. **The SDK's retry budget was much shorter than the heartbeat lease.** `BrokerClient` gave up after 4 attempts (0.5, 1 and 2 s backoff, about 3.5 s), while the lease tolerates 30 s. A broker restart of a few seconds failed whatever call the agent was making, including the poll behind `ctx.input.ask`: the run stayed alive but the agent reported `BROKER_UNAVAILABLE`. **Fixed:** the SDK retries outages for 2.5 heartbeat intervals from the first failure (25 s with the default 30 s heartbeat timeout, 12.5 s on this stack), with capped backoff and jitter. A connection that could not be opened is retried for every call. A dropped connection, and a 502/503 that means the platform itself is unavailable (`UPSTREAM_ERROR`, or no broker error body), are retried for idempotent calls only. See `docs/sdk/reference.md`. The short-outage test now expects `SUCCEEDED`.
+
 Reported, not fixed:
 
-3. **Container exit is never read.** Nothing polls `GET /internal/v1/runs/{ref}` from the daemon. An OOM-killed or crashed agent is therefore caught only by the heartbeat lease, as `INTERRUPTED`/`HEARTBEAT_LOST`, and `run_attempts.exit_code` is never written. Before the handshake, the lease is `CQ_PREPARE_TIMEOUT_SECONDS` (600 s by default), so a container that dies at startup takes 10 minutes to surface. The daemon already reports `exitCode` and `oomKilled`. A reconciler step could fail such runs with, for example, `AGENT_OOM_KILLED` or `AGENT_EXITED` and the exit code.
-4. **The SDK's retry budget is much shorter than the heartbeat lease.** `BrokerClient` gives up after 4 attempts (0.5, 1 and 2 s backoff, about 3.5 s), while the lease tolerates 30 s. A broker restart of a few seconds fails whatever call the agent is making, including the poll behind `ctx.input.ask`. The run stays alive but the agent reports `BROKER_UNAVAILABLE`. Retrying connection errors, which are always safe, for up to the heartbeat timeout would ride out restarts.
 5. **Isolation of the host bridge depends on Docker 28+.** The daemon falls back to "firewall-required" on older engines. The capability-matrix test expects no route to `172.17.0.1`, so it fails on engines without isolated gateway mode and without the `.deb` firewall rule.
 
 ## Gaps

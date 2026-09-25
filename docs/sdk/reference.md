@@ -77,6 +77,21 @@ Other rules:
 
 Every exception carries `code`, `request_id`, `retryable`, and `details`.
 
-**Transport retries.** Only idempotent operations are retried, and only after a connection error,
-a 502/503/504, or a 429 (honouring `Retry-After`). Backoff is `min(8, 0.5·2ⁿ) + jitter` over at
-most 4 attempts. A non-idempotent request that may have been sent is never repeated.
+**Transport retries.** A non-idempotent request that may have been sent is never repeated.
+There are two retry policies:
+
+- **Platform outages** (the broker or the control API restarting). A connection that could not
+  be opened (refused, DNS failure, connect timeout) is retried for every operation, because
+  nothing was sent. A connection that broke mid-request, and a 502/503 that means the platform
+  itself is unavailable (`UPSTREAM_ERROR`, or a response without a broker error), are retried for
+  idempotent operations only; a non-idempotent call whose connection broke raises
+  `OutcomeUnknown`. Backoff is `min(4, 0.5·2ⁿ) + jitter`, for up to 2.5 heartbeat intervals from
+  the first failure: 25 s with the platform's default 30 s heartbeat timeout (the SDK derives it
+  from the handshake's `heartbeatIntervalSeconds`, clamped to 5–120 s, and uses 25 s before the
+  handshake). An outage longer than that would cost the attempt its heartbeat lease anyway, and
+  the call then raises `PlatformError` with `BROKER_UNAVAILABLE` (retryable).
+- **Everything else retryable** (a 429 honouring `Retry-After`, a 502/503/504 from a provider,
+  a read timeout): idempotent operations only, with backoff `min(8, 0.5·2ⁿ) + jitter` over at
+  most 4 attempts. `MODEL_UNAVAILABLE` is not retried.
+
+Streaming LLM calls are not retried.

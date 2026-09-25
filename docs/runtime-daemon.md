@@ -11,7 +11,7 @@ It is the only component with Docker access. It listens on a Unix socket (never 
 | `GET /internal/v1/host/capacity` | Architecture, memory, disk, Docker/NVIDIA runtime, GPU (`nvidia-smi`), network isolation mode |
 | `POST /internal/v1/images/pull` | Pulls by digest only; refuses mutable references |
 | `POST /internal/v1/runs` | Starts a hardened agent container. Idempotent on `(run_id, attempt)`, returning the same `runtimeRef` |
-| `GET /internal/v1/runs/{ref}`, `GET /internal/v1/runs/{ref}/logs?tail=N` | Status and exit code; bounded logs |
+| `GET /internal/v1/runs/{ref}`, `GET /internal/v1/runs/{ref}/logs?tail=N` | Status: `state` (`starting`, `running`, `exited`), `exitCode` and `finishedAt` once exited, `oomKilled`, `startedAt`, and `memoryLimitBytes` (the container's cgroup limit). The scheduler's exit watcher polls it for every active attempt (ADR 0006, revision 1). Bounded logs |
 | `POST /internal/v1/runs/{ref}/cancel` | SIGTERM, a grace period, then SIGKILL; removes the container and its config directory |
 | `GET /internal/v1/models/{id}` | File state and container state/endpoint |
 | `POST /internal/v1/models/{id}/install`, `/install/cancel`, `DELETE /internal/v1/models/{id}/files` | Download, cancel, delete |

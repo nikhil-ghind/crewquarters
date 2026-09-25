@@ -69,7 +69,7 @@ stateDiagram-v2
 **Heartbeats**
 
 - The SDK heartbeats through the broker. Each heartbeat extends `run_attempts.heartbeat_expires_at` by `CQ_HEARTBEAT_TIMEOUT_SECONDS`. Before the handshake, the lease is `CQ_PREPARE_TIMEOUT_SECONDS`.
-- An expired lease moves the run to `INTERRUPTED` with `HEARTBEAT_LOST` (retryable), and the container is stopped. This covers container crashes, hung agents, and platform restarts.
+- An expired lease moves the run to `INTERRUPTED` with `HEARTBEAT_LOST` (retryable), and the container is stopped. This covers hung agents, platform restarts, and (as a backstop) container crashes; see revision 1 for how exits are detected directly.
 
 **Input requests**
 
@@ -93,3 +93,51 @@ stateDiagram-v2
 - Delivery is at least once, and every side effect is guarded by a key.
 - An `INTERRUPTED` run is recovered by an explicit owner retry, not automatically. The UI shows whether external actions already happened.
 - Durable suspend/resume of arbitrary Python is still deferred (PLAN.md section 26).
+
+## Revision 1 (2026-09-25): container exits are read from the runtime
+
+**Context.** The real-stack suite (`docs/testing-realstack.md`) found that nothing read a run
+container's exit status. A crashed or OOM-killed agent was caught only by the heartbeat lease,
+as `INTERRUPTED`/`HEARTBEAT_LOST`, which cannot tell a crash from an out-of-memory kill.
+`run_attempts.exit_code` was never written, and a container that died before its handshake
+surfaced only after `CQ_PREPARE_TIMEOUT_SECONDS` (600 s by default).
+
+**Decision.**
+
+- The scheduler leader runs an exit watcher (`crewquarters_scheduler/exits.py`) every
+  `CQ_EXIT_WATCH_INTERVAL_SECONDS` (2 s). It asks the runtime (`GET /internal/v1/runs/{ref}`,
+  which reports `exitCode`, `oomKilled`, `finishedAt` and `memoryLimitBytes`) about every attempt
+  that has a container and no exit code: the current attempt of a run in `PREPARING`,
+  `LOADING_MODEL`, `RUNNING`, `WAITING_INPUT` or `CANCELLING`, and any attempt that ended in
+  the last 10 minutes.
+- Runtime calls are made with no transaction open. Only after observing an exit does the
+  watcher lock the run (`service.record_container_exit`). It then:
+  - writes `run_attempts.exit_code`;
+  - if the run is still in `PREPARING`, `LOADING_MODEL`, `RUNNING` or `WAITING_INPUT` on that
+    attempt, fails it (`FAILED`, enqueues `run.stop`, cancels open questions) with:
+
+    | Exit | Code | Message / details |
+    | --- | --- | --- |
+    | `oomKilled`, or exit code 137 (SIGKILL) without it | `AGENT_OUT_OF_MEMORY` | Names the memory limit (the daemon's `memoryLimitBytes`, else the manifest's `resources.memoryMb`); `details: {exitCode, oomKilled, memoryLimitMb}`. Docker loses `OOMKilled` for about 1 in 12 OOM kills (Docker 29, cgroup v2). The platform never SIGKILLs a container whose run is still in these states, so an unflagged 137 is reported as a probable OOM and the message says it was not confirmed. |
+    | any other non-zero | `AGENT_EXITED` | The exit code, and "before its handshake" in `PREPARING`; `details: {exitCode, oomKilled: false}` |
+    | 0 | `AGENT_EXITED_WITHOUT_RESULT` | `details: {exitCode: 0, oomKilled: false}` |
+
+  - otherwise (the run is already `SUCCEEDED`, `FAILED`, `CANCELLED`, `INTERRUPTED`,
+    `CANCELLING`, or on a newer attempt) it changes nothing else.
+- **Result versus exit.** The SDK posts its result and waits for the answer before its process
+  exits, so a result is committed before its container's exit can be observed. Because the
+  watcher observes first and locks second, a run whose agent posted a result and then exited
+  stays `SUCCEEDED`, and only its exit code is recorded.
+- **Retry.** All three codes are retryable, as `HEARTBEAT_LOST` was for the same failures: the
+  owner decides whether to retry. `ACTIVE_TIMEOUT` and `INPUT_TIMEOUT` stay non-retryable.
+- A container the runtime no longer knows (`missing`) and a runtime that does not answer are
+  left to the heartbeat lease, which remains the backstop for hung agents and lost hosts.
+- **SDK outages.** The SDK retries broker outages for 2.5 heartbeat intervals from the first
+  failure (25 s by default), so a broker restart shorter than the heartbeat timeout no longer
+  fails the agent's in-flight call. Only requests that were never sent, or idempotent ones,
+  are retried (`docs/sdk/reference.md`).
+
+**Consequences.** A crash surfaces in about 2 s, with its exit code and an actionable error,
+instead of after the lease. `INTERRUPTED`/`HEARTBEAT_LOST` now means the agent stopped
+answering while its container kept running, or the platform lost track of it. The fake
+runtime's `crash`, `oom` and `exit0` scenarios exercise the watcher in unit tests.

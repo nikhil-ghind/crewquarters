@@ -288,3 +288,18 @@ async def test_non_object_result_fails_the_run() -> None:
     broker = FakeBroker()
     assert await execute(agent, broker) == 1
     assert broker.results[0]["error"]["code"] == "RESULT_INVALID"
+
+
+async def test_the_outage_budget_follows_the_handshake_heartbeat_interval() -> None:
+    """With a 10 s interval (the platform's 30 s heartbeat timeout) the SDK rides out 25 s of
+    broker outage; the heartbeat lease would lapse soon after."""
+    agent = Agent("test-agent")
+    seen: list[float] = []
+
+    @agent.run
+    async def run(ctx: RunContext[Any]) -> None:
+        seen.append(ctx.idempotency._transport.outage_budget)
+
+    broker = FakeBroker(heartbeat_interval=10.0)
+    assert await execute(agent, broker) == 0
+    assert seen == [25.0]

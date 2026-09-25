@@ -44,6 +44,9 @@ class RunSpec:
 class RuntimeStatus:
     state: str  # starting | running | exited | missing
     exit_code: int | None = None
+    oom_killed: bool = False
+    finished_at: str | None = None
+    memory_limit_bytes: int | None = None
 
 
 class RuntimeAdapter(Protocol):
@@ -80,7 +83,13 @@ class DaemonRuntimeClient:
             return RuntimeStatus("missing")
         response.raise_for_status()
         body = response.json()
-        return RuntimeStatus(body["state"], body.get("exitCode"))
+        return RuntimeStatus(
+            state=body["state"],
+            exit_code=body.get("exitCode"),
+            oom_killed=bool(body.get("oomKilled")),
+            finished_at=body.get("finishedAt"),
+            memory_limit_bytes=body.get("memoryLimitBytes"),
+        )
 
     async def stop_run(self, runtime_ref: str, grace_seconds: int) -> None:
         response = await self._client.post(

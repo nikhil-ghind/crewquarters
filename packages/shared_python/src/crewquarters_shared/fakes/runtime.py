@@ -3,8 +3,9 @@
 It simulates an agent container by calling the run service directly, following the
 same protocol a real SDK uses through the broker: handshake, heartbeats, events,
 optional input request, result. The installation config key ``fakeScenario``
-selects behavior: ``succeed`` (default), ``ask``, ``fail``, ``hang``, ``crash``,
-``slow``, ``model``.
+selects behavior: ``succeed`` (default), ``ask``, ``fail``, ``hang``, ``crash`` (exits 1
+before the handshake), ``oom`` (killed for memory after the handshake, exit 137),
+``exit0`` (exits 0 after the handshake without a result), ``slow``, ``model``.
 """
 
 from __future__ import annotations
@@ -40,6 +41,9 @@ class FakeRuntime:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._status: dict[str, RuntimeStatus] = {}
         self.started: list[str] = []
+        # Tests: installation id -> scenario, for scenarios that the hello-crew manifest's
+        # config schema does not offer (``oom``, ``exit0``).
+        self.forced_scenarios: dict[str, str] = {}
 
     async def start_run(self, spec: RunSpec) -> str:
         ref = f"fake-{spec.run_id}-{spec.attempt}"
@@ -78,7 +82,9 @@ class FakeRuntime:
             return await fn(session, *args, **kwargs)
 
     async def _simulate(self, spec: RunSpec, ref: str) -> None:
-        scenario = str(spec.config.get("fakeScenario", "succeed"))
+        scenario = self.forced_scenarios.get(
+            str(spec.installation_id), str(spec.config.get("fakeScenario", "succeed"))
+        )
         step = float(spec.config.get("fakeStepSeconds", self._step_seconds))
         run_id, attempt = spec.run_id, spec.attempt
         heartbeat_task: asyncio.Task[None] | None = None
@@ -86,6 +92,7 @@ class FakeRuntime:
             if scenario == "crash":
                 self._status[ref] = RuntimeStatus("exited", 1)
                 return
+            memory = spec.memory_mb * 1024 * 1024
             if scenario == "hang":
                 self._status[ref] = RuntimeStatus("running")
                 await asyncio.sleep(3600)
@@ -94,6 +101,14 @@ class FakeRuntime:
             self._status[ref] = RuntimeStatus("running")
             heartbeat_task = asyncio.create_task(self._heartbeats(run_id, attempt, ref))
             await self._progress(run_id, attempt, 10, "Starting")
+            if scenario == "oom":
+                self._status[ref] = RuntimeStatus(
+                    "exited", 137, oom_killed=True, memory_limit_bytes=memory
+                )
+                return
+            if scenario == "exit0":
+                self._status[ref] = RuntimeStatus("exited", 0, memory_limit_bytes=memory)
+                return
             if scenario == "model":
                 await self._call(
                     service.set_model_loading, run_id, attempt, True, "local.general.small"

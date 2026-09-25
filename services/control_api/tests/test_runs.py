@@ -140,7 +140,8 @@ async def test_failed_run_can_be_retried_as_new_attempt(owner: httpx.AsyncClient
 
 
 async def test_lost_heartbeat_interrupts_run(owner: httpx.AsyncClient, platform) -> None:
-    installation = await install_hello(owner, {"fakeScenario": "crash"})
+    """A container that is still running but never hands shake (or stops heartbeating)."""
+    installation = await install_hello(owner, {"fakeScenario": "hang"})
     run = (await owner.post("/api/v1/runs", json={"installationId": installation["id"]})).json()
     interrupted = await wait_for_state(owner, run["id"], {"INTERRUPTED"}, within=15)
     assert interrupted["error"]["code"] == "HEARTBEAT_LOST"

@@ -277,6 +277,47 @@ def test_start_is_idempotent_and_cancel_stops(daemon: Daemon) -> None:
     assert not (daemon.cfg.runs_dir / spec["run_id"]).exists()
 
 
+def test_status_reports_a_crash_exit_code(daemon: Daemon) -> None:
+    """The control plane's exit watcher fails a run from this status (AGENT_EXITED)."""
+    ref = daemon.client.post("/internal/v1/runs", json=run_spec(["sh", "-c", "exit 3"])).json()[
+        "runtimeRef"
+    ]
+    status = wait_exited(daemon, ref)
+    assert status["exitCode"] == 3 and status["oomKilled"] is False
+    assert status["finishedAt"] and not status["finishedAt"].startswith("0001-")
+    assert status["memoryLimitBytes"] == 128 * 1024 * 1024
+
+
+def test_status_reports_an_out_of_memory_kill(daemon: Daemon) -> None:
+    """``tail /dev/zero`` buffers an endless line until the kernel kills it at the 64 MiB
+    limit; the status carries what AGENT_OUT_OF_MEMORY reports.
+
+    Docker itself loses the OOM flag for roughly 1 in 12 kills (exit 137, OOMKilled=false;
+    the control plane treats that as a probable OOM), so up to three containers are tried
+    until one shows that the daemon passes the flag through."""
+    statuses = []
+    for _ in range(3):
+        spec = run_spec(["tail", "/dev/zero"], memory_mb=64)
+        ref = daemon.client.post("/internal/v1/runs", json=spec).json()["runtimeRef"]
+        status = wait_exited(daemon, ref)
+        assert status["exitCode"] == 137, status
+        assert status["memoryLimitBytes"] == 64 * 1024 * 1024
+        statuses.append(status)
+        if status["oomKilled"]:
+            break
+    assert statuses[-1]["oomKilled"] is True, statuses
+
+
+def test_status_of_a_running_container_has_no_exit(daemon: Daemon) -> None:
+    ref = daemon.client.post("/internal/v1/runs", json=run_spec(["sleep", "300"])).json()[
+        "runtimeRef"
+    ]
+    status = daemon.client.get(f"/internal/v1/runs/{ref}").json()
+    assert status["state"] == "running"
+    assert status["exitCode"] is None and status["finishedAt"] is None
+    assert status["oomKilled"] is False
+
+
 def test_invalid_runtime_ref_is_rejected(daemon: Daemon) -> None:
     for ref in ("crewquarters-postgres-1", "cq-model-local-general-small", "../../etc"):
         assert daemon.client.get(f"/internal/v1/runs/{ref}").status_code == 404
