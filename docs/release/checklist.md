@@ -131,10 +131,11 @@ API (`apps/web/e2e/*.spec.ts`).
   provider, so a cloud key cannot stand in. Real classification needs the GB10 catalog
   (`catalog/models/dgx`, vLLM) or the fake platform pointed at an OpenAI-compatible server
   (`CREWQ_FAKE_LLM_BASE_URL`).
-- **Fake providers in the laptop stack.** The broker's fake Google and Twilio keep their state in
-  memory. Recreating the broker loses the fake Google grant (reconnect), and the fake Sheets start
-  empty, so the caller has no contacts to call under `make demo-up` without live accounts
-  ([local-demo.md](../runbooks/local-demo.md)).
+- **Fake providers in the laptop stack.** The broker's fake Google keeps the connection across
+  broker restarts, but fake Sheets content, call history and revocations live in the broker's
+  memory: a restarted broker re-seeds the demo contacts and forgets written results. The caller
+  under `make demo-up` calls the five seeded fictional contacts only; your own contacts need live
+  accounts ([local-demo.md](../runbooks/local-demo.md)).
 - **Model gateway idempotency store is in memory.** Completed LLM responses are replayed by key
   only until the gateway restarts, and the store is not shared between processes
   ([model-gateway.md](../model-gateway.md)).

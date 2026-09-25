@@ -165,10 +165,21 @@ These are in addition to the shared `CQ_*` settings the broker also reads: `CQ_D
 
 The fakes support fake end-to-end runs and tests. Fixtures contain no real personal data: `example.com` addresses and `+1555555xxxx` numbers.
 
-- **Google sign-in:** call the callback with `code=fake-code` (both scopes) or `code=fake-code:gmail.readonly`.
-- **Gmail fixtures:** eight messages dated yesterday: plain, multipart, HTML-only, empty, attachment-only, prompt injection, promotion, and malformed base64. `after:`/`before:` and `labelIds` are honoured, and results paginate with `resultSizeEstimate`.
-- **Sheets:** stored in memory.
-- **Twilio:** the destination's last digit selects the outcome.
+- **Google sign-in:** the `authorizationUrl` from `start` is the broker's own callback, `CQ_PUBLIC_BASE_URL/api/v1/connections/google/callback?state=…&code=fake-code:<scopes>` (the requested scope names, comma-separated), instead of `accounts.google.com`. Opening it in the browser that started the sign-in completes consent in one click and returns to `/connections/google?result=connected`, as Google would. The state, the browser-binding cookie and the PKCE exchange are checked exactly as in live mode, so the URL is useless in another browser. The callback also still accepts a hand-made `code=fake-code` (both scopes) or `code=fake-code:gmail.readonly` with a valid state. Live mode is unchanged.
+- **Google tokens:** a fake refresh token carries its grant (`fake-refresh.<base64url JSON of scopes and subject>`), so the fake token endpoint accepts it in any broker process: a connection stays `CONNECTED` across broker restarts and `make demo-down`/`make demo-up`. Revocation (Disconnect) is kept in the broker's memory only; the broker deletes the disconnected token anyway. Access tokens are `fake-access-…` and are accepted by the fake APIs.
+- **Gmail fixtures:** eight messages: plain, multipart, HTML-only, empty, attachment-only, prompt injection, promotion, and malformed base64. They are dated a few seconds after the start of the requested window (the query's `after:` bound, which the digest sets to the start of the previous local day), or 24 hours before the request without one, so a digest finds them however long the broker has been running. A message fetched by id has the dates of the latest listing. `after:`/`before:`, `labelIds`, `-category:` and `label:` are honoured, and results paginate with `resultSizeEstimate`.
+- **Sheets:** stored in the broker's memory (lost on restart). The first read of a spreadsheet the fake does not know seeds it with a demo contact table in the caller's layout, so any spreadsheet ID works, for example `demo-contacts`. `Contacts` (header in row 1, data from row 2, columns `name, phone_e164, consent, status`) and an empty `Results` tab:
+
+  | Row | name | phone_e164 | consent | status | Caller |
+  | --- | --- | --- | --- | --- | --- |
+  | 2 | Asha Rao | +15555550101 | yes | | called; answers, transcript "Yes, I can attend." |
+  | 3 | Ben Okafor | +15555550106 | yes | ready | called; answers, transcript "Yes, I can attend." |
+  | 4 | Carmen Diaz | +15555550103 | consented | | called; no answer |
+  | 5 | Dev Patel | +15555550107 | no | | skipped: `consent` |
+  | 6 | R2-D2 | +15555550108 | yes | | skipped: `invalid_name` |
+
+  A write before any read (or a seeded tab written by a test) is kept as is.
+- **Twilio:** any account SID of the right shape and auth token are accepted (a token starting with `invalid` is refused). Calls to any number are placed; the fake plays Twilio's status, voice and gather callbacks inside the broker. The destination's last digit selects the outcome.
 
 | Last digit | Final `state` | `answered` / `speechCaptured` |
 | --- | --- | --- |

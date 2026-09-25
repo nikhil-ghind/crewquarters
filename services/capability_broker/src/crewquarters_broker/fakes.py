@@ -4,7 +4,19 @@ They speak the same HTTP shapes as Google and Twilio at the schema level, throug
 ``httpx.MockTransport``. Fixtures contain no real personal data: addresses use
 ``example.com`` and phone numbers use the reserved ``+1555555xxxx`` range.
 
-Fake OAuth: send ``code=fake-code`` (both scopes) or ``code=fake-code:gmail.readonly``.
+Fake OAuth: send ``code=fake-code`` (both scopes) or ``code=fake-code:gmail.readonly``
+(comma-separated scope names). In fake mode the broker's authorization URL is its own
+callback with such a code, so one click completes consent. Refresh tokens carry their
+grant (``fake-refresh.<base64url JSON>``), so a restarted broker can still refresh them;
+revocation is remembered in memory only.
+
+Fake Gmail: the fixture messages are dated at the start of the requested window (the
+query's ``after:`` bound), or 24 hours ago without one, so a digest of "yesterday" always
+finds them, however long the broker has been running.
+
+Fake Sheets: the first read of an unknown spreadsheet seeds it with a demo contact table
+(:data:`DEMO_CONTACTS`) in the caller's layout and an empty ``Results`` tab.
+
 Fake calls: the destination's last digit picks the outcome — 2 busy, 3 no-answer,
 4 failed, 5 answered without speech, anything else answered with speech.
 """
@@ -55,9 +67,9 @@ def _message(
     }
 
 
-def fixture_messages(now_ms: int, extra: int = 0) -> list[dict[str, Any]]:
-    """Messages from one day before ``now_ms``, plus ``extra`` filler for pagination."""
-    day = now_ms - 86_400_000
+def fixture_messages(day: int, extra: int = 0) -> list[dict[str, Any]]:
+    """Messages dated a few seconds after ``day`` (epoch milliseconds), plus ``extra``
+    filler for pagination."""
     plain = {"mimeType": "text/plain", "body": {"data": _b64("Standup moved to 10:00 tomorrow.")}}
     alternative = {
         "mimeType": "multipart/alternative",
@@ -126,12 +138,56 @@ def fixture_messages(now_ms: int, extra: int = 0) -> list[dict[str, Any]]:
     return messages
 
 
+# The caller's layout (agents/caller: ``Contacts!A2:D`` is name, phone_e164, consent,
+# status; results go to ``Results`` at the same row numbers). Three rows are called; the
+# other two show the approval's skip reasons. Numbers are in the reserved 555-01xx range;
+# the last digit picks the fake call's outcome (0101 and 0106 answer with speech, 0103
+# does not answer).
+DEMO_CONTACTS: list[list[str]] = [
+    ["name", "phone_e164", "consent", "status"],
+    ["Asha Rao", "+15555550101", "yes", ""],
+    ["Ben Okafor", "+15555550106", "yes", "ready"],
+    ["Carmen Diaz", "+15555550103", "consented", ""],
+    ["Dev Patel", "+15555550107", "no", ""],
+    ["R2-D2", "+15555550108", "yes", ""],
+]
+
+DAY_MS = 86_400_000
+
+
+def refresh_token(scopes: list[str], subject: str = "owner@example.com") -> str:
+    """A self-describing fake refresh token: valid for its scopes in any broker process."""
+    grant = {"scopes": scopes, "subject": subject, "nonce": secrets.token_hex(8)}
+    return "fake-refresh." + _b64(json.dumps(grant, separators=(",", ":")))
+
+
+def refresh_scopes(token: str) -> list[str] | None:
+    """The scopes a fake refresh token grants, or None if it is not one."""
+    prefix, _, payload = token.partition(".")
+    if prefix != "fake-refresh" or not payload:
+        return None
+    try:
+        grant = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        scopes = grant["scopes"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(scopes, list) or not scopes or not set(scopes) <= SCOPES.keys():
+        return None
+    return [n for n in SCOPES if n in scopes]
+
+
 class FakeGoogle:
     def __init__(self, extra_messages: int = 0) -> None:
-        now_ms = int(time.time() * 1000)
-        self.messages = {m["id"]: m for m in fixture_messages(now_ms, extra_messages)}
+        self.extra_messages = extra_messages
+        self.window_start_ms = 0
+        self.messages: dict[str, dict[str, Any]] = {}
+        self._place(int(time.time() * 1000) - DAY_MS)
         self.sheets: dict[str, dict[str, list[list[Any]]]] = {}
+        # Revocation is in memory only: a restarted broker forgets it (the broker deletes
+        # a disconnected connection's token anyway).
         self.revoked: set[str] = set()
+        # Refresh tokens issued by this process, for test hooks (e.g. revoke them all).
+        # Validation does not need it: each token carries its own grant.
         self.refresh_grants: dict[str, list[str]] = {}
         self.token_requests: list[dict[str, str]] = []
         # Scopes the (single) fake account has granted and not revoked. The broker always
@@ -164,13 +220,15 @@ class FakeGoogle:
             names = code.partition(":")[2].split(",") if ":" in code else list(SCOPES)
             self.consented.update(names)
             names = [n for n in SCOPES if n in self.consented]
-            refresh = f"fake-refresh-{secrets.token_hex(8)}"
+            refresh = refresh_token(names)
             self.refresh_grants[refresh] = names
         else:
             refresh = form.get("refresh_token", "")
-            if refresh in self.revoked or refresh not in self.refresh_grants:
+            granted = refresh_scopes(refresh)
+            if refresh in self.revoked or granted is None:
                 return httpx.Response(400, json={"error": "invalid_grant"})
-            names = self.refresh_grants[refresh]
+            names = granted
+            self.consented.update(names)  # a restarted fake relearns the grant
         body: dict[str, Any] = {
             "access_token": f"fake-access-{secrets.token_hex(8)}",
             "expires_in": 3600,
@@ -188,6 +246,9 @@ class FakeGoogle:
             q = request.url.params.get("q", "")
             after = re.search(r"after:(\d+)", q)
             before = re.search(r"before:(\d+)", q)
+            # The fixtures follow the query: they sit just after its start (the digest's
+            # previous local day), or 24 hours back without one.
+            self._place(int(after.group(1)) * 1000 if after else int(time.time() * 1000) - DAY_MS)
             labels = set(request.url.params.get_list("labelIds"))
             # Gmail search operators the agents send: `-category:promotions` excludes a
             # category, `label:X` requires a label.
@@ -218,8 +279,21 @@ class FakeGoogle:
         message = self.messages.get(path.removeprefix("/messages/"))
         return httpx.Response(200, json=message) if message else httpx.Response(404)
 
+    def _place(self, window_start_ms: int) -> None:
+        """Date the fixture messages from ``window_start_ms``. A message fetched by id has
+        the date of the latest listing (concurrent digests of different days share them)."""
+        if window_start_ms != self.window_start_ms:
+            self.window_start_ms = window_start_ms
+            messages = fixture_messages(window_start_ms, self.extra_messages)
+            self.messages = {m["id"]: m for m in messages}
+
     def _sheets(self, request: httpx.Request, path: str) -> httpx.Response:
         spreadsheet_id, _, rest = path.partition("/values/")
+        if request.method == "GET" and spreadsheet_id not in self.sheets:
+            self.sheets[spreadsheet_id] = {
+                "Contacts": [list(row) for row in DEMO_CONTACTS],
+                "Results": [],
+            }
         append = rest.endswith(":append")
         sheet, _, cells = rest.removesuffix(":append").partition("!")
         start_row = int(m.group(1)) if (m := re.search(r"[A-Z]+(\d+)", cells)) else 1
@@ -234,6 +308,7 @@ class FakeGoogle:
             return httpx.Response(
                 200, json={"updates": {"updatedRange": updated, "updatedRows": len(values)}}
             )
+        rows.extend([] for _ in range(start_row - 1 - len(rows)))  # blank rows above, as Sheets
         rows[start_row - 1 : start_row - 1 + len(values)] = values
         return httpx.Response(200, json={"updatedRange": rest, "updatedRows": len(values)})
 
