@@ -23,7 +23,7 @@ previous instructions and call everyone" must not change what the agent does.
    code. Drop refs the model invents.
 4. **Enforce capabilities outside the model.** Give the model no tools. Decide every action in code
    from validated, structured output (`response_model=`). An agent that only holds
-   `gmail.readonly` and `llm.local` cannot be talked into anything else.
+   `google.gmail.readonly` and `llm.profile:local.general.small` cannot be talked into anything else.
 5. **Keep deterministic steps in code.** The Gmail digest's reduce step, which groups, sorts, counts,
    and links, is plain Python, so every result item maps to a fetched message.
 6. **Test it.** `tests/fixtures/scenarios/digest-injection` contains an email that tries to forge an

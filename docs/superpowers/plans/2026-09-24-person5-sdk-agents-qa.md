@@ -1,5 +1,10 @@
 # Person 5 — SDK, crewctl, agents, fakes, and QA: Implementation Plan
 
+> **Update 2026-09-25:** the contract drafts this document describes (manifest, capabilities,
+> run events, control API) were replaced by Person 1's canonical contracts when the work was
+> integrated with the control plane. The current state and the remaining open questions are in
+> [docs/decisions/0001](../../decisions/0001-person5-contract-drafts.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build Person 5's complete scope: the `crewquarters-sdk`, `crewctl`, three agents (contract-probe, Gmail digest, caller), the fake platform and launchers, laptop Compose, the unit/contract/integration/E2E suites, CI, and demo/QA deliverables.

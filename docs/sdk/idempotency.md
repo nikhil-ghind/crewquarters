@@ -16,14 +16,18 @@ call = await ctx.idempotency.once(
 )
 ```
 
-| Record state when you call `once` | What happens |
-| --- | --- |
-| none | Claimed for this attempt. `fn` runs, then its result is stored (`completed`) and returned. |
-| `completed` | The stored result is returned. `fn` is **not** called. |
-| `in_progress` from an earlier attempt that died | Raises `OutcomeUnknown`, unless `resume_in_progress=True`, which reclaims the key and runs `fn` again |
+`once` claims the key through the control plane's action records (`/actions/{key}/claim`), runs
+`fn`, and completes the key with the result. The claim answers one of three ways:
+
+| Claim status | Meaning | What `once` does |
+| --- | --- | --- |
+| `claimed` | This call created the key. | Runs `fn`, stores its result (`completed`), and returns it. |
+| `completed` | An earlier call finished. | Returns the stored result. `fn` is **not** called. |
+| `in_doubt` | The key was claimed before (by this or an earlier attempt) and never completed, so the effect may already have happened. | Raises `OutcomeUnknown`, unless `resume_in_progress=True`, which runs `fn` again and completes the key. |
 
 Only use `resume_in_progress=True` when repeating `fn` cannot duplicate the effect. The caller
 agent does this because the broker deduplicates call creation by the same `idempotencyKey`.
+`claim(key)` and `complete(key, result)` are available for flows that need the steps separately.
 
 ## Patterns the bundled agents use
 
@@ -35,8 +39,9 @@ agent does this because the broker deduplicates call creation by the same `idemp
   result with `update_values` to `Results!A<row>:H<row>`, the same row number as the source contact,
   so repeating a write is harmless and never redials.
 - **Stable input keys.** `ctx.input.ask(key=…)` is idempotent per run, so a retried attempt gets
-  the stored answer. Derive the key from what the operator approved; the caller hashes the
-  recipients and script. That way a changed plan needs a new approval, and an unchanged one does not
-  ask twice.
+  the stored answer. A question an earlier attempt left open is cancelled when that attempt ends,
+  and asking the same key again reopens it. Derive the key from what the operator approved; the
+  caller hashes the recipients and script. That way a changed plan needs a new approval, and an
+  unchanged one does not ask twice.
 - **Treat `OutcomeUnknown` as a real state.** Record it for the operator and do not guess. Never
   repeat a non-idempotent action automatically from agent code.

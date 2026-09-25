@@ -407,18 +407,21 @@ The full implementation specification, five-person work split, prompts, API/data
 
 ## Developer quickstart (SDK, agents, fake platform)
 
-Person 5's deliverables work on any laptop with Docker and `uv`:
+Person 5's deliverables build on the control plane above and work on any laptop with Docker and `uv`:
 
 ```bash
-make sync && make lint && make test   # uv workspace (Python 3.12) and offline test suites
-make dev-up && make e2e               # fake platform + local registry, then the agents in hardened containers
+make sync                # the whole workspace, including the SDK, crewctl, fake platform, and agents
+make test-sdk            # SDK, fake platform, crewctl, agent, and contract tests (no database)
+make fake-up && make e2e # fake platform (http://127.0.0.1:8090) + local registry, then the agents in hardened containers
 make demo-seed && make demo-run AGENT=gmail_digest
 ```
 
-- `packages/contracts`: draft v1alpha1 contracts (manifest, capabilities, broker and control OpenAPI, run events) and their open questions in [docs/decisions/0001](docs/decisions/0001-person5-contract-drafts.md).
+`make test-platform` runs everything, including the control-plane tests that need PostgreSQL.
+
 - `packages/python_sdk`: `crewquarters-sdk` ([quickstart](docs/sdk/quickstart.md), [reference](docs/sdk/reference.md)).
-- `packages/crewctl`: `crewctl init | validate | test | build | publish`.
-- `packages/fake_platform`: fake broker, control-API slice, and mock Gmail/Sheets/Twilio/LLM/knowledge, used by tests, `crewctl test`, and the laptop demo.
+- `packages/crewctl`: `crewctl init | validate | test | build | publish`. `validate` applies the control plane's manifest rules; `publish` signs in to the control API.
+- `packages/fake_platform`: a fake capability broker, the control-API operations agents need (same paths and shapes as `packages/contracts/openapi.yaml`), and mock Gmail/Sheets/Twilio/LLM/knowledge, used by tests, `crewctl test`, and the laptop demo. It follows the control plane's run semantics and reuses `crewquarters_shared` for manifests, profiles, configuration, and capabilities.
+- `packages/contracts/broker-sdk.openapi.yaml`: the draft SDK-to-broker API (Person 3 owns it). Its run, input, and action operations mirror the control plane's `/internal/v1` API. Open questions are in [docs/decisions/0001](docs/decisions/0001-person5-contract-drafts.md).
 - `agents/`: `daily-gmail-digest`, `caller`, and the `contract-probe` acceptance agent.
 - [Operator script](docs/demo/operator-script.md) and [release checklist](docs/release/checklist.md).
 

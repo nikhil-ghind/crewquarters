@@ -8,7 +8,8 @@ Status values: **Done (fake)** has automated evidence against the fake platform 
 means Person 5's side is done and another owner's side is pending. **Pending** means it is not
 started or belongs to another owner.
 
-Evidence commands: `make test` (unit, contract, integration), `make e2e` (Docker), `make images`
+Evidence commands: `make test` (control plane, SDK, agents, contract, and integration tests; needs
+PostgreSQL), `make test-sdk` (no database), `make fake-up && make e2e` (Docker), `make agent-images`
 (amd64 and arm64), `make evidence` (writes a report to `evidence/<UTC>/`).
 
 ## 23.1 Repository and contracts
@@ -17,7 +18,7 @@ Evidence commands: `make test` (unit, contract, integration), `make e2e` (Docker
 | --- | --- | --- | --- | --- |
 | Must | Monorepo layout matches or updates the boundaries through an ADR | Person 1 (all) | `packages/`, `agents/`, `infra/compose`, `tests/` follow the README layout | Partial: Person 5 areas done |
 | Should | README and operator/developer/security runbooks are current | All | `docs/sdk/*`, `docs/demo/operator-script.md`, README developer quickstart | Partial |
-| Must | OpenAPI, event schemas, manifest schema, generated clients, and examples are versioned | Person 1, Person 3 | `packages/contracts/*` (drafts), `tests/contract/*` (validity, route parity, traffic conformance) | Partial: drafts await approval ([D1](../decisions/0001-person5-contract-drafts.md)); generated clients belong to Person 1 |
+| Must | OpenAPI, event schemas, manifest schema, generated clients, and examples are versioned | Person 1, Person 3 | Canonical `packages/contracts/*` from Person 1 (`tests/contract/test_contracts.py`). Person 5 checks against them: the bundled manifests pass the control plane's validation, the fake's traffic matches `openapi.yaml` and the run-event schema, and the broker draft mirrors `/internal/v1` (`tests/contract/test_broker_contract_files.py`, `test_fake_route_parity.py`, `test_fake_traffic_conformance.py`) | Partial: `broker-sdk.openapi.yaml` awaits Person 3 ([D1](../decisions/0001-person5-contract-drafts.md)) |
 | Should | ADRs cover all fixed decisions in §1 | Person 1 | `docs/decisions/0001-person5-contract-drafts.md` | Partial |
 | Must | License inventory and notices exist for bundled models and code | Person 1 (release) | — | Pending |
 
@@ -26,7 +27,7 @@ Evidence commands: `make test` (unit, contract, integration), `make e2e` (Docker
 | Tag | Item | Owner | Evidence | Status |
 | --- | --- | --- | --- | --- |
 | Must | Owner bootstrap, login, logout, session expiry, CSRF | Person 1 | — | Pending |
-| Must | Marketplace list, install, config, permission reapproval on update, uninstall | Person 1, Person 4 | Install and permission-subset checks in the fake (`test_control.py`) | Pending (real) |
+| Must | Marketplace list, install, config, permission reapproval on update, uninstall | Person 1, Person 4 | The control plane's own tests (Person 1); the fake mirrors exact-approval installs (`test_control.py`) | Partial (install and list done by Person 1; UI pending) |
 | Must | Manual and scheduled runs, cancel/retry, events, results, audit | Person 1 | SDK and fake lifecycle (`test_agent_lifecycle.py`, `test_broker_core.py`, `test_hello_agent.py`) | Partial |
 | Must | Exact-10:00 test passes for at least three IANA timezones | Person 1 | The digest's previous-day window is exact for Kolkata, New York, Santiago, and Lord Howe (`test_window.py`) | Partial: scheduler belongs to Person 1 |
 | Must | Agent web-input request and answer flow works and handles timeout/restart honestly | Person 1, Person 5 | `test_input.py`, `test_broker_core.py`, a killed agent resumes with the stored answer (`test_hello_agent.py`, `test_caller.py`) | Partial |
@@ -49,7 +50,7 @@ Evidence commands: `make test` (unit, contract, integration), `make e2e` (Docker
 | Tag | Item | Owner | Evidence | Status |
 | --- | --- | --- | --- | --- |
 | Must | Supported document formats index; unsupported scans fail clearly | Person 3 | — | Pending |
-| Must | Retrieval is scoped to the selected knowledge base | Person 3 | The fake enforces bound KBs (`test_broker_connectors.py::test_knowledge_search_is_scoped_to_granted_bases`) | Pending (real) |
+| Must | Retrieval is scoped to the selected knowledge base | Person 3 | The fake enforces bound KBs (`test_broker_connectors.py::test_knowledge_search_is_scoped_to_the_configured_base`) | Pending (real) |
 | Must | Prompt-injection fixtures cannot obtain or invoke capabilities | Person 3, Person 5 | `digest-injection` scenario, `test_gmail_digest.py::test_prompt_injection_…` | Done (fake) for agents |
 | Must | Google OAuth state/refresh/reconnect/disconnect; 7-day test expiry documented | Person 3 | The digest and caller map expired Google access to `GOOGLE_RECONNECT_REQUIRED`; operator script notes the 7-day expiry | Partial |
 | Must | OAuth/provider secrets encrypted and absent from API reads, logs, and agent environments | Person 3 | The agent environment carries only the run token (`DockerLauncher.command`); SDK redaction (`test_redact.py`) | Partial |
@@ -70,7 +71,7 @@ Evidence commands: `make test` (unit, contract, integration), `make e2e` (Docker
 
 | Tag | Item | Owner | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| Must | Laptop Compose profile passes the full fake E2E | Person 5 | `make dev-up && make e2e` (CI `e2e` job) | Done |
+| Must | Laptop Compose profile passes the full fake E2E | Person 5 | `make fake-up && make e2e` (CI `agent-e2e` job) | Done |
 | Must | Fresh GB10 installer and uninstall-with-data-preservation rehearsed | Person 2 | — | Pending |
 | Must | Runtime daemon is Unix-socket only; internal services not externally published | Person 2 | The laptop stack publishes only on 127.0.0.1 | Pending (real) |
 | Must | Agent cannot access Docker, the DB, vLLM directly, host paths/gateway, or the internet | Person 2, Person 5 | contract-probe `isolation` passes in the hardened container on the internal network (`test_e2e_agents.py`) | Partial: the real daemon must apply the same flags |
@@ -83,12 +84,13 @@ Evidence commands: `make test` (unit, contract, integration), `make e2e` (Docker
 
 All items are **Pending** until the UI exists. Person 5 supplies the inputs the UI renders:
 
-- the input-request `choices`, `preview`, and `consequence` fields;
-- result renderer ids with their schemas (`crewquarters.gmail-digest/v1`, `crewquarters.caller/v1`,
-  `crewquarters.contract-probe/v1`);
+- the input-request `preview` object (`blocks`, `choices`, `consequence`);
+- result renderer ids (`x-crewquarters-renderer` in each manifest's `resultSchema`:
+  `crewquarters.gmail-digest/v1`, `crewquarters.caller/v1`, `crewquarters.contract-probe/v1`);
 - the config UI hints `x-crewquarters-widget` and `x-crewquarters-group`.
 
-The fake's control API is enough for Person 4 to develop against.
+The fake's control API uses the same paths and shapes as the real one for the operations it serves,
+so Person 4 can develop against either.
 
 ## 23.8 Evidence package
 
@@ -103,8 +105,13 @@ The fake's control API is enough for Person 4 to develop against.
 
 ## Known limitations (Person 5 scope)
 
-- The contracts are drafts. The SDK and agents follow them, and the real services must adopt them
-  or version them.
+- The SDK-to-broker API (`broker-sdk.openapi.yaml`) is a draft until Person 3 adopts it. Its run,
+  input, and action operations mirror the control plane's `/internal/v1` API (checked by tests), but
+  the SDK has not yet run against a real broker.
+- Verified against the real control plane (2026-09-25, local Compose): `crewctl publish` imports
+  the three digest-pinned agents, they install with exact permission approval, the derived
+  capabilities match the fake's, and runs complete on the scheduler's fake runtime with valid run
+  events. The fake runtime does not execute agent code.
 - Fake-only coverage: Gmail/Sheets/Twilio are simulated. The fake LLM is rule-based unless it is
   pointed at an OpenAI-compatible server.
 - There is no durable suspend/resume. A waiting agent keeps its container, and a platform restart

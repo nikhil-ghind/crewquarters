@@ -41,9 +41,14 @@ agent = Agent("weather-bot")
 async def run(ctx: RunContext[Any]) -> dict[str, Any]:
     await ctx.events.progress(10, "Starting")
     answer = await ctx.input.ask(
-        "confirm-v1", "Continue?", "Should the agent continue?", choices=["yes", "no"], timeout_seconds=600
+        "confirm-v1",
+        "Continue?",
+        "Should the agent continue?",
+        choices=["yes", "no"],
+        timeout_seconds=600,
     )
-    reply = await ctx.llm.chat("local.general", [{"role": "user", "content": "Say hello in five words."}])
+    prompt = [{"role": "user", "content": "Say hello in five words."}]
+    reply = await ctx.llm.chat("local.general", prompt)
     return {"confirmed": answer.value == "yes", "greeting": reply.text}
 
 
@@ -51,8 +56,12 @@ if __name__ == "__main__":
     agent.serve()
 ```
 
-- Declare every capability you use in `manifest.yaml` (`permissions`). The broker enforces them, so
-  an undeclared call raises `PermissionDenied`.
+- Declare every capability you use in `manifest.yaml`. `permissions` must list all five entries
+  (`llmProfiles`, `knowledge`, `connectors`, `cloudProviders`, `userInput`); this example needs
+  `llmProfiles: ["local.general"]` and `userInput: true`. The owner approves exactly that list at
+  install, and the broker enforces it, so an undeclared call raises `PermissionDenied`.
+- Describe the result in `spec.resultSchema` (JSON Schema). The platform validates results against
+  it, and `x-crewquarters-renderer` in it names the UI renderer.
 - Pass `config_model=` and `result_model=` (Pydantic models) to validate configuration and results.
   An invalid configuration fails the run with `CONFIG_INVALID` before your code runs.
 - The full API is in [reference.md](reference.md). Also read [idempotency.md](idempotency.md) before
@@ -78,11 +87,17 @@ schedule, add `run: {trigger: schedule, scheduledFor: now}` to `scenario.yaml`.
 ## 5. Build, pin, publish
 
 ```bash
-make dev-up                                                    # fake platform + local registry
+make fake-up                                                   # fake platform (127.0.0.1:8090) + local registry
 uv run --all-packages crewctl build agents/weather_bot --push  # amd64 + arm64; pins the digest in manifest.yaml
 uv run --all-packages crewctl test agents/weather_bot --docker # pinned image, hardened container, internal network
-uv run --all-packages crewctl publish agents/weather_bot --target local --platform-url http://localhost:8080
+CREWQ_PASSWORD=… uv run --all-packages crewctl publish agents/weather_bot --target local \
+    --platform-url http://localhost:8080 --username owner      # the control API (make dev-up)
 ```
+
+`publish` signs in as the owner (session cookie, CSRF token, and an allowed `Origin`), then imports
+the manifest. The control API refuses a manifest whose image is not pinned by digest, and a
+version, once imported, cannot change: bump `metadata.version` for a new build. Pointing
+`--platform-url` at the fake platform (`http://127.0.0.1:8090`) needs no credentials.
 
 Pass `--output-manifest PATH` to `crewctl build` to write the pinned manifest somewhere else, for
 example in CI.
