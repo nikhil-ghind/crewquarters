@@ -46,7 +46,7 @@ With `compose.runtime.yaml`, the runtime daemon creates the internal networks `c
 `compose.yaml` + `compose.runtime.yaml` + `compose.demo.yaml`, in the same Compose project (`crewquarters`) and on the same ports as `make dev-up`:
 
 1. Builds `crewquarters/platform:dev` and `crewquarters/proxy:dev`, and starts `registry` (profile `fake`, `127.0.0.1:5001`).
-2. `tests/realstack/prepare.py --registry localhost:5001 --out .demo --no-test-variants` builds the contract probe, Gmail digest and caller images for this machine, pushes them, and writes `.demo/manifests/` and `.demo/catalog/` (the bundled catalog plus the three pinned agents).
+2. `tests/realstack/prepare.py --registry localhost:5001 --out .demo --no-test-variants` builds the contract probe, Gmail digest and caller images for this machine, pushes them, and writes `.demo/manifests/` and `.demo/catalog/` (the three pinned agents; bundled entries with a placeholder image digest, such as `hello-crew`, are left out).
 3. Starts `runtime-daemon` first (it creates `cq-agents` and `cq-models`), then the rest.
 
 The model gateway runs mock model-server containers through the daemon. Google and Twilio are the broker's fakes unless `LIVE_ENV=<file>` passes an env file with `CQ_PROVIDER_MODE=live` (`--env-file`). `make demo-down` removes agent and model containers and stops the stack; `make demo-down V=1` also deletes the volumes and the run and model data under `CQ_DATA_DIR`. Details, live providers and troubleshooting: [docs/runbooks/local-demo.md](../../docs/runbooks/local-demo.md).

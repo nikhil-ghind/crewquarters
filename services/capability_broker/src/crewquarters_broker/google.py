@@ -103,6 +103,17 @@ class GoogleConnector:
         self._pending[_hash(state)] = _Pending(
             user_id, verifier, _hash(binding), now + STATE_TTL_SECONDS
         )
+        if self.settings.provider_mode == "fake":
+            # There is no consent screen to show: the fake "consents" at once by sending
+            # the browser straight to our callback with a fake code for the requested
+            # scopes (crewquarters_broker.fakes). The callback still checks the state,
+            # the browser binding and the PKCE verifier.
+            code = "fake-code:" + ",".join(sorted(set(capabilities)))
+            fake = urlencode({"state": state, "code": code})
+            return {
+                "authorizationUrl": f"{self.settings.google_redirect_uri}?{fake}",
+                "browserBinding": binding,
+            }
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
         params = {
             "client_id": self.settings.google_client_id,

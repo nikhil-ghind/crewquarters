@@ -51,8 +51,9 @@ make dev-bootstrap   # prints a one-time owner setup code
 2. Starts the local registry on `127.0.0.1:5001`.
 3. Runs `tests/realstack/prepare.py --registry localhost:5001 --out .demo --no-test-variants`.
    This builds the three agent images for this machine's architecture, pushes them, and writes
-   pinned manifests to `.demo/manifests/` and the catalog to `.demo/catalog/` (the bundled
-   `hello-crew` plus the three agents).
+   pinned manifests to `.demo/manifests/` and the catalog to `.demo/catalog/` (the three
+   agents). Bundled catalog entries whose image digest is a placeholder (`hello-crew`) are
+   omitted, and the script prints what it left out.
 4. Starts the runtime daemon first, because it creates the `cq-agents` and `cq-models` networks
    the broker and gateway join, and then the rest of the stack from `compose.yaml`,
    `compose.runtime.yaml` and `compose.demo.yaml`.
@@ -76,22 +77,14 @@ The setup wizard:
 
 ### Connecting the fake Google account
 
-With fake providers, **Connect Google** still sends the browser to `accounts.google.com` with a
-placeholder client ID (`crewquarters-dev.apps.example.com`), and Google shows an error. Finish the
-sign-in by hand:
+With fake providers, **Connect Google** completes in one click: there is no Google page. The
+broker sends the browser straight back to its own callback with a fake consent for the scopes you
+ticked, and you land on Connections with Google **Connected**. The sign-in still has to finish in
+the browser that started it (the broker checks its one-time state and a browser cookie), so open
+the UI on the host in `CQ_PUBLIC_BASE_URL` (`localhost`, not `127.0.0.1`).
 
-1. Copy the `state` value from the address bar of Google's error page.
-2. In the same browser, open
-   `http://localhost:8080/api/v1/connections/google/callback?state=<state>&code=fake-code`.
-
-`code=fake-code` grants both scopes (`gmail.readonly` and `spreadsheets`), and
-`code=fake-code:gmail.readonly` grants only Gmail. The state is single-use, expires after
-10 minutes, and must be used in the browser that started the sign-in. The broker returns you to
-Connections with the result.
-
-The fake keeps its grants in the broker's memory. After the broker container is restarted or
-recreated (including `make demo-down` and `make demo-up`), Google shows **Needs attention**:
-connect it again the same way.
+The connection survives broker restarts, including `make demo-down` and `make demo-up` (without
+`V=1`): the fake's refresh token carries its own grant. **Disconnect** revokes it.
 
 ## Trying the agents with fake providers
 
@@ -99,13 +92,11 @@ Install and run agents from **Crew**. Pending questions ("Crew Requests") appear
 under Activity, and on the run's page.
 
 **Daily Gmail Digest.** Set `timezone` to your own IANA zone. The fake Gmail inbox has eight
-messages, created when the broker starts and dated 24 hours earlier: a plain-text standup note,
-a multipart invoice reminder, an HTML-only security alert, an empty message, an attachment-only
-report, a prompt-injection message ("IGNORE PREVIOUS INSTRUCTIONS…"), a promotion, and one with
-malformed base64. The promotion is excluded by the default `excludeCategories`. Because the
-fixtures are 24 hours older than the broker's start, a broker that has been running since an
-earlier day returns an empty day; restart it (`docker compose -f infra/compose/compose.yaml
-restart capability-broker`) and reconnect Google.
+messages, always dated on the day the digest asks for (the previous local day): a plain-text
+standup note, a multipart invoice reminder, an HTML-only security alert, an empty message, an
+attachment-only report, a prompt-injection message ("IGNORE PREVIOUS INSTRUCTIONS…"), a
+promotion, and one with malformed base64. The promotion is excluded by the default
+`excludeCategories`, so a run digests seven messages.
 
 With the mock model, every message lands under **Important** with **Needs review**: the mock
 returns an empty classification, and the agent never hides unclassified mail. See
@@ -113,28 +104,38 @@ returns an empty classification, and the agent never hides unclassified mail. Se
 
 **Caller.** Save a fake Twilio account under Connections: an account SID of `AC` followed by 32
 hex digits, an auth token of 16 to 128 characters, and an E.164 caller number, for example
-`+15555550100`. **Place a test call** works and places a fake call. The fake Sheets start empty
-and are kept in the broker's memory, and nothing in the UI writes contacts into them. A caller
-run under `make demo-up` therefore finds no eligible rows and succeeds without asking for
-approval or calling anyone. To see the approval and the calls:
+`+15555550100`. **Place a test call** works and places a fake call.
 
-- use live Google and Twilio ([Going live](#going-live-with-google-and-twilio)); or
-- run `make realstack-up && make realstack-test`. The real-stack suite seeds the fake sheet
-  through a test-only broker harness and checks the approval, the three calls and the signed
-  callbacks ([testing-realstack.md](../testing-realstack.md)); or
-- use the fake platform: `make fake-up`, `make e2e-images`, `make demo-seed`,
-  `make demo-run AGENT=caller`, then `make demo-approve` ([operator-script.md](../demo/operator-script.md)).
+Install Caller with the spreadsheet ID `demo-contacts` (any ID works with the fakes) and keep
+the default ranges. The first time the fake Sheets is asked for a spreadsheet it does not know,
+it fills it with five demo contacts (fictional names, numbers in the reserved `+1 555 555 01xx`
+range) in the `Contacts` tab and an empty `Results` tab:
 
-When the fake does place calls, the destination's last digit picks the outcome: 2 busy,
-3 no-answer, 4 failed, 5 answered without speech, anything else answered with the transcript
-"Yes, I can attend." ([capability-broker.md](../capability-broker.md)).
+| Row | Name | Number | Consent | What happens |
+| --- | --- | --- | --- | --- |
+| 2 | Asha Rao | ••••0101 | yes | Called; answers and says "Yes, I can attend." |
+| 3 | Ben Okafor | ••••0106 | yes | Called; answers and says "Yes, I can attend." |
+| 4 | Carmen Diaz | ••••0103 | consented | Called; no answer (not a failure) |
+| 5 | Dev Patel | ••••0107 | no | Skipped: `consent` |
+| 6 | R2-D2 | ••••0108 | yes | Skipped: `invalid_name` (digits are not allowed in a spoken name) |
+
+Run it: the Crew Request shows the three recipients, the disclosure and script, and the two
+skipped rows with their reasons. **Approve 3 calls**; the fake plays Twilio's callbacks, and the
+run succeeds with two answered calls and their transcripts, one no-answer, and a result row per
+contact written to `Results` (rows 2 to 4). The fake sheets live in the broker's memory: a
+restarted broker seeds the contacts again and forgets the results. For other outcomes, the fake
+call's result follows the destination's last digit: 2 busy, 3 no-answer, 4 failed, 5 answered
+without speech, anything else answered with the transcript "Yes, I can attend."
+([capability-broker.md](../capability-broker.md#fakes-cq_provider_modefake)). To use your own
+contacts, go live ([Going live](#going-live-with-google-and-twilio)).
 
 **Contract probe.** It needs a knowledge base: create one first (next section) and choose it as
 `knowledgeBaseId`. Its `input` check asks a Crew Request; answer it. All other checks, including
 `isolation` in the hardened container, run without input.
 
 **Hello Crew** (`hello-crew`) is in the bundled catalog for the fake runtime used by
-`make dev-up`. Its image reference is a placeholder, so it cannot run under `make demo-up`.
+`make dev-up`. Its image reference is a placeholder, so `make demo-up` leaves it out of the
+demo catalog.
 
 ## Knowledge and chat
 
