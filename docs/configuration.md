@@ -38,6 +38,7 @@ Profiles: **dev** = laptop Compose with fakes; **demo-cpu** = laptop end-to-end;
 | `CQ_WORKER_CONCURRENCY` | int | `4` | no | — | Concurrent job loops per scheduler process |
 | `CQ_RECONCILER_INTERVAL_SECONDS` | float | `2.0` | no | — | Reconciler interval on the leader |
 | `CQ_API_HOST` | string | `127.0.0.1` | no | Compose (`0.0.0.0`) | Control API bind address (read in `crewquarters_api/main.py`) |
+| `CQ_API_FORWARDED_ALLOW_IPS` | string (IPs/CIDRs or `*`) | `127.0.0.1` | no | Compose (`*`) | Peers whose `X-Forwarded-*` headers the control API trusts (client IP for login rate limits and audit). Compose sets `*` because the API port is unpublished and only the proxy and platform services reach it |
 | `CQ_API_PORT` | int | `8080` | no | — | Control API port |
 | `CQ_TEST_ADMIN_URL` | string | dev Compose database URL | no | tests/CI | PostgreSQL server where tests create throwaway databases |
 | `CQ_MAX_BODY_BYTES` | int | `2097152` | no | all | Largest accepted request body; larger bodies get `413 PAYLOAD_TOO_LARGE`. Document uploads use `CQ_MAX_UPLOAD_BYTES` instead |

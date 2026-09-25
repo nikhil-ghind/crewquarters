@@ -101,6 +101,10 @@ services:
     environment:
       <<: *app-env
       CQ_API_HOST: 0.0.0.0
+      # Unpublished port: only the proxy and platform services reach it.
+      CQ_API_FORWARDED_ALLOW_IPS: "*"
+      # The dev stack runs the real broker (with fake providers), so read connection status from it.
+      CQ_BROKER_ADAPTER: http
     depends_on:
       migrate:
         condition: service_completed_successfully

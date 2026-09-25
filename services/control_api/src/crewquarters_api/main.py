@@ -311,7 +311,9 @@ def run() -> None:
         host=os.environ.get("CQ_API_HOST", "127.0.0.1"),
         port=int(os.environ.get("CQ_API_PORT", "8080")),
         proxy_headers=True,
-        forwarded_allow_ips="127.0.0.1",
+        # Behind the Compose proxy the API port is unpublished and only the proxy and
+        # platform services reach it, so Compose trusts their forwarded headers ("*").
+        forwarded_allow_ips=os.environ.get("CQ_API_FORWARDED_ALLOW_IPS", "127.0.0.1"),
         log_config=None,
         access_log=False,
     )

@@ -89,6 +89,8 @@ services:
     environment:
       <<: *platform-env
       CQ_API_HOST: 0.0.0.0
+      # Unpublished port: only the proxy and platform services reach it.
+      CQ_API_FORWARDED_ALLOW_IPS: "*"
     depends_on:
       migrate:
         condition: service_completed_successfully

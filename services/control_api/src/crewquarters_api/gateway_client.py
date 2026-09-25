@@ -21,7 +21,8 @@ class GatewayClient:
         base_url: str,
         token: str,
         transport: httpx.AsyncBaseTransport | None = None,
-        timeout: float = 900.0,
+        # Longer than the gateway's worst case (900 s cold load + 300 s request).
+        timeout: float = 1260.0,
         chat_token: str | None = None,
     ) -> None:
         headers = {"Authorization": f"Bearer {token}"}
