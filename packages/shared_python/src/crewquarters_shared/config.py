@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8080"
     # Per-document upload limit, shared with the knowledge service (CQ_MAX_UPLOAD_BYTES).
     max_upload_bytes: int = 25 * 1024 * 1024
+    # Chat "when_relevant" mode keeps a retrieved passage only when its cosine similarity
+    # reaches this cutoff. The cutoff depends on the embedding model, so the knowledge
+    # service reports its profile with every query and a per-profile value wins over the
+    # default. The fake hashing embedder (CQ_EMBEDDING_MODE=fake) measures word overlap
+    # and scores relevant passages around 0.1-0.3, so it gets a lower cutoff.
+    chat_min_relevance: float = Field(0.3, ge=0.0, le=1.0)
+    chat_min_relevance_by_profile: dict[str, float] = Field(
+        default_factory=lambda: {"fake.hashing-512": 0.1}
+    )
     heartbeat_timeout_seconds: int = 30
     prepare_timeout_seconds: int = 600
 
@@ -71,6 +80,12 @@ class Settings(BaseSettings):
     reconciler_interval_seconds: float = 2.0
     scheduler_metrics_host: str = "127.0.0.1"
     scheduler_metrics_port: int = 9101
+
+    def chat_relevance_cutoff(self, embedding_profile: str | None) -> float:
+        """The "when_relevant" similarity cutoff for passages from ``embedding_profile``."""
+        if embedding_profile is None:
+            return self.chat_min_relevance
+        return self.chat_min_relevance_by_profile.get(embedding_profile, self.chat_min_relevance)
 
     def allowed_origins(self) -> set[str]:
         """``public_origins`` plus the origin of ``public_base_url``, so the UI works at the

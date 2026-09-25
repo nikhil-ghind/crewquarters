@@ -9,8 +9,8 @@
       {
         "path": "mock_openai_server.py",
         "from": "files/mock_openai_server.py",
-        "sha256": "2c16e9f68c5abde38eac2d12a84d0d9162f31221bc953fd05f2f7f8f1af12294",
-        "size": 5930
+        "sha256": "91fa3bfb4672843ae45a49b467a13a5cf746fd92394de65a2e39695b30717eb4",
+        "size": 7130
       }
     ]
   },
@@ -41,7 +41,7 @@
     "env": {}
   },
   "memory": {
-    "weightBytes": 5930,
+    "weightBytes": 7130,
     "startupPeakBytes": 2147483648,
     "validated": true
   },

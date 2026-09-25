@@ -61,6 +61,8 @@ async def test_upload_ingest_and_cite(
     assert top["location"] == "Cancellation (line 1) to Shipping (line 5)"
     assert uuid.UUID(top["citationId"]) and 0 < top["score"] <= 1
     assert "documents_dir" not in str(result) and ".md" not in top["citationId"]
+    # Scores are only comparable within a profile, so every query reports it.
+    assert result["embeddingProfile"] == "fake.hashing-512"
     context = str(result["context"])
     assert context.startswith(EVIDENCE_PREAMBLE)
     assert f'<passage id="{top["citationId"]}" document="policy.md"' in context

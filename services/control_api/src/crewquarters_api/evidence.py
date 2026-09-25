@@ -12,6 +12,7 @@ two formats identical.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
@@ -28,7 +29,9 @@ EVIDENCE_PREAMBLE = (
 )
 TOP_K = 6
 MAX_CONTEXT_TOKENS = 3000
-# Cosine similarity below which a passage is not "relevant" in when_relevant mode.
+# Default cosine similarity below which a passage is not "relevant" in when_relevant mode
+# (CQ_CHAT_MIN_RELEVANCE). The cutoff actually applied is chosen per embedding profile:
+# ``Settings.chat_relevance_cutoff`` with the profile the knowledge service reports.
 RELEVANCE_MIN_SCORE = 0.3
 NOT_FOUND_ANSWER = "I could not find this in the knowledge base."
 
@@ -62,6 +65,8 @@ def format_context(passages: list[dict[str, Any]]) -> str:
 class Evidence:
     mode: str
     passages: list[dict[str, Any]] = field(default_factory=list)
+    # The when_relevant cutoff that was applied (for diagnostics and tests).
+    min_relevance: float = RELEVANCE_MIN_SCORE
 
     @property
     def found(self) -> bool:
@@ -98,9 +103,14 @@ async def retrieve(
     user_id: uuid.UUID,
     mode: str,
     question: str,
+    min_relevance: Callable[[str | None], float] | None = None,
 ) -> Evidence:
     """Query the session's knowledge base (owner-scoped). Errors propagate: a grounded chat
-    is never silently answered without its sources."""
+    is never silently answered without its sources.
+
+    ``min_relevance`` maps the embedding profile the knowledge service reports
+    (``embeddingProfile``) to the when_relevant cutoff; without it the cutoff is
+    :data:`RELEVANCE_MIN_SCORE`."""
     if await knowledge_base_owner(db, kb_id) != user_id:
         raise conflict(
             "KNOWLEDGE_BASE_UNAVAILABLE",
@@ -113,6 +123,12 @@ async def retrieve(
         json={"query": question[:2000], "topK": TOP_K, "maxContextTokens": MAX_CONTEXT_TOKENS},
     )
     passages: list[dict[str, Any]] = list(result.get("passages") or [])
+    profile = result.get("embeddingProfile")
+    cutoff = (
+        min_relevance(profile if isinstance(profile, str) else None)
+        if min_relevance is not None
+        else RELEVANCE_MIN_SCORE
+    )
     if mode == "when_relevant":
-        passages = [p for p in passages if float(p.get("score") or 0.0) >= RELEVANCE_MIN_SCORE]
-    return Evidence(mode=mode, passages=passages)
+        passages = [p for p in passages if float(p.get("score") or 0.0) >= cutoff]
+    return Evidence(mode=mode, passages=passages, min_relevance=cutoff)
