@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     job_lease_seconds: int = 30
     worker_concurrency: int = 4
     reconciler_interval_seconds: float = 2.0
+    # How often the leader asks the runtime whether active attempts' containers exited.
+    exit_watch_interval_seconds: float = 2.0
     scheduler_metrics_host: str = "127.0.0.1"
     scheduler_metrics_port: int = 9101
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 
 import httpx
@@ -37,6 +38,7 @@ async def test_input_wait_limit_fails_run(owner: httpx.AsyncClient, sessions, pl
     run = (await owner.post("/api/v1/runs", json={"installationId": installation["id"]})).json()
     await wait_for_state(owner, run["id"], {"WAITING_INPUT"})
     platform.stop.set()  # freeze background loops so the test controls time
+    await asyncio.gather(*platform.tasks, return_exceptions=True)  # no tick in flight
     async with sessions() as db, db.begin():
         report = await reconciler.tick(db, utcnow() + timedelta(seconds=3601))
     assert report.input_timeouts == 1
@@ -53,6 +55,7 @@ async def test_active_timeout_fails_run(owner: httpx.AsyncClient, sessions, plat
     run = (await owner.post("/api/v1/runs", json={"installationId": installation["id"]})).json()
     await wait_for_state(owner, run["id"], {"RUNNING"})
     platform.stop.set()
+    await asyncio.gather(*platform.tasks, return_exceptions=True)  # no tick in flight
     async with sessions() as db, db.begin():
         report = await reconciler.tick(db, utcnow() + timedelta(seconds=601))
     assert report.active_timeouts == 1

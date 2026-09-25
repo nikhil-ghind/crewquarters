@@ -8,6 +8,7 @@ agent is detected within ~20 s instead of ~35 s. Services stopped here are resta
 from __future__ import annotations
 
 import time
+import uuid
 from typing import Any
 
 import httpx
@@ -58,33 +59,61 @@ def test_cancel_mid_run_stops_the_container_and_cannot_be_retried(
     assert again.status_code == 409, again.text
 
 
-def test_out_of_memory_agent_is_detected_and_reported(
+def _attempt_exit_code(stack: Any, run_id: str, attempt: int = 1) -> str:
+    run_uuid, number = uuid.UUID(run_id), int(attempt)  # both validated before interpolation
+    rows = stack.psql(
+        f"SELECT exit_code FROM run_attempts WHERE run_id = '{run_uuid}' AND attempt = {number}"  # noqa: S608
+    )
+    return rows[0][0] if rows else "<no attempt>"
+
+
+def test_out_of_memory_agent_fails_with_a_clear_error(
     owner: Any, stack: Any, healthy: None
 ) -> None:
-    """The agent allocates past its 64 MiB limit and the kernel kills it.
-
-    Observed platform behaviour: nothing reads the container's exit status, so the run is
-    caught by the heartbeat lease as INTERRUPTED/HEARTBEAT_LOST (retryable), not FAILED with
-    an OOM code, and run_attempts.exit_code stays empty (reported in docs/testing-realstack.md).
-    """
+    """The agent allocates past its 64 MiB limit and the kernel kills it (exit 137,
+    OOMKilled). The scheduler's exit watcher reads that from the runtime daemon and fails the
+    run with AGENT_OUT_OF_MEMORY and the limit, instead of waiting for the heartbeat lease
+    (ADR 0006, revision 1)."""
     installation = owner.install("realstack-oom", {})
     run = owner.start(installation["id"])
     container = stack.run_container(run["id"])
-    owner.wait_for(
-        lambda: (
-            (info := stack.inspect(container)) is not None
-            and info["State"]["Status"] == "exited"
-            and info
-        ),
-        "the container to be OOM-killed",
-        90,
-    )
-    state = stack.inspect(container)["State"]
-    assert state["OOMKilled"] is True and state["ExitCode"] == 137, state
-    interrupted = owner.wait_state(run["id"], "INTERRUPTED", timeout=LOST)
-    assert interrupted["error"]["code"] == "HEARTBEAT_LOST", interrupted["error"]
-    assert interrupted["retryable"] is True
+    failed = owner.wait_state(run["id"], "FAILED", timeout=90)
+    error = failed["error"]
+    assert error["code"] == "AGENT_OUT_OF_MEMORY", error
+    assert "64 MiB memory limit" in error["message"], error
+    # oomKilled is Docker's flag, which Docker loses for about 1 in 12 kills; exit code 137
+    # alone is then reported as a probable OOM (the message says it was not confirmed).
+    oom_flag = error["details"]["oomKilled"]
+    assert error["details"] == {"exitCode": 137, "oomKilled": oom_flag, "memoryLimitMb": 64}
+    assert oom_flag is True or "did not confirm" in error["message"], error
+    assert failed["retryable"] is True
+    assert _attempt_exit_code(stack, run["id"]) == "137"
     assert _log_seen(owner, run["id"], "allocating")
+    # The exited container is removed by the stop job.
+    owner.wait_for(lambda: stack.inspect(container) is None, "the container to be removed", 60)
+
+
+def test_crash_before_handshake_fails_within_seconds(owner: Any, stack: Any, healthy: None) -> None:
+    """The agent exits 3 before its handshake. The heartbeat lease would only notice after the
+    prepare timeout (120 s here, 600 s by default); the exit watcher sees it in seconds."""
+    installation = owner.install("realstack-crash", {})
+    began = time.monotonic()
+    run = owner.start(installation["id"])
+    failed = owner.wait_state(run["id"], "FAILED", timeout=60)
+    took = time.monotonic() - began
+    assert took < 30, f"the crash took {took:.1f}s to surface"
+    error = failed["error"]
+    assert error["code"] == "AGENT_EXITED", error
+    assert "exited with code 3 before its handshake" in error["message"], error
+    assert error["details"] == {"exitCode": 3, "oomKilled": False}
+    assert failed["retryable"] is True and failed["currentAttempt"] == 1
+    assert "RUNNING" not in owner.states(run["id"])
+    assert _attempt_exit_code(stack, run["id"]) == "3"
+    owner.wait_for(
+        lambda: stack.inspect(stack.run_container(run["id"])) is None,
+        "the container to be removed",
+        60,
+    )
 
 
 def test_broker_outage_short_is_absorbed_long_interrupts_and_retry_recovers(
@@ -92,11 +121,10 @@ def test_broker_outage_short_is_absorbed_long_interrupts_and_retry_recovers(
 ) -> None:
     installation = _probe(owner, knowledge_base, ["handshake", "input", "llm", "knowledge"])
 
-    # Short outage (a restart, well under the heartbeat timeout). Observed: the attempt
-    # survives (no HEARTBEAT_LOST), but the SDK gives up on a broker call after ~3.5 s of
-    # connection errors (4 attempts, 0.5/1/2 s backoff), so the call the agent was making
-    # when the broker went away fails with a clear, retryable BROKER_UNAVAILABLE. Reported in
-    # docs/testing-realstack.md: the SDK's retry budget is far shorter than the lease.
+    # Short outage (a restart, well under the heartbeat timeout): the SDK rides it out. The
+    # agent's in-flight long poll for input loses its connection and is retried until the
+    # broker answers again (budget: 2.5 heartbeat intervals, 12.5 s with this stack's 15 s
+    # timeout), so the run neither loses its attempt nor fails with BROKER_UNAVAILABLE.
     run = owner.start(installation["id"])
     request = owner.pending_input(run["id"])
     down = time.monotonic()
@@ -105,16 +133,11 @@ def test_broker_outage_short_is_absorbed_long_interrupts_and_retry_recovers(
     stack.start("capability-broker", wait=False)
     owner.wait_for(_broker_up, "the broker to answer again", 20, 0.2)
     outage = time.monotonic() - down
-    assert outage < 12, f"the 'short' outage took {outage:.1f}s"
+    assert outage < 10, f"the 'short' outage took {outage:.1f}s"
     answered = owner.answer(request, {"choice": "ok"})
     assert answered.status_code == 200, (answered.text, owner.run(run["id"]))
-    ended = owner.wait_state(run["id"], {"SUCCEEDED", "FAILED"}, timeout=120)
+    ended = owner.wait_state(run["id"], "SUCCEEDED", timeout=120)
     assert ended["currentAttempt"] == 1  # never interrupted
-    if ended["state"] == "FAILED":
-        checks = {c["name"]: c for c in ended["error"]["details"]["checks"]}
-        assert checks["input"]["detail"].startswith("BROKER_UNAVAILABLE"), checks
-        # Everything after the outage worked against the restarted broker.
-        assert checks["llm"]["status"] == checks["knowledge"]["status"] == "passed"
 
     # Long outage: the attempt loses its heartbeat lease.
     run = owner.start(installation["id"])

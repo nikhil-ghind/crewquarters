@@ -36,7 +36,7 @@ The installation config field `fakeScenario` selects the behavior:
 | `ask` | Asks input key `confirm` (`decision`: continue/cancel), waits, then succeeds |
 | `fail` | Reports a retryable `FAKE_FAILURE` |
 | `hang` | Never hand shakes; the reconciler interrupts it when the lease expires |
-| `crash` | Exits before the handshake; the run becomes `INTERRUPTED` (`HEARTBEAT_LOST`) |
+| `crash` | Exits with code 1 before the handshake; the exit watcher fails the run with `AGENT_EXITED` within seconds |
 | `slow` | Runs for an hour, heartbeating; use it to test cancellation and active timeouts |
 | `model` | Enters `LOADING_MODEL` then returns to `RUNNING` |
 

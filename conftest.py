@@ -283,7 +283,7 @@ class RunningPlatform:
         import asyncio
         import contextlib
 
-        from crewquarters_scheduler import reconciler, scheduler
+        from crewquarters_scheduler import exits, reconciler, scheduler
         from crewquarters_shared.timeutil import utcnow
 
         while not self.stop.is_set():
@@ -291,6 +291,7 @@ class RunningPlatform:
                 await scheduler.tick(session, utcnow(), self.settings.misfire_grace_seconds)
             async with self.sessions() as session, session.begin():
                 await reconciler.tick(session, utcnow())
+            await exits.tick(self.sessions, self.runtime, utcnow())
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self.stop.wait(), timeout=0.1)
 

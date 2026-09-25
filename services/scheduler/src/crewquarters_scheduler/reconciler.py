@@ -2,8 +2,9 @@
 
 * ``activeTimeoutSeconds`` counts PREPARING, LOADING_MODEL, and RUNNING time only.
 * ``maxInputWaitSeconds`` counts WAITING_INPUT time only.
-* An attempt whose heartbeat lease expired (container crash, host restart, hung
-  agent) becomes INTERRUPTED; the owner may retry it.
+* An attempt whose heartbeat lease expired (hung agent, host restart, or a container
+  crash the exit watcher in ``exits.py`` did not see) becomes INTERRUPTED; the owner may
+  retry it.
 """
 
 from __future__ import annotations

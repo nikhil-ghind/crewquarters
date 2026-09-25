@@ -107,6 +107,13 @@ class Stack:
         assert out, f"{service} is not running"
         return out[0]
 
+    def psql(self, sql: str) -> list[list[str]]:
+        """A read-only query, for state the API does not show (for example attempts)."""
+        out = self.compose(
+            "exec", "-T", "postgres", "psql", "-U", "crewquarters", "-At", "-F", "|", "-c", sql
+        ).stdout
+        return [line.split("|") for line in out.splitlines() if line]
+
     def inspect(self, name: str) -> dict[str, Any] | None:
         done = subprocess.run(
             ["docker", "inspect", name], capture_output=True, text=True, check=False

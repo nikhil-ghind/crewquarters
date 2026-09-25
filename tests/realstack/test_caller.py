@@ -28,10 +28,7 @@ CONTACTS = [
 
 
 def _psql(stack: Any, sql: str) -> list[list[str]]:
-    out = stack.compose(
-        "exec", "-T", "postgres", "psql", "-U", "crewquarters", "-At", "-F", "|", "-c", sql
-    ).stdout
-    return [line.split("|") for line in out.splitlines() if line]
+    return list(stack.psql(sql))
 
 
 def test_caller_approval_fixed_script_calls_and_signed_callbacks(

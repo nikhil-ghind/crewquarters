@@ -16,7 +16,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 from pydantic_core import to_jsonable_python
 
-from crewquarters._transport import BrokerClient
+from crewquarters._transport import BrokerClient, outage_budget
 from crewquarters._version import PROTOCOL, __version__
 from crewquarters.context import Grants, Limits, RunContext, RunInfo
 from crewquarters.errors import Cancelled, PlatformError
@@ -107,6 +107,9 @@ class Agent:
             except (PlatformError, Cancelled) as exc:
                 _stderr(f"crewquarters: handshake failed: {exc}")
                 return EXIT_NO_OUTCOME
+            interval = float(handshake.get("heartbeatIntervalSeconds") or 10)
+            # Ride out broker restarts for as long as the heartbeat lease can survive them.
+            transport.outage_budget = outage_budget(interval)
             run = RunInfo.from_wire(handshake["run"])
             if run.id != run_id:
                 _stderr(
@@ -137,7 +140,6 @@ class Agent:
             task: asyncio.Task[Any] = asyncio.create_task(self._fn(ctx))
             if install_signal_handlers:
                 _install_signal_handlers(task)
-            interval = float(handshake.get("heartbeatIntervalSeconds") or 10)
             heartbeat = asyncio.create_task(_heartbeat(transport, task, interval))
             await asyncio.wait({task})
             heartbeat.cancel()

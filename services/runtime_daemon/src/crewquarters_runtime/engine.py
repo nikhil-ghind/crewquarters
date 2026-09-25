@@ -172,6 +172,9 @@ class Engine:
             "dead": "exited",
             "removing": "exited",
         }.get(status, "exited")
+        # The control plane's exit watcher reads exitCode, oomKilled and memoryLimitBytes to
+        # fail a run whose container died (for example AGENT_OUT_OF_MEMORY).
+        memory = (info.get("HostConfig") or {}).get("Memory")
         return {
             "runtimeRef": ref,
             "state": mapped,
@@ -179,6 +182,7 @@ class Engine:
             "oomKilled": bool(state.get("OOMKilled")),
             "startedAt": state.get("StartedAt"),
             "finishedAt": state.get("FinishedAt") if mapped == "exited" else None,
+            "memoryLimitBytes": memory if isinstance(memory, int) and memory > 0 else None,
         }
 
     def run_logs(self, ref: str, tail: int) -> dict[str, Any]:

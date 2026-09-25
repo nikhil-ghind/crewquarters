@@ -43,5 +43,9 @@ agent does this because the broker deduplicates call creation by the same `idemp
   and asking the same key again reopens it. Derive the key from what the operator approved; the
   caller hashes the recipients and script. That way a changed plan needs a new approval, and an
   unchanged one does not ask twice.
+- **Let the SDK ride out platform restarts.** Calls whose request never left the container are
+  retried for up to the heartbeat timeout, and so are idempotent calls whose connection broke.
+  A non-idempotent call whose connection broke after sending raises `OutcomeUnknown` instead
+  (see *Transport retries* in [reference.md](reference.md)).
 - **Treat `OutcomeUnknown` as a real state.** Record it for the operator and do not guess. Never
   repeat a non-idempotent action automatically from agent code.

@@ -14,7 +14,7 @@ import signal
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, async_sessionmaker
 
-from crewquarters_scheduler import reconciler, scheduler
+from crewquarters_scheduler import exits, reconciler, scheduler
 from crewquarters_scheduler.worker import Worker
 from crewquarters_shared.config import Settings, get_settings
 from crewquarters_shared.db import create_engine, session_factory
@@ -43,6 +43,7 @@ async def leader_loop(
     settings: Settings,
     stop: asyncio.Event,
     metrics: SchedulerMetrics,
+    runtime: RuntimeAdapter,
 ) -> None:
     while not stop.is_set():
         try:
@@ -56,9 +57,15 @@ async def leader_loop(
                     continue
                 log.info("acquired scheduler leadership", extra={"event": "leader.acquired"})
                 metrics.leader.set(1)
+                watcher = asyncio.create_task(
+                    exit_watch_loop(sessions, runtime, settings, metrics), name="exit-watch"
+                )
                 try:
                     await _lead(lock_conn, sessions, settings, stop, metrics)
                 finally:
+                    watcher.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await watcher
                     metrics.leader.set(0)
         except Exception:
             log.exception("leader loop error; retrying", extra={"event": "leader.error"})
@@ -109,6 +116,24 @@ async def _lead(
             await asyncio.wait_for(stop.wait(), timeout=settings.scheduler_tick_seconds)
 
 
+async def exit_watch_loop(
+    sessions: async_sessionmaker[AsyncSession],
+    runtime: RuntimeAdapter,
+    settings: Settings,
+    metrics: SchedulerMetrics,
+) -> None:
+    """While leading: fail runs whose agent container exited (``exits.tick``). A separate task,
+    so a slow runtime call never delays schedules or the reconciler."""
+    while True:
+        try:
+            report = await exits.tick(sessions, runtime, utcnow())
+            for code, count in report.failed.items():
+                metrics.reconciled.labels(f"exited:{code}").inc(count)
+        except Exception:
+            log.exception("exit watch failed", extra={"event": "exit_watch.error"})
+        await asyncio.sleep(settings.exit_watch_interval_seconds)
+
+
 async def serve_metrics(settings: Settings, metrics: SchedulerMetrics) -> asyncio.Server:
     """Minimal HTTP endpoint: ``GET /metrics`` (Prometheus text) and ``GET /health``."""
 
@@ -157,7 +182,8 @@ async def serve(settings: Settings) -> None:
     )
     try:
         await asyncio.gather(
-            worker.run_forever(stop), leader_loop(engine, sessions, settings, stop, metrics)
+            worker.run_forever(stop),
+            leader_loop(engine, sessions, settings, stop, metrics, runtime),
         )
     finally:
         server.close()
