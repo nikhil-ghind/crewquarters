@@ -1,0 +1,12 @@
+name: digest-dst
+timezone: America/New_York
+gmail:
+  mailbox:
+    - {id: dst-before, subject: "Before the day", date: "2026-10-31T23:59:00-04:00", body: {text: "x"}}
+    - {id: dst-a, subject: "Just after midnight", date: "2026-11-01T00:30:00-04:00", body: {text: "x"}}
+    - {id: dst-b, subject: "First 1:30 (EDT)", date: "2026-11-01T01:30:00-04:00", body: {text: "x"}}
+    - {id: dst-c, subject: "Second 1:30 (EST)", date: "2026-11-01T01:30:00-05:00", body: {text: "x"}}
+    - {id: dst-d, subject: "Late evening", date: "2026-11-01T23:30:00-05:00", body: {text: "x"}}
+    - {id: dst-after, subject: "Next day", date: "2026-11-02T00:00:00-05:00", body: {text: "x"}}
+llm:
+  rules: ../_shared/digest-llm-rules.yaml

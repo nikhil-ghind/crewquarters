@@ -16,7 +16,7 @@ def b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
 
 
-def _when(spec: dict[str, Any], tz: ZoneInfo, now: datetime) -> datetime:
+def resolve_when(spec: dict[str, Any], tz: ZoneInfo, now: datetime) -> datetime:
     if "date" in spec:
         value = datetime.fromisoformat(str(spec["date"]))
         return value if value.tzinfo else value.replace(tzinfo=tz)
@@ -92,7 +92,7 @@ def _snippet(body: dict[str, Any]) -> str:
 
 
 def build_message(spec: dict[str, Any], tz: ZoneInfo, now: datetime) -> dict[str, Any]:
-    when = _when(spec, tz, now)
+    when = resolve_when(spec, tz, now)
     body = spec.get("body", {"text": ""})
     labels = list(spec.get("labels", ["INBOX"]))
     category = CATEGORY_LABELS.get(str(spec.get("category", "personal")).lower(), "CATEGORY_PERSONAL")
@@ -120,3 +120,27 @@ def build_message(spec: dict[str, Any], tz: ZoneInfo, now: datetime) -> dict[str
         "sizeEstimate": 1024,
         "payload": payload,
     }
+
+
+def expand_mailbox(entries: list[dict[str, Any]], tz: ZoneInfo, now: datetime) -> list[dict[str, Any]]:
+    """Expand ``{generate: {...}}`` entries into individual message specs."""
+    specs: list[dict[str, Any]] = []
+    for entry in entries:
+        generate = entry.get("generate")
+        if generate is None:
+            specs.append(entry)
+            continue
+        base = resolve_when(generate, tz, now)
+        step = timedelta(minutes=float(generate.get("stepMinutes", 1)))
+        for n in range(1, int(generate["count"]) + 1):
+            specs.append(
+                {
+                    "id": f"{generate.get('idPrefix', 'gen-')}{n:03d}",
+                    "from": generate.get("from", "Bulk Sender <bulk@example.com>"),
+                    "subject": str(generate.get("subject", "Message {n}")).format(n=n),
+                    "date": (base + step * (n - 1)).isoformat(),
+                    "category": generate.get("category", "personal"),
+                    "body": {"text": str(generate.get("body", "Body {n}")).format(n=n)},
+                }
+            )
+    return specs

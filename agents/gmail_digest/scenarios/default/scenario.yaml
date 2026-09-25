@@ -1,0 +1,23 @@
+name: gmail-digest-default
+timezone: Asia/Kolkata
+gmail:
+  mailbox:
+    - {id: d1, from: "Ops <ops@acme.test>", subject: "Checkout is down", relative: {days: -1, time: "09:15"},
+       body: {text: "The checkout API outage started at 9am."}}
+    - {id: d2, from: "Billing <billing@vendor.test>", subject: "Invoice due", relative: {days: -1, time: "11:00"},
+       body: {text: "Invoice attached; payment deadline Friday."}}
+    - {id: d3, from: "News <news@eng.test>", subject: "Weekly digest", relative: {days: -1, time: "07:00"},
+       body: {text: "Five articles this week."}}
+llm:
+  rules:
+    - name: digest-classifier
+      match: {schemaTitle: DigestBatch}
+      respond:
+        perEvidence:
+          arrayField: items
+          item: {ref: "{ref}", priority: low, reason: "Informational", nextAction: "No action needed", uncertain: false}
+          overrides:
+            - when: {contains: ["outage", "is down"]}
+              set: {priority: urgent, reason: "Service incident", nextAction: "Investigate now"}
+            - when: {contains: ["invoice", "deadline"]}
+              set: {priority: important, reason: "Payment due soon", nextAction: "Pay or forward"}

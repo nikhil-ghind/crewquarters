@@ -1,0 +1,122 @@
+apiVersion: crewquarters/v1alpha1
+kind: Agent
+metadata:
+  id: daily-gmail-digest
+  name: Daily Gmail Digest
+  version: 0.1.0
+  description: Summarises the previous local calendar day's Gmail into Urgent, Important, and Low priority.
+  publisher: Crewquarters (Person 5)
+spec:
+  # `crewctl build --push` pins this to the pushed digest.
+  image: localhost:5001/crewquarters/daily-gmail-digest@sha256:REQUIRED_DIGEST
+  entrypoint: ["python", "-m", "gmail_digest"]
+  architectures: ["linux/amd64", "linux/arm64"]
+  triggers: ["manual", "schedule"]
+  permissions:
+    llmProfiles: ["local.general"]
+    connectors:
+      google: ["gmail.readonly"]
+    userInput: false
+  resources:
+    cpu: 1
+    memoryMb: 512
+    activeTimeoutSeconds: 1800
+    maxInputWaitSeconds: 0
+  configurationSchema:
+    type: object
+    required: [timezone]
+    properties:
+      timezone:
+        type: string
+        description: IANA timezone that defines "yesterday", for example Asia/Kolkata.
+        x-crewquarters-widget: timezone
+      maxMessages:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 200
+      includeLabels:
+        type: array
+        items: {type: string}
+        default: []
+      excludeCategories:
+        type: array
+        items: {enum: [CATEGORY_PROMOTIONS, CATEGORY_SOCIAL, CATEGORY_UPDATES, CATEGORY_FORUMS]}
+        default: [CATEGORY_PROMOTIONS]
+      modelProfile:
+        type: string
+        default: local.general.small
+        x-crewquarters-widget: modelProfile
+      batchSize:
+        type: integer
+        minimum: 1
+        maximum: 25
+        default: 10
+        x-crewquarters-group: Advanced
+      maxCharsPerMessage:
+        type: integer
+        minimum: 200
+        maximum: 20000
+        default: 4000
+        x-crewquarters-group: Advanced
+      targetDate:
+        type: [string, "null"]
+        format: date
+        default: null
+        description: Re-run a specific local date (YYYY-MM-DD) instead of yesterday.
+        x-crewquarters-group: Advanced
+  result:
+    renderer: crewquarters.gmail-digest/v1
+    schema:
+      type: object
+      required: [date, timezone, window, processedCount, truncated, counts, groups, model]
+      properties:
+        date: {type: string, format: date}
+        timezone: {type: string}
+        window:
+          type: object
+          required: [startUtc, endUtc]
+          properties:
+            startUtc: {type: string}
+            endUtc: {type: string}
+        processedCount: {type: integer, minimum: 0}
+        truncated: {type: boolean}
+        counts:
+          type: object
+          required: [urgent, important, lowPriority, needsReview]
+          properties:
+            urgent: {type: integer}
+            important: {type: integer}
+            lowPriority: {type: integer}
+            needsReview: {type: integer}
+        groups:
+          type: object
+          required: [urgent, important, lowPriority]
+          properties:
+            urgent: {$ref: "#/$defs/items"}
+            important: {$ref: "#/$defs/items"}
+            lowPriority: {$ref: "#/$defs/items"}
+        model:
+          type: object
+          required: [profile]
+          properties:
+            profile: {type: string}
+            provider: {type: [string, "null"]}
+            model: {type: [string, "null"]}
+            locality: {type: [string, "null"]}
+      $defs:
+        items:
+          type: array
+          items:
+            type: object
+            required: [messageId, threadId, from, subject, receivedAt, reason, nextAction, needsReview, gmailLink]
+            properties:
+              messageId: {type: string}
+              threadId: {type: string}
+              from: {type: string}
+              subject: {type: string}
+              receivedAt: {type: [string, "null"]}
+              reason: {type: string}
+              nextAction: {type: string}
+              needsReview: {type: boolean}
+              gmailLink: {type: string}

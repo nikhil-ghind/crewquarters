@@ -1,0 +1,26 @@
+name: digest-basic
+timezone: Asia/Kolkata
+gmail:
+  mailbox:
+    - {id: b-urgent-1, from: "Ops <ops@acme.test>", subject: "API outage: checkout is down", date: "2026-09-23T09:15:00+05:30",
+       body: {text: "The checkout API is down since 9am. Customers cannot pay."}}
+    - {id: b-urgent-2, from: "Bank <security@bank.test>", subject: "Security alert: new sign-in", date: "2026-09-23T22:40:00+05:30",
+       body: {text: "We noticed a new sign-in to your account from an unknown device."}}
+    - {id: b-imp-1, from: "Billing <billing@vendor.test>", subject: "Invoice 4411 due Friday", date: "2026-09-23T11:00:00+05:30",
+       body: {text: "Please find the invoice attached. The payment deadline is Friday."}}
+    - {id: b-imp-2, from: "Legal <legal@acme.test>", subject: "Contract before Thursday", date: "2026-09-23T14:20:00+05:30",
+       body: {html: "<p>Please review the attached <b>contract</b> before Thursday.</p><script>track()</script>"}}
+    - {id: b-low-1, from: "Eng Weekly <news@eng.test>", subject: "Weekly engineering digest", date: "2026-09-23T07:05:00+05:30",
+       body: {text: "This week: five articles about Postgres internals."}}
+    - {id: b-low-2, from: "Shop <orders@shop.test>", subject: "Your order has shipped", date: "2026-09-23T16:45:00+05:30",
+       category: updates, body: {text: "Your parcel is on its way."}}
+    - {id: b-unsure, from: "Asha <asha@friends.test>", subject: "Lunch?", date: "2026-09-23T12:30:00+05:30",
+       body: {text: "Not sure if you are free, maybe lunch this week?"}}
+    - {id: b-quoted, from: "Priya <priya@acme.test>", subject: "Re: Standup notes", date: "2026-09-23T18:00:00+05:30",
+       body: {text: "Thanks, I will send the notes before the meeting.\n\nOn Tue, Sep 22, 2026 at 9:00 AM Priya wrote:\n> OLD QUOTED HISTORY\n> more old text"}}
+    - {id: b-promo, from: "Deals <deals@shop.test>", subject: "50% off everything", date: "2026-09-23T10:00:00+05:30",
+       category: promotions, body: {text: "Big sale today only."}}
+    - {id: b-prevday, subject: "Yesterday late", date: "2026-09-22T23:59:59+05:30", body: {text: "Outside the window."}}
+    - {id: b-nextday, subject: "Tomorrow midnight", date: "2026-09-24T00:00:00+05:30", body: {text: "Outside the window."}}
+llm:
+  rules: ../_shared/digest-llm-rules.yaml

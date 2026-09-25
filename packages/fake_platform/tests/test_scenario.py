@@ -61,3 +61,39 @@ def test_loading_again_replaces_provider_state(tmp_path: Path) -> None:
     load(store, tmp_path)
     assert store.sheets.get("s1", "Contacts!A5")["values"] == []
     assert len(store.auto_answers) == 1
+
+
+def test_generate_entries_expand_into_many_messages(tmp_path: Path) -> None:
+    (tmp_path / "scenario.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "timezone": "Asia/Kolkata",
+                "gmail": {
+                    "mailbox": [
+                        {
+                            "generate": {
+                                "count": 3,
+                                "idPrefix": "bulk-",
+                                "date": "2026-09-23T08:00:00+05:30",
+                                "stepMinutes": 10,
+                                "subject": "Bulk {n}",
+                                "body": "Newsletter {n}",
+                                "category": "updates",
+                            }
+                        },
+                        {"id": "single", "date": "2026-09-23T12:00:00+05:30", "body": {"text": "x"}},
+                    ]
+                },
+            }
+        )
+    )
+    store = Store(FakeSettings())
+    summary = load(store, tmp_path)
+    assert summary["messages"] == 4
+    assert sorted(store.gmail.messages) == ["bulk-001", "bulk-002", "bulk-003", "single"]
+    third = store.gmail.get("bulk-003")
+    headers = {h["name"]: h["value"] for h in third["payload"]["headers"]}
+    assert headers["Subject"] == "Bulk 3"
+    assert "CATEGORY_UPDATES" in third["labelIds"]
+    expected = int(datetime.fromisoformat("2026-09-23T08:20:00+05:30").timestamp()) * 1000
+    assert third["internalDate"] == str(expected)

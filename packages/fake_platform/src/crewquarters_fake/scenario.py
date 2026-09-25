@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import yaml
 
 from crewquarters_fake.llm_rules import RuleSet
-from crewquarters_fake.mailbox import build_message
+from crewquarters_fake.mailbox import build_message, expand_mailbox
 from crewquarters_fake.store import AutoAnswer, Store, utcnow
 
 
@@ -29,7 +29,7 @@ def load(store: Store, path: Path, now: datetime | None = None) -> dict[str, Any
     store.reset_providers()
 
     store.connections.update(doc.get("connections", {}))
-    mailbox = _data(root, doc.get("gmail", {}).get("mailbox", [])) or []
+    mailbox = expand_mailbox(_data(root, doc.get("gmail", {}).get("mailbox", [])) or [], tz, now)
     store.gmail.load([build_message(spec, tz, now) for spec in mailbox])
     store.sheets.load(_data(root, doc.get("sheets", {}).get("spreadsheets", {})) or {})
     store.twilio.load(_data(root, doc.get("twilio", {}).get("outcomes", {})) or {})

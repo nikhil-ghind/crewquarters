@@ -168,3 +168,22 @@ def test_get_returns_a_copy_and_404s() -> None:
     with pytest.raises(ApiError) as info:
         gmail.get("missing")
     assert info.value.status == 404
+
+
+def test_list_falls_back_to_the_date_header_when_internal_date_is_invalid() -> None:
+    gmail = GmailProvider()
+    gmail.load(
+        [
+            build_message(
+                {
+                    "id": "bad",
+                    "internalDate": "bogus",
+                    "date": "2026-09-23T10:00:00+05:30",
+                    "body": {"text": "x"},
+                },
+                KOLKATA,
+                NOW,
+            )
+        ]
+    )
+    assert [m["id"] for m in gmail.list(DAY)["messages"]] == ["bad"]

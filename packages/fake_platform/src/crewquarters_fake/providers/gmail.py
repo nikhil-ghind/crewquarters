@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import email.utils
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -54,10 +55,19 @@ def parse_query(q: str) -> Query:
 
 
 def _seconds(message: dict[str, Any]) -> float:
+    """Gmail indexes every message by date; fall back to the Date header if internalDate is unusable."""
     try:
         return int(message.get("internalDate", "0")) / 1000
     except (TypeError, ValueError):
-        return 0.0
+        pass
+    headers = message.get("payload", {}).get("headers", [])
+    for header in headers if isinstance(headers, list) else []:
+        if isinstance(header, dict) and str(header.get("name", "")).lower() == "date":
+            try:
+                return email.utils.parsedate_to_datetime(str(header.get("value"))).timestamp()
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
 
 
 class GmailProvider:
