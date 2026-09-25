@@ -279,6 +279,8 @@ if __name__ == "__main__":
    - any other exception → `failed` with `{code: <exception code or AGENT_ERROR>, message: <redacted>, retryable}`.
 5. Exit code 0 means `succeeded` was accepted by the broker; 1 means `failed` or `cancelled` was accepted; 2 means no outcome could be posted. The broker's recorded outcome is authoritative.
 
+Cancellation reaches agent code as `asyncio.CancelledError`. `crewquarters.errors.Cancelled` subclasses it and is raised when the broker rejects a call with `RUN_CANCELLED`, so `except Exception` can never swallow a cancel (decision D18).
+
 ### 5.3 Gmail message parsing (`crewquarters.google.mime`)
 
 `GmailMessage` fields: `id`, `thread_id`, `label_ids`, `snippet`, `internal_date` (aware UTC), `headers` (case-insensitive), `sender`, `subject`, `text_body`, `truncated_body`, `web_link` (`https://mail.google.com/mail/u/0/#all/<threadId>`).
@@ -334,7 +336,7 @@ Every exception carries `code`, `request_id`, and `retryable`.
 | `providers.twilio` | Twilio | Scripted outcome per destination; calls advance one state per poll (`queued → ringing → in-progress → terminal`); calls are counted per destination |
 | `admin` router | none (test only) | `/fake/v1`: `reset`, `scenarios/load`, `catalog` (registers a manifest, accepting `REQUIRED_DIGEST`, for process-mode runs), `state/<calls\|sheets\|llm\|gmail\|events\|idempotency\|runs>`, `faults` (POST/DELETE), `runs/{id}/dispatch` → launch env, `runs/{id}/exited {exitCode}`, `auto-answers` |
 | `launcher` | Person 2 (behaviour only) | `ProcessLauncher` and `DockerLauncher` (§6.3) |
-| `cli` | none | `crewq-fake serve \| seed \| reset \| run` |
+| `cli` | none | `crewq-fake serve \| seed \| reset \| run \| pending \| answer` (the last two let an operator answer input requests without the UI) |
 
 Run lifecycle in the fake:
 
@@ -415,7 +417,7 @@ Formats:
 | `crewctl init <name> [--dir PATH]` | Scaffolds `manifest.yaml` (image `…@sha256:REQUIRED_DIGEST`), `pyproject.toml`, `src/<module>/__main__.py`, a `Dockerfile` (non-root 10001, read-only compatible, pinned base), `tests/test_agent.py`, and `scenarios/default/`. Refuses a non-empty target directory. |
 | `crewctl validate [PATH] [--allow-unbuilt] [--json]` | Checks the manifest schema, then these rules: digest present unless `--allow-unbuilt`; `configurationSchema` and `result.schema` are valid 2020-12 schemas; every `default` in `configurationSchema` validates against its own property schema; capabilities are derivable (§4.2); cloud profile ↔ `cloudProviders` consistency; `maxInputWaitSeconds` is 0 when `userInput` is false; `resources` are within platform caps. Exit 0/1; `--json` emits `{valid, errors: [{path, message}]}`. |
 | `crewctl test [PATH] [--scenario NAME] [--docker] [--timeout S] [--json]` | Starts the fake platform in-process on a free port and loads the scenario (default `default`). In process mode it registers the manifest through the admin API (`POST /fake/v1/catalog`), which accepts an unbuilt manifest; `--docker` uses the normal catalog import and therefore requires a pinned digest. It then installs with every requested permission approved and config from `scenarios/<name>/config.yaml`, creates a manual run (or a schedule run when the scenario sets `trigger` and `scheduledFor`), launches it, streams the event timeline, and prints the result. Exits 0 only on `SUCCEEDED`. |
-| `crewctl build [PATH] [--platform linux/amd64,linux/arm64] [--push --registry localhost:5001]` | Runs `docker buildx build` with the repository root as context and the agent's Dockerfile. With `--push`, it pushes `<registry>/crewquarters/<agent-id>:<version>`, reads the index digest with `docker buildx imagetools inspect`, and rewrites only the `image:` line of `manifest.yaml` to `<registry>/crewquarters/<agent-id>@sha256:<digest>`. Without `--push`, it builds for the host platform with `--load` and warns that the manifest is not pinned. |
+| `crewctl build [PATH] [--platform linux/amd64,linux/arm64] [--push --registry localhost:5001]` | Runs `docker buildx build` with the repository root as context and the agent's Dockerfile. With `--push`, it pushes `<registry>/crewquarters/<agent-id>:<version>`, reads the index digest with `docker buildx imagetools inspect`, and rewrites only the `image:` line of `manifest.yaml` to `<registry>/crewquarters/<agent-id>@sha256:<digest>`. Without `--push`, it builds for the host platform with `--load` and warns that the manifest is not pinned. `--output-manifest PATH` writes the pinned manifest elsewhere instead of editing `manifest.yaml` (used by `make e2e`, which writes to `.e2e/manifests/`). |
 | `crewctl publish [PATH] --target local --platform-url URL` | Runs strict `validate`, then `POST /api/v1/catalog/agents:import`, and prints the catalog entry. `--target` accepts only `local`. |
 
 ## 8. Agents
@@ -443,7 +445,7 @@ Config `{checks: [..], knowledgeBaseId?, expectIsolation: bool (default true), c
 | `knowledge` | A search on `knowledgeBaseId` returns at least one passage with a `citationId` |
 | `idempotency` | `once("probe-once-v1", fn)` twice calls `fn` once and returns the same value |
 | `permissions` | A Gmail list raises `PermissionDenied` |
-| `isolation` | A TCP connect to `1.1.1.1:443` and to `host.docker.internal:80` fails, and DNS for `example.com` fails, each within 3 s; the check is skipped when `expectIsolation` is false. The probe also records `os.getuid() != 0` and that writing to `/` fails while writing to `/tmp` succeeds. |
+| `isolation` | TCP connects to `1.1.1.1:443`, `host.docker.internal:80`, and `example.com:443` all fail within 3 s (DNS may still resolve on an internal network; see decision D17); the check is skipped when `expectIsolation` is false. The probe also requires `os.getuid() != 0`, and that writing to `/` fails while writing to `/tmp` succeeds. |
 | `cancellation` | Exclusive check: waits up to `cancelWaitSeconds` for a cancel and passes if `Cancelled` is raised (the run ends `CANCELLED`) |
 
 Result `{checks: [{name, status: passed|failed|skipped, detail, durationMs}]}`. Any failed check fails the run with `CONTRACT_CHECKS_FAILED`, and the report goes in `error.details`.

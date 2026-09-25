@@ -405,6 +405,23 @@ A new GB10 device passes the demo when an operator can:
 
 The full implementation specification, five-person work split, prompts, API/data contracts, risks, test matrix, and delivery gates are in [PLAN.md](./PLAN.md).
 
+## Developer quickstart (SDK, agents, fake platform)
+
+Person 5's deliverables work on any laptop with Docker and `uv`:
+
+```bash
+make sync && make lint && make test   # uv workspace (Python 3.12) and offline test suites
+make dev-up && make e2e               # fake platform + local registry, then the agents in hardened containers
+make demo-seed && make demo-run AGENT=gmail_digest
+```
+
+- `packages/contracts`: draft v1alpha1 contracts (manifest, capabilities, broker and control OpenAPI, run events) and their open questions in [docs/decisions/0001](docs/decisions/0001-person5-contract-drafts.md).
+- `packages/python_sdk`: `crewquarters-sdk` ([quickstart](docs/sdk/quickstart.md), [reference](docs/sdk/reference.md)).
+- `packages/crewctl`: `crewctl init | validate | test | build | publish`.
+- `packages/fake_platform`: fake broker, control-API slice, and mock Gmail/Sheets/Twilio/LLM/knowledge, used by tests, `crewctl test`, and the laptop demo.
+- `agents/`: `daily-gmail-digest`, `caller`, and the `contract-probe` acceptance agent.
+- [Operator script](docs/demo/operator-script.md) and [release checklist](docs/release/checklist.md).
+
 ## Primary references
 
 Reviewed on 2026-09-24:

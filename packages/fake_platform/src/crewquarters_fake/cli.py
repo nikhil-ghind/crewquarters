@@ -81,6 +81,9 @@ def _config(config_file: Path | None, pairs: tuple[str, ...]) -> dict[str, Any]:
 @click.option("--set", "pairs", multiple=True, help="Config override key=value (YAML value).")
 @click.option("--trigger", type=click.Choice(["manual", "schedule"]), default="manual", show_default=True)
 @click.option("--scheduled-for", help="ISO timestamp or 'now' for schedule runs.")
+@click.option(
+    "--auto-answer", "auto_answers", multiple=True, help="PATTERN=CHOICE, e.g. 'confirm-calls-v1:*=approve'."
+)
 @click.option("--timeout", default=300.0, show_default=True, type=float)
 @click.option("--log-dir", type=click.Path(path_type=Path))
 def run(
@@ -92,11 +95,15 @@ def run(
     pairs: tuple[str, ...],
     trigger: str,
     scheduled_for: str | None,
+    auto_answers: tuple[str, ...],
     timeout: float,
     log_dir: Path | None,
 ) -> None:
     """Install an agent in the fake platform and run it once."""
     client = FakePlatformClient(url)
+    for rule in auto_answers:
+        pattern, _, choice = rule.rpartition("=")
+        client.add_auto_answer(pattern, {"choice": choice})
     manifest = load_manifest(manifest_path or agent_dir / "manifest.yaml")
     logs = log_dir or Path(tempfile.mkdtemp(prefix="crewq-run-"))
     launcher: Launcher
@@ -120,6 +127,44 @@ def run(
     click.echo(json.dumps(outcome.result if outcome.result is not None else outcome.error, indent=2))
     if outcome.state != "SUCCEEDED":
         raise SystemExit(1)
+
+
+@cli.command()
+@click.option("--url", default=DEFAULT_URL, show_default=True)
+def pending(url: str) -> None:
+    """List pending operator input requests (Crew Requests)."""
+    requests = FakePlatformClient(url).input_requests(state="pending")
+    if not requests:
+        click.echo("no pending input requests")
+    for request in requests:
+        choices = ", ".join(f"{c['value']} ({c['label']})" for c in request["choices"])
+        click.echo(f"{request['id']}  {request['key']}\n  {request['title']}: {request['prompt']}")
+        for block in request["preview"]:
+            click.echo(f"  preview: {json.dumps(block, ensure_ascii=False)}")
+        if request.get("consequence"):
+            click.echo(f"  consequence: {request['consequence']}")
+        click.echo(f"  choices: {choices}")
+
+
+@cli.command()
+@click.argument("request_id", required=False)
+@click.option("--url", default=DEFAULT_URL, show_default=True)
+@click.option("--choice", required=True, help="Value of the choice to submit.")
+def answer(request_id: str | None, url: str, choice: str) -> None:
+    """Answer a pending input request (the only pending one when REQUEST_ID is omitted)."""
+    client = FakePlatformClient(url)
+    requests = client.input_requests(state="pending")
+    if request_id is not None:
+        requests = [r for r in requests if r["id"] == request_id]
+    if not requests:
+        raise click.ClickException("no pending input request to answer")
+    if len(requests) > 1:
+        raise click.ClickException("several requests are pending; pass REQUEST_ID (see `crewq-fake pending`)")
+    try:
+        answered = client.answer(requests[0]["id"], requests[0]["version"], {"choice": choice})
+    except FakePlatformError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"answered {answered['key']} with {choice}")
 
 
 def main() -> None:
