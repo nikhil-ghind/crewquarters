@@ -39,7 +39,7 @@ def load(store: Store, path: Path, now: datetime | None = None) -> dict[str, Any
     for kb_id, directory in doc.get("knowledge", {}).items():
         store.knowledge.load_dir(kb_id, root / directory)
     store.auto_answers = [
-        AutoAnswer(a["keyPattern"], a.get("data"), float(a.get("delaySeconds", 0)))
+        AutoAnswer(a["keyPattern"], a.get("value"), float(a.get("delaySeconds", 0)))
         for a in doc.get("inputs", {}).get("autoAnswers", [])
     ]
     return {

@@ -26,7 +26,10 @@ async def run(ctx: Ctx) -> ProbeReport:
             status, detail = "failed", f"{exc.code}: {exc}"
         results.append(
             CheckResult(
-                name=name, status=status, detail=detail, duration_ms=int((time.monotonic() - started) * 1000)
+                name=name,
+                status=status,
+                detail=detail,
+                duration_ms=int((time.monotonic() - started) * 1000),
             )
         )
         await ctx.events.log(

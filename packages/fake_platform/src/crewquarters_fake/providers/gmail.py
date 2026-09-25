@@ -43,7 +43,9 @@ def parse_query(q: str) -> Query:
     for token in q.split():
         match = _TOKEN_RE.match(token)
         if match is None:
-            raise ValueError(f"unsupported query token {token!r} (fake supports after/before/category/label)")
+            raise ValueError(
+                f"unsupported query token {token!r} (fake supports after/before/category/label)"
+            )
         negated, kind, value = match.groups()
         if kind in {"after", "before"}:
             if negated or not value.isdigit():
@@ -55,7 +57,7 @@ def parse_query(q: str) -> Query:
 
 
 def _seconds(message: dict[str, Any]) -> float:
-    """Gmail indexes every message by date; fall back to the Date header if internalDate is unusable."""
+    """Gmail indexes every message by date; fall back to the Date header if internalDate is bad."""
     try:
         return int(message.get("internalDate", "0")) / 1000
     except (TypeError, ValueError):

@@ -4,6 +4,7 @@ metadata:
   id: caller
   name: Caller
   version: 0.1.0
+  summary: Calls consenting contacts from a Google Sheet with a fixed script, after your approval.
   description: Calls consenting recipients from a Google Sheet with a fixed, disclosed script after operator approval.
   publisher: Crewquarters (Person 5)
 spec:
@@ -13,9 +14,12 @@ spec:
   architectures: ["linux/amd64", "linux/arm64"]
   triggers: ["manual"]
   permissions:
+    llmProfiles: []
+    knowledge: []
     connectors:
       google: ["spreadsheets"]
-      twilio: ["voice.call"]
+      twilio: ["call.fixed_script"]
+    cloudProviders: []
     userInput: true
   resources:
     cpu: 0.5
@@ -74,37 +78,36 @@ spec:
         type: string
         default: Asia/Kolkata
         x-crewquarters-widget: timezone
-  result:
-    renderer: crewquarters.caller/v1
-    schema:
-      type: object
-      required: [operatorDecision, summary, rows]
-      properties:
-        operatorDecision: {enum: [approved, cancelled, not_required]}
-        summary:
+  resultSchema:
+    x-crewquarters-renderer: crewquarters.caller/v1
+    type: object
+    required: [operatorDecision, summary, rows]
+    properties:
+      operatorDecision: {enum: [approved, cancelled, not_required]}
+      summary:
+        type: object
+        required: [called, answered, responsesCaptured, skipped, failed]
+        properties:
+          called: {type: integer}
+          answered: {type: integer}
+          responsesCaptured: {type: integer}
+          skipped: {type: integer}
+          failed: {type: integer}
+      rows:
+        type: array
+        items:
           type: object
-          required: [called, answered, responsesCaptured, skipped, failed]
+          required: [row, name, phoneMasked, consent]
           properties:
-            called: {type: integer}
-            answered: {type: integer}
-            responsesCaptured: {type: integer}
-            skipped: {type: integer}
-            failed: {type: integer}
-        rows:
-          type: array
-          items:
-            type: object
-            required: [row, name, phoneMasked, consent]
-            properties:
-              row: {type: integer}
-              name: {type: string}
-              phoneMasked: {type: string, pattern: "^••••"}
-              consent: {enum: [validated, skipped]}
-              skipReason: {type: [string, "null"]}
-              callStatus:
-                enum: [answered_speech, answered_no_speech, busy, no_answer, failed, canceled, timeout, null]
-              callSid: {type: [string, "null"]}
-              transcript: {type: [string, "null"]}
-              sheetWrite: {enum: [written, pending_retry, failed, null]}
-              completedAt: {type: [string, "null"]}
-              error: {type: [string, "null"]}
+            row: {type: integer}
+            name: {type: string}
+            phoneMasked: {type: string, pattern: "^••••"}
+            consent: {enum: [validated, skipped]}
+            skipReason: {type: [string, "null"]}
+            callStatus:
+              enum: [answered_speech, answered_no_speech, busy, no_answer, failed, canceled, timeout, null]
+            callSid: {type: [string, "null"]}
+            transcript: {type: [string, "null"]}
+            sheetWrite: {enum: [written, pending_retry, failed, null]}
+            completedAt: {type: [string, "null"]}
+            error: {type: [string, "null"]}

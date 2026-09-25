@@ -24,7 +24,10 @@ class Rule:
     delay_ms: int = 0
 
     def matches(self, text: str, response_schema: dict[str, Any] | None) -> bool:
-        if self.schema_title is not None and (response_schema or {}).get("title") != self.schema_title:
+        if (
+            self.schema_title is not None
+            and (response_schema or {}).get("title") != self.schema_title
+        ):
             return False
         lowered = text.lower()
         if any(needle.lower() not in lowered for needle in self.contains):
@@ -81,7 +84,9 @@ class RuleSet:
     def from_yaml(cls, path: Path) -> RuleSet:
         return cls.from_list(yaml.safe_load(Path(path).read_text(encoding="utf-8")) or [])
 
-    def match(self, messages: list[dict[str, Any]], response_schema: dict[str, Any] | None) -> Rule | None:
+    def match(
+        self, messages: list[dict[str, Any]], response_schema: dict[str, Any] | None
+    ) -> Rule | None:
         text = "\n".join(str(m.get("content", "")) for m in messages)
         return next((rule for rule in self.rules if rule.matches(text, response_schema)), None)
 
@@ -124,9 +129,15 @@ def minimal_instance(schema: dict[str, Any], root: dict[str, Any] | None = None)
         kind = next((k for k in kind if k != "null"), "null")
     if kind == "object":
         properties = schema.get("properties", {})
-        return {name: minimal_instance(properties.get(name, {}), root) for name in schema.get("required", [])}
+        return {
+            name: minimal_instance(properties.get(name, {}), root)
+            for name in schema.get("required", [])
+        }
     if kind == "array":
-        return [minimal_instance(schema.get("items", {}), root) for _ in range(schema.get("minItems", 0))]
+        return [
+            minimal_instance(schema.get("items", {}), root)
+            for _ in range(schema.get("minItems", 0))
+        ]
     if kind == "string":
         return "x" * int(schema.get("minLength", 0))
     if kind in {"integer", "number"}:

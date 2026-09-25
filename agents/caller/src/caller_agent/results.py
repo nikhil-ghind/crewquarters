@@ -6,8 +6,22 @@ from caller_agent.rows import ContactRow
 from crewquarters.redact import mask_phone
 from crewquarters.telephony import Call
 
-HEADER = ["source_row", "name", "phone_masked", "call_sid", "status", "transcript", "completed_at", "error"]
-_TERMINAL_STATUS = {"busy": "busy", "no-answer": "no_answer", "failed": "failed", "canceled": "canceled"}
+HEADER = [
+    "source_row",
+    "name",
+    "phone_masked",
+    "call_sid",
+    "status",
+    "transcript",
+    "completed_at",
+    "error",
+]
+_TERMINAL_STATUS = {
+    "busy": "busy",
+    "no-answer": "no_answer",
+    "failed": "failed",
+    "canceled": "canceled",
+}
 FAILED_STATUSES = frozenset({"failed", "timeout"})
 
 

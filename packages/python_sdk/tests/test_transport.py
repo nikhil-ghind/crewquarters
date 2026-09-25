@@ -26,7 +26,12 @@ class Recorder:
     def client(self, max_attempts: int = 4) -> BrokerClient:
         http = httpx.AsyncClient(transport=httpx.MockTransport(self.handler))
         return BrokerClient(
-            BASE, "tok-123", http=http, max_attempts=max_attempts, sleep=self.sleep, jitter=lambda: 0.0
+            BASE,
+            "tok-123",
+            http=http,
+            max_attempts=max_attempts,
+            sleep=self.sleep,
+            jitter=lambda: 0.0,
         )
 
 
@@ -52,9 +57,9 @@ def raise_(exc_type: type[httpx.TransportError]) -> Callable[[httpx.Request], ht
 async def test_success_returns_json_and_sends_auth_and_request_id() -> None:
     rec = Recorder([ok({"a": 1}), ok({"a": 2})])
     client = rec.client()
-    assert await client.request("POST", "/handshake", operation="handshake", idempotent=True, json={}) == {
-        "a": 1
-    }
+    assert await client.request(
+        "POST", "/handshake", operation="handshake", idempotent=True, json={}
+    ) == {"a": 1}
     await client.request("POST", "/handshake", operation="handshake", idempotent=True, json={})
     first, second = rec.requests
     assert str(first.url) == f"{BASE}{SDK_PREFIX}/handshake"
@@ -98,7 +103,9 @@ async def test_non_idempotent_read_timeout_raises_outcome_unknown() -> None:
 
 async def test_connect_error_is_retried_even_when_not_idempotent() -> None:
     rec = Recorder([raise_(httpx.ConnectError), ok()])
-    assert await rec.client().request("POST", "/x", operation="x", idempotent=False, json={}) == {"ok": True}
+    assert await rec.client().request("POST", "/x", operation="x", idempotent=False, json={}) == {
+        "ok": True
+    }
     assert len(rec.requests) == 2
 
 
@@ -111,7 +118,9 @@ async def test_rate_limit_honours_retry_after() -> None:
 async def test_model_unavailable_is_not_retried() -> None:
     rec = Recorder([err(503, "MODEL_UNAVAILABLE")])
     with pytest.raises(ModelUnavailable):
-        await rec.client().request("POST", "/llm/chat", operation="llm.chat", idempotent=True, json={})
+        await rec.client().request(
+            "POST", "/llm/chat", operation="llm.chat", idempotent=True, json={}
+        )
     assert len(rec.requests) == 1
 
 
@@ -126,7 +135,9 @@ async def test_exhausted_retries_raise_retryable_error() -> None:
 async def test_unreachable_broker_raises_platform_error() -> None:
     rec = Recorder([raise_(httpx.ConnectError)] * 2)
     with pytest.raises(PlatformError) as info:
-        await rec.client(max_attempts=2).request("POST", "/handshake", operation="handshake", idempotent=True)
+        await rec.client(max_attempts=2).request(
+            "POST", "/handshake", operation="handshake", idempotent=True
+        )
     assert info.value.code == "BROKER_UNAVAILABLE"
 
 
@@ -154,8 +165,14 @@ async def test_stream_sse_yields_events() -> None:
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     client = BrokerClient(BASE, "t", http=http)
-    events = [e async for e in client.stream_sse("/llm/chat:stream", operation="llm.stream", json={})]
-    assert events == [("delta", {"text": "Hel"}), ("delta", {"text": "lo"}), ("done", {"text": "Hello"})]
+    events = [
+        e async for e in client.stream_sse("/llm/chat:stream", operation="llm.stream", json={})
+    ]
+    assert events == [
+        ("delta", {"text": "Hel"}),
+        ("delta", {"text": "lo"}),
+        ("done", {"text": "Hello"}),
+    ]
 
 
 async def test_stream_sse_error_status_raises_mapped_error() -> None:

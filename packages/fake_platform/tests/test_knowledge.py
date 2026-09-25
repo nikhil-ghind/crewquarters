@@ -26,9 +26,9 @@ def test_search_ranks_the_matching_passage_first(tmp_path: Path) -> None:
 
 def test_search_filters_documents_and_skips_zero_scores(tmp_path: Path) -> None:
     index = build(tmp_path)
-    assert [p["document"]["id"] for p in index.search("kb-1", "support hours", document_ids=["faq"])] == [
-        "faq"
-    ]
+    assert [
+        p["document"]["id"] for p in index.search("kb-1", "support hours", document_ids=["faq"])
+    ] == ["faq"]
     assert index.search("kb-1", "support hours", document_ids=["terms"]) == []
     assert index.search("kb-1", "zebra quantum") == []
 

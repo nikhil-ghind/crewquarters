@@ -39,7 +39,9 @@ def test_result_range_must_be_a_full_a_to_h_tab(value: str) -> None:
 
 
 def test_quoted_result_tab() -> None:
-    config = CallerConfig.model_validate({"spreadsheetId": "s1", "resultRange": "'Call Results'!A:H"})
+    config = CallerConfig.model_validate(
+        {"spreadsheetId": "s1", "resultRange": "'Call Results'!A:H"}
+    )
     assert config.result_tab == "'Call Results'"
 
 
@@ -47,7 +49,10 @@ def test_quoted_result_tab() -> None:
     ("value", "row"), [("Contacts!A2:D", 2), ("Contacts!A1:D50", 1), ("'My List'!A5:D", 5)]
 )
 def test_input_range_start_row(value: str, row: int) -> None:
-    assert CallerConfig.model_validate({"spreadsheetId": "s1", "inputRange": value}).input_start_row == row
+    assert (
+        CallerConfig.model_validate({"spreadsheetId": "s1", "inputRange": value}).input_start_row
+        == row
+    )
 
 
 @pytest.mark.parametrize("value", ["Contacts!A:D", "Contacts!B2:E", "Contacts"])

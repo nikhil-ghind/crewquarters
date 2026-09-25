@@ -26,7 +26,9 @@ class IdIteration:
     ``truncated`` becomes true when iteration stopped at the limit while more messages existed.
     """
 
-    def __init__(self, client: GmailClient, query: str, limit: int, label_ids: list[str] | None) -> None:
+    def __init__(
+        self, client: GmailClient, query: str, limit: int, label_ids: list[str] | None
+    ) -> None:
         self._client = client
         self._query = query
         self._limit = limit
@@ -78,9 +80,13 @@ class GmailClient:
             "GET", "/google/gmail/messages", operation="gmail.list", idempotent=True, params=params
         )
         ids = [(str(m["id"]), str(m.get("threadId", m["id"]))) for m in data.get("messages", [])]
-        return MessageIdPage(ids, data.get("nextPageToken"), int(data.get("resultSizeEstimate", len(ids))))
+        return MessageIdPage(
+            ids, data.get("nextPageToken"), int(data.get("resultSizeEstimate", len(ids)))
+        )
 
-    def iter_message_ids(self, query: str, *, limit: int, label_ids: list[str] | None = None) -> IdIteration:
+    def iter_message_ids(
+        self, query: str, *, limit: int, label_ids: list[str] | None = None
+    ) -> IdIteration:
         return IdIteration(self, query, limit, label_ids)
 
     async def get_message(self, message_id: str, *, max_chars: int = 4000) -> GmailMessage:

@@ -41,7 +41,9 @@ async def gmail_list(
 
 
 @router.get("/google/gmail/messages/{message_id}")
-async def gmail_get(message_id: str, request: Request, auth: RunAuth = Depends(run_auth)) -> dict[str, Any]:
+async def gmail_get(
+    message_id: str, request: Request, auth: RunAuth = Depends(run_auth)
+) -> dict[str, Any]:
     require(auth, "google.gmail.readonly", "broker.gmail.get")
     require_connection(auth, "google")
 
@@ -52,33 +54,39 @@ async def gmail_get(message_id: str, request: Request, auth: RunAuth = Depends(r
 
 
 @router.post("/google/sheets/values:get")
-async def sheets_get(body: RangeIn, request: Request, auth: RunAuth = Depends(run_auth)) -> dict[str, Any]:
-    require(auth, "google.sheets", "broker.sheets.get")
+async def sheets_get(
+    body: RangeIn, request: Request, auth: RunAuth = Depends(run_auth)
+) -> dict[str, Any]:
+    require(auth, "google.spreadsheets", "broker.sheets.get")
     require_connection(auth, "google")
 
     async def call() -> dict[str, Any]:
         return auth.store.sheets.get(body.spreadsheetId, body.range)
 
-    return await audited(auth, request, "google.sheets", "broker.sheets.get", call)
+    return await audited(auth, request, "google.spreadsheets", "broker.sheets.get", call)
 
 
 @router.post("/google/sheets/values:update")
-async def sheets_update(body: WriteIn, request: Request, auth: RunAuth = Depends(run_auth)) -> dict[str, Any]:
-    require(auth, "google.sheets", "broker.sheets.update")
+async def sheets_update(
+    body: WriteIn, request: Request, auth: RunAuth = Depends(run_auth)
+) -> dict[str, Any]:
+    require(auth, "google.spreadsheets", "broker.sheets.update")
     require_connection(auth, "google")
 
     async def call() -> dict[str, Any]:
         return auth.store.sheets.update(body.spreadsheetId, body.range, body.values)
 
-    return await audited(auth, request, "google.sheets", "broker.sheets.update", call)
+    return await audited(auth, request, "google.spreadsheets", "broker.sheets.update", call)
 
 
 @router.post("/google/sheets/values:append")
-async def sheets_append(body: WriteIn, request: Request, auth: RunAuth = Depends(run_auth)) -> dict[str, Any]:
-    require(auth, "google.sheets", "broker.sheets.append")
+async def sheets_append(
+    body: WriteIn, request: Request, auth: RunAuth = Depends(run_auth)
+) -> dict[str, Any]:
+    require(auth, "google.spreadsheets", "broker.sheets.append")
     require_connection(auth, "google")
 
     async def call() -> dict[str, Any]:
         return auth.store.sheets.append(body.spreadsheetId, body.range, body.values)
 
-    return await audited(auth, request, "google.sheets", "broker.sheets.append", call)
+    return await audited(auth, request, "google.spreadsheets", "broker.sheets.append", call)

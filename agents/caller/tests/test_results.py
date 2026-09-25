@@ -16,7 +16,11 @@ def call(state: str, **extra: Any) -> Call:
 @pytest.mark.parametrize(
     ("state", "extra", "expected"),
     [
-        ("completed", {"answered": True, "speechCaptured": True, "transcript": "yes"}, "answered_speech"),
+        (
+            "completed",
+            {"answered": True, "speechCaptured": True, "transcript": "yes"},
+            "answered_speech",
+        ),
         ("completed", {"answered": True}, "answered_no_speech"),
         ("busy", {}, "busy"),
         ("no-answer", {}, "no_answer"),
@@ -37,7 +41,11 @@ def test_missing_call_is_failed() -> None:
 def test_row_values_mask_the_number_and_fill_eight_columns() -> None:
     contact = ContactRow(4, "Asha", "+15555550101", "yes", "")
     values = row_values(
-        contact, call("completed", transcript="Yes"), "answered_speech", "2026-09-24T10:00:00+05:30", None
+        contact,
+        call("completed", transcript="Yes"),
+        "answered_speech",
+        "2026-09-24T10:00:00+05:30",
+        None,
     )
     assert values == [
         "4",

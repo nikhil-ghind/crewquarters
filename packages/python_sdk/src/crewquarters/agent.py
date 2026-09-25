@@ -62,9 +62,8 @@ class Agent:
             sys.exit(0)
         missing = [name for name in ENV_VARS if not os.environ.get(name)]
         if missing:
-            _stderr(
-                f"crewquarters: missing environment variables {', '.join(missing)}; the platform sets them"
-            )
+            names = ", ".join(missing)
+            _stderr(f"crewquarters: missing environment variables {names}; the platform sets them")
             sys.exit(EXIT_NO_OUTCOME)
         try:
             code = asyncio.run(
@@ -110,7 +109,10 @@ class Agent:
                 return EXIT_NO_OUTCOME
             run = RunInfo.from_wire(handshake["run"])
             if run.id != run_id:
-                _stderr(f"crewquarters: PLATFORM_RUN_ID {run_id} does not match the broker's run {run.id}")
+                _stderr(
+                    f"crewquarters: PLATFORM_RUN_ID {run_id} does not match "
+                    f"the broker's run {run.id}"
+                )
             events = EventsClient(transport)
             try:
                 config = self._parse_config(handshake.get("config") or {})
@@ -120,7 +122,7 @@ class Agent:
                     "message": redact_text(str(exc))[:2000],
                     "retryable": False,
                 }
-                return await self._finish(transport, events, {"outcome": "failed", "error": error})
+                return await self._finish(transport, events, {"status": "failed", "error": error})
 
             ctx: RunContext[Any] = RunContext(
                 run=run,
@@ -151,16 +153,21 @@ class Agent:
         return self.config_model.model_validate(raw)
 
     def _outcome(self, task: asyncio.Task[Any]) -> dict[str, Any]:
-        if task.cancelled():
-            return {"outcome": "cancelled"}
+        """The result body. A cancelled run reports ``failed``/``RUN_CANCELLED``; the control plane
+        records it as CANCELLED because the owner's cancel already moved the run to CANCELLING."""
+        if task.cancelled() or isinstance(task.exception(), Cancelled):
+            return {
+                "status": "failed",
+                "error": {"code": "RUN_CANCELLED", "message": "run cancelled", "retryable": False},
+            }
         exc = task.exception()
         if exc is None:
             try:
-                return {"outcome": "succeeded", "result": self._encode_result(task.result())}
+                return {"status": "succeeded", "result": self._encode_result(task.result())}
             except Exception as encode_error:
                 message = redact_text(f"result is invalid: {encode_error}")[:2000]
                 return {
-                    "outcome": "failed",
+                    "status": "failed",
                     "error": {"code": "RESULT_INVALID", "message": message, "retryable": False},
                 }
         _stderr(redact_text("".join(traceback.format_exception(exc))))
@@ -170,19 +177,31 @@ class Agent:
             code, retryable, details = "AGENT_ERROR", False, {}
         message = redact_text(str(exc) or type(exc).__name__)[:2000]
         return {
-            "outcome": "failed",
+            "status": "failed",
             "error": {"code": code, "message": message, "retryable": retryable, "details": details},
         }
 
-    def _encode_result(self, value: Any) -> Any:
+    def _encode_result(self, value: Any) -> dict[str, Any] | None:
+        """A run result is a JSON object (or nothing); it is validated against the manifest's
+        ``resultSchema`` by the platform."""
         if self.result_model is not None:
-            model = value if isinstance(value, self.result_model) else self.result_model.model_validate(value)
-            return model.model_dump(mode="json", by_alias=True)
-        if isinstance(value, BaseModel):
-            return value.model_dump(mode="json", by_alias=True)
-        return to_jsonable_python(value)
+            model = (
+                value
+                if isinstance(value, self.result_model)
+                else self.result_model.model_validate(value)
+            )
+            encoded = model.model_dump(mode="json", by_alias=True)
+        elif isinstance(value, BaseModel):
+            encoded = value.model_dump(mode="json", by_alias=True)
+        else:
+            encoded = to_jsonable_python(value)
+        if encoded is not None and not isinstance(encoded, dict):
+            raise TypeError(f"a run result must be an object, not {type(encoded).__name__}")
+        return encoded
 
-    async def _finish(self, transport: BrokerClient, events: EventsClient, body: dict[str, Any]) -> int:
+    async def _finish(
+        self, transport: BrokerClient, events: EventsClient, body: dict[str, Any]
+    ) -> int:
         try:
             await events.aclose()
         except Exception as exc:  # event delivery must never prevent the outcome from being posted
@@ -194,7 +213,7 @@ class Agent:
         except (PlatformError, Cancelled) as exc:
             _stderr(f"crewquarters: could not record the run outcome: {exc}")
             return EXIT_NO_OUTCOME
-        state = response.get("runState") if isinstance(response, dict) else None
+        state = response.get("state") if isinstance(response, dict) else None
         return EXIT_SUCCEEDED if state == "SUCCEEDED" else EXIT_NOT_SUCCEEDED
 
 

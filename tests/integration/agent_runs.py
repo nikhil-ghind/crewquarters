@@ -7,8 +7,8 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from crewquarters_contracts.manifest import load_manifest
 from crewquarters_fake.client import FakePlatformClient
+from crewquarters_fake.contracts import load_manifest
 from crewquarters_fake.harness import RunOutcome, run_agent
 from crewquarters_fake.launcher import LaunchHandle, ProcessLauncher
 
@@ -24,7 +24,12 @@ def prepare(
     manifest = load_manifest(agent_dir / "manifest.yaml")
     client.load_scenario(str(FIXTURES / scenario))
     client.register_manifest(manifest)
-    installation = client.install(manifest["metadata"]["id"], manifest["metadata"]["version"], config)
+    installation = client.install(
+        manifest["metadata"]["id"],
+        manifest["metadata"]["version"],
+        config,
+        manifest["spec"]["permissions"],
+    )
     return manifest, installation["id"]
 
 
@@ -41,7 +46,9 @@ def launch(
     on_launch: Any = None,
     timeout: float = 90,
 ) -> RunOutcome:
-    launcher = ProcessLauncher(manifest["spec"]["entrypoint"], agent_dir=AGENTS[agent], log_dir=log_dir)
+    launcher = ProcessLauncher(
+        manifest["spec"]["entrypoint"], agent_dir=AGENTS[agent], log_dir=log_dir
+    )
     return run_agent(
         client,
         launcher,
@@ -55,7 +62,7 @@ def launch(
 
 
 def assert_result_matches_manifest(manifest: dict[str, Any], result: Any) -> None:
-    Draft202012Validator(manifest["spec"]["result"]["schema"]).validate(result)
+    Draft202012Validator(manifest["spec"]["resultSchema"]).validate(result)
 
 
 __all__ = ["FIXTURES", "LaunchHandle", "assert_result_matches_manifest", "launch", "prepare"]

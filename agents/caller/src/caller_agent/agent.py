@@ -1,4 +1,4 @@
-"""caller: consenting Sheets rows → operator approval → fixed-script calls → results back to Sheets."""
+"""caller: consenting Sheets rows → operator approval → fixed-script calls → results to Sheets."""
 
 from __future__ import annotations
 
@@ -12,7 +12,13 @@ from caller_agent.models import CallerResult, RowResult, Summary
 from caller_agent.results import FAILED_STATUSES, HEADER, display_status, row_values
 from caller_agent.rows import ContactRow, Plan, classify, read_rows
 from crewquarters import Agent, RunContext
-from crewquarters.errors import AgentError, NeedsConnection, OutcomeUnknown, PlatformError, ProviderError
+from crewquarters.errors import (
+    AgentError,
+    NeedsConnection,
+    OutcomeUnknown,
+    PlatformError,
+    ProviderError,
+)
 from crewquarters.redact import mask_phone
 from crewquarters.telephony import Call
 
@@ -42,7 +48,9 @@ def _summary(rows: list[RowResult], skipped: int) -> Summary:
         answered=sum(1 for r in rows if (r.call_status or "").startswith("answered")),
         responses_captured=sum(1 for r in rows if r.call_status == "answered_speech"),
         skipped=skipped,
-        failed=sum(1 for r in rows if r.consent == "validated" and r.call_status in FAILED_STATUSES),
+        failed=sum(
+            1 for r in rows if r.consent == "validated" and r.call_status in FAILED_STATUSES
+        ),
     )
 
 
@@ -52,7 +60,9 @@ async def _write(ctx: Ctx, range_: str, values: list[str]) -> str:
             await ctx.google.sheets.update_values(ctx.config.spreadsheet_id, range_, [list(values)])
             return "written"
         except (ProviderError, OutcomeUnknown) as exc:
-            await ctx.events.log("warning", f"sheet write to {range_} failed (attempt {attempt}): {exc.code}")
+            await ctx.events.log(
+                "warning", f"sheet write to {range_} failed (attempt {attempt}): {exc.code}"
+            )
             if attempt < WRITE_ATTEMPTS:
                 await asyncio.sleep(0.5 * 2 ** (attempt - 1))
     return "failed"
@@ -72,10 +82,12 @@ async def _call(ctx: Ctx, contact: ContactRow) -> tuple[Call | None, str | None]
         )
 
     try:
-        # Resuming an unfinished claim is safe: the broker returns the existing call for the same key.
+        # Resuming an in-doubt claim is safe: the broker returns the existing call for the same key.
         call = await ctx.idempotency.once(key, create, result_type=Call, resume_in_progress=True)
         final = await ctx.telephony.wait_for_call(
-            call.id, timeout_seconds=config.call_timeout_seconds, poll_seconds=config.call_poll_seconds
+            call.id,
+            timeout_seconds=config.call_timeout_seconds,
+            poll_seconds=config.call_poll_seconds,
         )
     except PlatformError as exc:
         await ctx.events.log("error", f"call for row {contact.row} failed: {exc.code}")
@@ -122,7 +134,9 @@ async def run(ctx: Ctx) -> CallerResult:
     if answer.value != "approve":
         await ctx.events.log("info", "operator cancelled; no calls placed")
         rows = sorted(pending + skipped, key=lambda r: r.row)
-        return CallerResult(operator_decision="cancelled", summary=_summary(rows, len(skipped)), rows=rows)
+        return CallerResult(
+            operator_decision="cancelled", summary=_summary(rows, len(skipped)), rows=rows
+        )
 
     await _write(ctx, f"{config.result_tab}!A1:H1", HEADER)
     called: list[RowResult] = []
@@ -135,10 +149,14 @@ async def run(ctx: Ctx) -> CallerResult:
         call, error = await _call(ctx, contact)
         status = display_status(call)
         completed_at = (
-            datetime.now(tz).isoformat(timespec="seconds") if call is not None and call.terminal else None
+            datetime.now(tz).isoformat(timespec="seconds")
+            if call is not None and call.terminal
+            else None
         )
         if call is not None:
-            error = call.error_code or ("call still active at the timeout" if status == "timeout" else None)
+            error = call.error_code or (
+                "call still active at the timeout" if status == "timeout" else None
+            )
         cells = row_values(contact, call, status, completed_at, error)
         sheet_write = await _write(ctx, f"{config.result_tab}!A{contact.row}:H{contact.row}", cells)
         called.append(
@@ -157,4 +175,6 @@ async def run(ctx: Ctx) -> CallerResult:
         )
     rows = sorted(called + skipped, key=lambda r: r.row)
     await ctx.events.progress(100, "Calls finished", step="done")
-    return CallerResult(operator_decision="approved", summary=_summary(rows, len(skipped)), rows=rows)
+    return CallerResult(
+        operator_decision="approved", summary=_summary(rows, len(skipped)), rows=rows
+    )

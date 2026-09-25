@@ -43,7 +43,12 @@ def require(auth: RunAuth, capability: str | None, operation: str) -> None:
     if state not in ACTIVE:
         raise ApiError(409, "RUN_NOT_ACTIVE", f"the run is {state}")
     if capability is not None and capability not in auth.installation.capabilities:
-        auth.store.append_event(
-            auth.run, "capability.denied", {"capability": capability, "operation": operation}
-        )
-        raise ApiError(403, "CAPABILITY_DENIED", f"{operation} requires the {capability} capability")
+        deny(auth, capability, operation)
+
+
+def deny(auth: RunAuth, capability: str, operation: str) -> None:
+    """Record the denial in the audit log and refuse the call."""
+    auth.store.audit_event(
+        auth.run, "capability.denied", {"capability": capability, "operation": operation}
+    )
+    raise ApiError(403, "CAPABILITY_DENIED", f"{operation} requires the {capability} capability")

@@ -101,7 +101,9 @@ class TwilioProvider:
             "answered": answered,
             "speechCaptured": bool(speech),
             "transcript": speech or None,
-            "durationSeconds": int(call.outcome.get("durationSeconds", 14)) if final and answered else None,
+            "durationSeconds": int(call.outcome.get("durationSeconds", 14))
+            if final and answered
+            else None,
             "errorCode": call.outcome.get("errorCode") if call.state == "failed" else None,
             "createdAt": iso(call.created_at),
             "updatedAt": iso(call.updated_at),

@@ -23,12 +23,13 @@ def envelope(code: str, message: str = "boom") -> dict[str, object]:
     ("status", "code", "cls"),
     [
         (403, "CAPABILITY_DENIED", PermissionDenied),
+        (403, "PERMISSION_DENIED", PermissionDenied),
         (409, "NEEDS_CONNECTION", NeedsConnection),
         (503, "MODEL_UNAVAILABLE", ModelUnavailable),
         (409, "RUN_CANCELLED", Cancelled),
         (429, "RATE_LIMITED", RateLimited),
         (422, "INVALID_REQUEST", InvalidInput),
-        (409, "INPUT_KEY_CONFLICT", InvalidInput),
+        (422, "INVALID_INPUT_SCHEMA", InvalidInput),
         (422, "INPUT_WAIT_BUDGET_EXCEEDED", InvalidInput),
         (422, "UNSUPPORTED_FEATURE", InvalidInput),
         (502, "PROVIDER_ERROR", ProviderError),
@@ -38,7 +39,9 @@ def envelope(code: str, message: str = "boom") -> dict[str, object]:
         (401, "UNAUTHENTICATED", PlatformError),
     ],
 )
-def test_error_codes_map_to_exception_classes(status: int, code: str, cls: type[BaseException]) -> None:
+def test_error_codes_map_to_exception_classes(
+    status: int, code: str, cls: type[BaseException]
+) -> None:
     error = error_from_response(status, envelope(code), "req-1")
     assert type(error) is cls
     assert error.code == code  # type: ignore[attr-defined]

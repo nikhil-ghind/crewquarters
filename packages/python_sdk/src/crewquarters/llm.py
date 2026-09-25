@@ -1,4 +1,4 @@
-"""LLM calls through named profiles. Cloud use is always explicit; there is no automatic fallback."""
+"""LLM calls through named profiles. Cloud use is always explicit; there is no fallback."""
 
 from __future__ import annotations
 
@@ -52,7 +52,10 @@ def _parse(data: dict[str, Any], response_model: type[BaseModel] | None) -> Chat
             raise InvalidInput(
                 f"model output does not match {response_model.__name__}",
                 code="STRUCTURED_OUTPUT_INVALID",
-                details={"raw": text[:4000], "errors": exc.errors(include_url=False, include_input=False)},
+                details={
+                    "raw": text[:4000],
+                    "errors": exc.errors(include_url=False, include_input=False),
+                },
             ) from exc
     return ChatResult(
         text=text,
@@ -71,7 +74,9 @@ def _parse(data: dict[str, Any], response_model: type[BaseModel] | None) -> Chat
 class ChatStream:
     """Async iterator of text deltas; ``result`` holds the final ChatResult after iteration."""
 
-    def __init__(self, transport: BrokerClient, body: dict[str, Any], response_model: type[BaseModel] | None):
+    def __init__(
+        self, transport: BrokerClient, body: dict[str, Any], response_model: type[BaseModel] | None
+    ):
         self._transport = transport
         self._body = body
         self._response_model = response_model
@@ -93,6 +98,11 @@ class ChatStream:
                 raise error_from_response(500, data, str(error.get("requestId") or ""))
 
 
+# Cloud profiles are named <provider>.<model> (openai.*, anthropic.*) and are only ever used by
+# their exact, explicitly approved name; a local family never resolves to one.
+CLOUD_PROVIDERS = frozenset({"openai", "anthropic"})
+
+
 class LLMClient:
     def __init__(self, transport: BrokerClient, granted_profiles: Sequence[str]) -> None:
         self._transport = transport
@@ -101,7 +111,7 @@ class LLMClient:
     def resolve_profile(self, profile: str) -> str:
         if profile in self.granted_profiles:
             return profile
-        if profile.startswith("cloud."):
+        if profile.split(".", 1)[0] in CLOUD_PROVIDERS:
             raise PermissionDenied(
                 f"cloud profile {profile} is not granted; cloud use must be approved explicitly"
             )
@@ -137,7 +147,9 @@ class LLMClient:
             body["temperature"] = temperature
         if max_output_tokens is not None:
             body["maxOutputTokens"] = max_output_tokens
-        schema = response_model.model_json_schema() if response_model is not None else response_schema
+        schema = (
+            response_model.model_json_schema() if response_model is not None else response_schema
+        )
         if schema is not None:
             body["responseSchema"] = schema
         body["tools"] = []

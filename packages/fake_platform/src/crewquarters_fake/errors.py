@@ -44,7 +44,9 @@ def envelope(
 async def api_error_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ApiError)
     return JSONResponse(
-        envelope(request, exc.code, exc.message, exc.details), status_code=exc.status, headers=exc.headers
+        envelope(request, exc.code, exc.message, exc.details),
+        status_code=exc.status,
+        headers=exc.headers,
     )
 
 
@@ -58,5 +60,7 @@ async def validation_error_handler(request: Request, exc: Exception) -> JSONResp
 
 async def http_error_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, StarletteHTTPException)
-    code = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}.get(exc.status_code, f"HTTP_{exc.status_code}")
+    code = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}.get(
+        exc.status_code, f"HTTP_{exc.status_code}"
+    )
     return JSONResponse(envelope(request, code, str(exc.detail)), status_code=exc.status_code)

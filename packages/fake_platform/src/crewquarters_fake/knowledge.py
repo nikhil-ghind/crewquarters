@@ -32,7 +32,7 @@ class Chunk:
 
 
 def split_sections(text: str) -> list[tuple[str | None, str]]:
-    """Split a document into (section heading, chunk text) pairs of at most about CHUNK_CHARS characters."""
+    """Split a document into (section heading, chunk text) pairs of about CHUNK_CHARS at most."""
     chunks: list[tuple[str | None, str]] = []
     section: str | None = None
     buffer: list[str] = []
@@ -69,14 +69,24 @@ class KnowledgeIndex:
             text = file.read_text(encoding="utf-8", errors="replace")
             for section, body in split_sections(text):
                 chunks.append(
-                    Chunk(kb_id, doc_id, file.name, len(chunks), body, section, Counter(tokenize(body)))
+                    Chunk(
+                        kb_id,
+                        doc_id,
+                        file.name,
+                        len(chunks),
+                        body,
+                        section,
+                        Counter(tokenize(body)),
+                    )
                 )
         self.kbs[kb_id] = chunks
 
     def search(
         self, kb_id: str, query: str, top_k: int = 8, document_ids: list[str] | None = None
     ) -> list[dict[str, Any]]:
-        chunks = [c for c in self.kbs.get(kb_id, []) if not document_ids or c.doc_id in document_ids]
+        chunks = [
+            c for c in self.kbs.get(kb_id, []) if not document_ids or c.doc_id in document_ids
+        ]
         terms = tokenize(query)
         if not chunks or not terms:
             return []
@@ -91,7 +101,9 @@ class KnowledgeIndex:
                     continue
                 documents = sum(1 for c in chunks if term in c.terms)
                 idf = math.log(1 + (len(chunks) - documents + 0.5) / (documents + 0.5))
-                score += idf * frequency * 2.2 / (frequency + 1.2 * (0.25 + 0.75 * length / average))
+                score += (
+                    idf * frequency * 2.2 / (frequency + 1.2 * (0.25 + 0.75 * length / average))
+                )
             if score > 0:
                 scored.append((score, chunk))
         scored.sort(key=lambda pair: pair[0], reverse=True)

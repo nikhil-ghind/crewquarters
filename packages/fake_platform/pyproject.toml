@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Crewquarters fake platform for development and tests: broker, control-API slice, mock providers, launchers"
 requires-python = ">=3.12"
 dependencies = [
-    "crewquarters-contracts",
+    "crewquarters-shared",
     "crewquarters-sdk",
     "fastapi>=0.115",
     "uvicorn>=0.30",
@@ -26,5 +26,5 @@ build-backend = "hatchling.build"
 packages = ["src/crewquarters_fake"]
 
 [tool.uv.sources]
-crewquarters-contracts = { workspace = true }
+crewquarters-shared = { workspace = true }
 crewquarters-sdk = { workspace = true }

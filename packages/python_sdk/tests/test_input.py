@@ -9,7 +9,9 @@ from crewquarters.input import Choice, InputClient, key_value_block, table_block
 
 def make(broker: FakeBroker, remaining: float = 3600) -> InputClient:
     transport = BrokerClient("http://broker.test", "t", http=broker.client())
-    return InputClient(transport, Limits(active_timeout_seconds=600, input_wait_remaining_seconds=remaining))
+    return InputClient(
+        transport, Limits(active_timeout_seconds=600, input_wait_remaining_seconds=remaining)
+    )
 
 
 async def test_ask_with_choices_builds_schema_and_returns_value() -> None:
@@ -30,29 +32,37 @@ async def test_ask_with_choices_builds_schema_and_returns_value() -> None:
     )
     assert answer.value == "go"
     assert answer.data == {"choice": "go"}
-    assert answer.answered_by == "owner"
     [create] = broker.input_creates
     assert create["schema"] == {
         "type": "object",
         "required": ["choice"],
         "properties": {"choice": {"type": "string", "enum": ["go", "stop"]}},
     }
-    assert create["choices"] == [
-        {"value": "go", "label": "Approve 3 calls", "style": "primary"},
-        {"value": "stop", "label": "stop", "style": "secondary"},
-    ]
-    assert create["preview"][1] == {"type": "keyValue", "items": [{"label": "Recipients", "value": "3"}]}
-    assert create["consequence"] == "3 calls will be placed."
+    # The control plane stores one preview object: blocks, choice labels, and the consequence.
+    assert create["preview"] == {
+        "blocks": [
+            {"type": "text", "text": "Script text"},
+            {"type": "keyValue", "items": [{"label": "Recipients", "value": "3"}]},
+        ],
+        "choices": [
+            {"value": "go", "label": "Approve 3 calls", "style": "primary"},
+            {"value": "stop", "label": "stop", "style": "secondary"},
+        ],
+        "consequence": "3 calls will be placed.",
+    }
+    assert "choices" not in create and "consequence" not in create
     assert create["timeoutSeconds"] == 600
     polls = [r for r in broker.requests if r.method == "GET"]
-    assert polls and all(r.url.params["waitSeconds"] == "25" for r in polls)
+    assert polls and all(r.url.path.endswith("/input-requests/in-confirm-v1") for r in polls)
+    assert all(r.url.params["wait"] == "25" for r in polls)
 
 
 async def test_first_string_choice_is_primary() -> None:
     broker = FakeBroker()
     broker.input_script["k"] = [answered({"choice": "a"})]
     await make(broker).ask("k", "t", "p", choices=["a", "b"], timeout_seconds=60)
-    assert [c["style"] for c in broker.input_creates[0]["choices"]] == ["primary", "secondary"]
+    styles = [c["style"] for c in broker.input_creates[0]["preview"]["choices"]]
+    assert styles == ["primary", "secondary"]
 
 
 async def test_ask_with_schema_returns_data_as_value() -> None:
@@ -90,7 +100,9 @@ async def test_exactly_one_of_schema_or_choices() -> None:
     with pytest.raises(InvalidInput):
         await client.ask("k", "t", "p", timeout_seconds=60)
     with pytest.raises(InvalidInput):
-        await client.ask("k", "t", "p", schema={"type": "object"}, choices=["a"], timeout_seconds=60)
+        await client.ask(
+            "k", "t", "p", schema={"type": "object"}, choices=["a"], timeout_seconds=60
+        )
 
 
 def test_table_block_stringifies_cells() -> None:
@@ -99,3 +111,18 @@ def test_table_block_stringifies_cells() -> None:
         "columns": ["Row", "Name"],
         "rows": [["2", "Asha"]],
     }
+
+
+async def test_schema_only_ask_sends_no_preview() -> None:
+    broker = FakeBroker()
+    broker.input_script["k"] = [answered({"count": 1})]
+    await make(broker).ask("k", "t", "p", schema={"type": "object"}, timeout_seconds=60)
+    assert "preview" not in broker.input_creates[0]
+
+
+@pytest.mark.parametrize("key", ["has space", "semi;colon", "x" * 129, ""])
+async def test_invalid_keys_are_rejected_before_any_request(key: str) -> None:
+    broker = FakeBroker()
+    with pytest.raises(InvalidInput):
+        await make(broker).ask(key, "t", "p", choices=["a"], timeout_seconds=60)
+    assert broker.requests == []

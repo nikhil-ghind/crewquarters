@@ -1,4 +1,4 @@
-"""The laptop demo scenario works end to end (process launcher; the Docker path is covered by e2e)."""
+"""The laptop demo scenario works end to end (process launcher; e2e covers the Docker path)."""
 
 from pathlib import Path
 
@@ -21,10 +21,16 @@ def test_demo_digest_groups_yesterday(fake_client: FakePlatformClient, tmp_path:
     assert_result_matches_manifest(manifest, outcome.result)
     groups = outcome.result["groups"]
     assert [i["messageId"] for i in groups["urgent"]] == ["demo-security", "demo-outage"]
-    assert outcome.result["counts"] == {"urgent": 2, "important": 8, "lowPriority": 10, "needsReview": 2}
+    assert outcome.result["counts"] == {
+        "urgent": 2,
+        "important": 8,
+        "lowPriority": 10,
+        "needsReview": 2,
+    }
     everything = {i["messageId"] for g in groups.values() for i in g}
     assert (
-        not {"demo-promo-1", "demo-promo-2", "demo-promo-3", "demo-two-days-ago", "demo-today"} & everything
+        not {"demo-promo-1", "demo-promo-2", "demo-promo-3", "demo-two-days-ago", "demo-today"}
+        & everything
     )
     assert "demo-injection" in {i["messageId"] for i in groups["lowPriority"]}
 
@@ -43,4 +49,8 @@ def test_demo_caller_places_three_calls(fake_client: FakePlatformClient, tmp_pat
         "skipped": 2,
         "failed": 0,
     }
-    assert fake_client.state("calls")["byNumber"] == {"+15555550101": 1, "+15555550102": 1, "+15555550103": 1}
+    assert fake_client.state("calls")["byNumber"] == {
+        "+15555550101": 1,
+        "+15555550102": 1,
+        "+15555550103": 1,
+    }

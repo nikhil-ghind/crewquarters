@@ -67,7 +67,13 @@ def batch(*items: dict[str, Any]) -> DigestBatch:
 
 
 def item(ref: str, priority: str = "low", **extra: Any) -> dict[str, Any]:
-    return {"ref": ref, "priority": priority, "reason": f"reason {ref}", "nextAction": "none", **extra}
+    return {
+        "ref": ref,
+        "priority": priority,
+        "reason": f"reason {ref}",
+        "nextAction": "none",
+        **extra,
+    }
 
 
 async def test_items_map_back_to_message_ids_and_prompt_uses_evidence() -> None:
@@ -113,7 +119,9 @@ async def test_invalid_output_gets_one_repair_retry() -> None:
     invalid = InvalidInput("bad", code="STRUCTURED_OUTPUT_INVALID", details={"raw": "oops"})
     llm = FakeLLM([invalid, result(batch(item("m1", "urgent")))])
     ctx = Ctx(llm)
-    classified, _ = await classify_batch(ctx, [fetched(1)], 1, boundary="b", profile="p", tz_name="UTC")  # type: ignore[arg-type]
+    classified, _ = await classify_batch(
+        ctx, [fetched(1)], 1, boundary="b", profile="p", tz_name="UTC"
+    )  # type: ignore[arg-type]
     assert classified["id1"].priority == "urgent"
     assert len(llm.calls) == 2
     repair = llm.calls[1]["messages"]
@@ -136,5 +144,7 @@ async def test_second_failure_marks_the_whole_batch_for_review() -> None:
 
 async def test_duplicate_refs_keep_the_first_answer() -> None:
     llm = FakeLLM([result(batch(item("m1", "urgent"), item("m1", "low")))])
-    classified, _ = await classify_batch(Ctx(llm), [fetched(1)], 0, boundary="b", profile="p", tz_name="UTC")  # type: ignore[arg-type]
+    classified, _ = await classify_batch(
+        Ctx(llm), [fetched(1)], 0, boundary="b", profile="p", tz_name="UTC"
+    )  # type: ignore[arg-type]
     assert classified["id1"].priority == "urgent"

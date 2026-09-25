@@ -17,7 +17,7 @@ def test_unbuilt_manifest_fails_without_allow_unbuilt(tmp_path: Path) -> None:
     target = scaffold(tmp_path)
     result = CliRunner().invoke(cli, ["validate", str(target)])
     assert result.exit_code == 1
-    assert "spec.image" in result.output
+    assert "/spec/image" in result.output
 
 
 def test_json_output_shape(tmp_path: Path) -> None:
@@ -25,9 +25,15 @@ def test_json_output_shape(tmp_path: Path) -> None:
     result = CliRunner().invoke(cli, ["validate", str(target), "--json"])
     report = json.loads(result.output)
     assert report["valid"] is False
-    assert report["errors"][0]["path"] == "spec.image"
-    ok = CliRunner().invoke(cli, ["validate", str(target / "manifest.yaml"), "--json", "--allow-unbuilt"])
-    assert json.loads(ok.output) == {"valid": True, "errors": [], "capabilities": ["input.ask"]}
+    assert report["errors"][0]["path"] == "/spec/image"
+    ok = CliRunner().invoke(
+        cli, ["validate", str(target / "manifest.yaml"), "--json", "--allow-unbuilt"]
+    )
+    assert json.loads(ok.output) == {
+        "valid": True,
+        "errors": [],
+        "capabilities": ["events.write", "idempotency", "user_input"],
+    }
 
 
 def test_schema_errors_are_reported(tmp_path: Path) -> None:
@@ -47,7 +53,10 @@ def test_missing_entrypoint_module_is_reported(tmp_path: Path) -> None:
     report = json.loads(result.output)
     assert report["valid"] is False
     assert report["errors"] == [
-        {"path": "spec.entrypoint", "message": "module demo_agent has no src/demo_agent/__main__.py"}
+        {
+            "path": "/spec/entrypoint",
+            "message": "module demo_agent has no src/demo_agent/__main__.py",
+        }
     ]
 
 

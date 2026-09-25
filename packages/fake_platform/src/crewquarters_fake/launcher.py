@@ -34,7 +34,11 @@ class LaunchHandle:
             self.process.kill()
 
     def log_text(self) -> str:
-        return self.log_path.read_text(encoding="utf-8", errors="replace") if self.log_path.exists() else ""
+        return (
+            self.log_path.read_text(encoding="utf-8", errors="replace")
+            if self.log_path.exists()
+            else ""
+        )
 
 
 def _log_file(log_dir: Path, dispatch: dict[str, Any]) -> tuple[Path, IO[bytes]]:
@@ -46,7 +50,9 @@ def _log_file(log_dir: Path, dispatch: dict[str, Any]) -> tuple[Path, IO[bytes]]
 class ProcessLauncher:
     """Runs the manifest entrypoint with the current Python interpreter (no isolation)."""
 
-    def __init__(self, entrypoint: list[str], *, agent_dir: Path | None = None, log_dir: Path) -> None:
+    def __init__(
+        self, entrypoint: list[str], *, agent_dir: Path | None = None, log_dir: Path
+    ) -> None:
         self.entrypoint = entrypoint
         self.agent_dir = agent_dir
         self.log_dir = log_dir
@@ -71,7 +77,7 @@ class ProcessLauncher:
 
 
 class DockerLauncher:
-    """Runs the pinned image with the runtime hardening from PLAN.md section 4.2 and spec section 6.3."""
+    """Runs the pinned image with the runtime hardening from PLAN.md 4.2 and spec section 6.3."""
 
     def __init__(
         self,
@@ -107,7 +113,7 @@ class DockerLauncher:
             self.container_name(dispatch),
             "--read-only",
             "--tmpfs",
-            "/tmp:rw,noexec,nosuid,size=64m",
+            "/tmp:rw,noexec,nosuid,size=64m",  # noqa: S108 - the container's private tmpfs
             "--cap-drop",
             "ALL",
             "--security-opt",

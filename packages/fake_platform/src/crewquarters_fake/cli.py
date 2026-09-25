@@ -11,14 +11,15 @@ import click
 import uvicorn
 import yaml
 
-from crewquarters_contracts.manifest import load_manifest
 from crewquarters_fake.app import create_app
 from crewquarters_fake.client import FakePlatformClient, FakePlatformError
+from crewquarters_fake.contracts import load_manifest
 from crewquarters_fake.harness import Launcher, run_agent
 from crewquarters_fake.launcher import DockerLauncher, ProcessLauncher
 from crewquarters_fake.timeutil import iso, utcnow
 
-DEFAULT_URL = "http://127.0.0.1:8080"
+# The laptop Compose stack publishes the fake on 8090; 8080 is the real control API.
+DEFAULT_URL = "http://127.0.0.1:8090"
 
 
 @click.group()
@@ -28,7 +29,7 @@ def cli() -> None:
 
 @cli.command()
 @click.option("--host", default="127.0.0.1", show_default=True)
-@click.option("--port", default=8080, show_default=True, type=int)
+@click.option("--port", default=8090, show_default=True, type=int)
 def serve(host: str, port: int) -> None:
     """Serve the fake platform (settings come from CREWQ_FAKE_* environment variables)."""
     uvicorn.run(create_app(), host=host, port=port, log_level="info")
@@ -75,14 +76,24 @@ def _config(config_file: Path | None, pairs: tuple[str, ...]) -> dict[str, Any]:
     show_default=True,
 )
 @click.option(
-    "--manifest", "manifest_path", type=click.Path(path_type=Path), help="Pinned manifest (docker mode)."
+    "--manifest",
+    "manifest_path",
+    type=click.Path(path_type=Path),
+    help="Pinned manifest (docker mode).",
 )
-@click.option("--config", "config_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--config", "config_file", type=click.Path(exists=True, dir_okay=False, path_type=Path)
+)
 @click.option("--set", "pairs", multiple=True, help="Config override key=value (YAML value).")
-@click.option("--trigger", type=click.Choice(["manual", "schedule"]), default="manual", show_default=True)
+@click.option(
+    "--trigger", type=click.Choice(["manual", "schedule"]), default="manual", show_default=True
+)
 @click.option("--scheduled-for", help="ISO timestamp or 'now' for schedule runs.")
 @click.option(
-    "--auto-answer", "auto_answers", multiple=True, help="PATTERN=CHOICE, e.g. 'confirm-calls-v1:*=approve'."
+    "--auto-answer",
+    "auto_answers",
+    multiple=True,
+    help="PATTERN=CHOICE, e.g. 'confirm-calls-v1:*=approve'.",
 )
 @click.option("--timeout", default=300.0, show_default=True, type=float)
 @click.option("--log-dir", type=click.Path(path_type=Path))
@@ -113,18 +124,32 @@ def run(
             launcher = DockerLauncher(log_dir=logs)
         else:
             client.register_manifest(manifest)
-            launcher = ProcessLauncher(manifest["spec"]["entrypoint"], agent_dir=agent_dir, log_dir=logs)
+            launcher = ProcessLauncher(
+                manifest["spec"]["entrypoint"], agent_dir=agent_dir, log_dir=logs
+            )
+        # Running an agent here means the developer approves exactly what it requests.
         installation = client.install(
-            manifest["metadata"]["id"], manifest["metadata"]["version"], _config(config_file, pairs)
+            manifest["metadata"]["id"],
+            manifest["metadata"]["version"],
+            _config(config_file, pairs),
+            manifest["spec"]["permissions"],
         )
         when = iso(utcnow()) if scheduled_for == "now" else scheduled_for
         outcome = run_agent(
-            client, launcher, installation["id"], trigger=trigger, scheduled_for=when, timeout=timeout
+            client,
+            launcher,
+            installation["id"],
+            trigger=trigger,
+            scheduled_for=when,
+            timeout=timeout,
         )
     except FakePlatformError as exc:
         raise click.ClickException(str(exc)) from exc
-    click.echo(f"Run {outcome.run['id']} {outcome.state} (exit {outcome.exit_code}); logs in {logs}")
-    click.echo(json.dumps(outcome.result if outcome.result is not None else outcome.error, indent=2))
+    summary = f"Run {outcome.run['id']} {outcome.state} (exit {outcome.exit_code})"
+    click.echo(f"{summary}; logs in {logs}")
+    click.echo(
+        json.dumps(outcome.result if outcome.result is not None else outcome.error, indent=2)
+    )
     if outcome.state != "SUCCEEDED":
         raise SystemExit(1)
 
@@ -137,13 +162,17 @@ def pending(url: str) -> None:
     if not requests:
         click.echo("no pending input requests")
     for request in requests:
-        choices = ", ".join(f"{c['value']} ({c['label']})" for c in request["choices"])
+        preview = request.get("preview") or {}
         click.echo(f"{request['id']}  {request['key']}\n  {request['title']}: {request['prompt']}")
-        for block in request["preview"]:
+        for block in preview.get("blocks", []):
             click.echo(f"  preview: {json.dumps(block, ensure_ascii=False)}")
-        if request.get("consequence"):
-            click.echo(f"  consequence: {request['consequence']}")
-        click.echo(f"  choices: {choices}")
+        if preview.get("consequence"):
+            click.echo(f"  consequence: {preview['consequence']}")
+        choices = preview.get("choices", [])
+        if choices:
+            click.echo("  choices: " + ", ".join(f"{c['value']} ({c['label']})" for c in choices))
+        else:
+            click.echo(f"  answer schema: {json.dumps(request['schema'])}")
 
 
 @cli.command()
@@ -159,7 +188,9 @@ def answer(request_id: str | None, url: str, choice: str) -> None:
     if not requests:
         raise click.ClickException("no pending input request to answer")
     if len(requests) > 1:
-        raise click.ClickException("several requests are pending; pass REQUEST_ID (see `crewq-fake pending`)")
+        raise click.ClickException(
+            "several requests are pending; pass REQUEST_ID (see `crewq-fake pending`)"
+        )
     try:
         answered = client.answer(requests[0]["id"], requests[0]["version"], {"choice": choice})
     except FakePlatformError as exc:

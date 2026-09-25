@@ -11,14 +11,21 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from crewquarters_fake import admin, broker, control
-from crewquarters_fake.errors import ApiError, api_error_handler, http_error_handler, validation_error_handler
+from crewquarters_fake.errors import (
+    ApiError,
+    api_error_handler,
+    http_error_handler,
+    validation_error_handler,
+)
 from crewquarters_fake.settings import FakeSettings
 from crewquarters_fake.store import Store
 
 
 def create_app(settings: FakeSettings | None = None) -> FastAPI:
     settings = settings or FakeSettings.from_env()
-    app = FastAPI(title="Crewquarters fake platform", version="0.1.0", docs_url=None, redoc_url=None)
+    app = FastAPI(
+        title="Crewquarters fake platform", version="0.1.0", docs_url=None, redoc_url=None
+    )
     app.state.store = Store(settings)
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
@@ -52,7 +59,9 @@ def _record_traffic(app: FastAPI) -> None:
     """Record API and broker requests/responses (for contract conformance tests)."""
 
     @app.middleware("http")
-    async def record(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def record(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         path = request.url.path
         if not path.startswith(("/internal/v1/sdk", "/api/v1")):
             return await call_next(request)
@@ -73,4 +82,6 @@ def _record_traffic(app: FastAPI) -> None:
         raw = b"".join([chunk async for chunk in response.body_iterator])  # type: ignore[attr-defined]
         entry["responseBody"] = _json(raw)
         store.traffic.append(entry)
-        return Response(content=raw, status_code=response.status_code, headers=dict(response.headers))
+        return Response(
+            content=raw, status_code=response.status_code, headers=dict(response.headers)
+        )

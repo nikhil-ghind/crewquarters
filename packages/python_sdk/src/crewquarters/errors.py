@@ -75,7 +75,7 @@ class AgentError(PlatformError):
 
 
 class Cancelled(asyncio.CancelledError):
-    """The run was cancelled. Subclasses CancelledError so ``except Exception`` cannot swallow it."""
+    """The run was cancelled. A CancelledError, so ``except Exception`` cannot swallow it."""
 
     code = "RUN_CANCELLED"
     retryable = False
@@ -89,11 +89,12 @@ class Cancelled(asyncio.CancelledError):
 
 _CODE_CLASSES: dict[str, type[PlatformError]] = {
     "CAPABILITY_DENIED": PermissionDenied,
+    "PERMISSION_DENIED": PermissionDenied,
     "NEEDS_CONNECTION": NeedsConnection,
     "MODEL_UNAVAILABLE": ModelUnavailable,
     "RATE_LIMITED": RateLimited,
     "INVALID_REQUEST": InvalidInput,
-    "INPUT_KEY_CONFLICT": InvalidInput,
+    "INVALID_INPUT_SCHEMA": InvalidInput,
     "INPUT_WAIT_BUDGET_EXCEEDED": InvalidInput,
     "UNSUPPORTED_FEATURE": InvalidInput,
     "PROVIDER_ERROR": ProviderError,
@@ -116,7 +117,8 @@ def error_from_response(status: int, body: object, request_id: str) -> PlatformE
     error = body.get("error") if isinstance(body, dict) else None
     if not isinstance(error, dict):
         error = {}
-    raw_code, raw_message, raw_details = error.get("code"), error.get("message"), error.get("details")
+    raw_code, raw_message = error.get("code"), error.get("message")
+    raw_details = error.get("details")
     code = raw_code if isinstance(raw_code, str) else None
     message = raw_message if isinstance(raw_message, str) else f"broker returned HTTP {status}"
     details = raw_details if isinstance(raw_details, dict) else None

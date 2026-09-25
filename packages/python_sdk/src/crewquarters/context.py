@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -57,6 +57,8 @@ class Grants:
     google: tuple[str, ...] = ()
     twilio: tuple[str, ...] = ()
     cloud_providers: tuple[str, ...] = ()
+    # Requested profile (family or exact) -> the variant the owner approved.
+    model_bindings: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_wire(cls, data: dict[str, Any]) -> Grants:
@@ -69,6 +71,7 @@ class Grants:
             google=items("google"),
             twilio=items("twilio"),
             cloud_providers=items("cloudProviders"),
+            model_bindings={str(k): str(v) for k, v in (data.get("modelBindings") or {}).items()},
         )
 
 

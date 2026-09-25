@@ -17,13 +17,17 @@ class ScaffoldError(Exception):
 
 def scaffold(name: str, target: Path) -> list[Path]:
     if not NAME_RE.match(name):
-        raise ScaffoldError("agent name must be 2-63 characters: lowercase letters, digits, and hyphens")
+        raise ScaffoldError(
+            "agent name must be 2-63 characters: lowercase letters, digits, and hyphens"
+        )
     if target.exists() and any(target.iterdir()):
         raise ScaffoldError(f"{target} is not empty")
     module = name.replace("-", "_")
     title = name.replace("-", " ").title()
     try:
-        agent_path = target.resolve().relative_to(find_repo_root(target.resolve().parent)).as_posix()
+        agent_path = (
+            target.resolve().relative_to(find_repo_root(target.resolve().parent)).as_posix()
+        )
     except (FileNotFoundError, ValueError):
         agent_path = f"agents/{name}"
     values = {

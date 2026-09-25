@@ -13,7 +13,9 @@ def sheets(broker: FakeBroker) -> SheetsClient:
     async def no_sleep(_: float) -> None:
         return None
 
-    return SheetsClient(BrokerClient("http://broker.test", "t", http=broker.client(), sleep=no_sleep))
+    return SheetsClient(
+        BrokerClient("http://broker.test", "t", http=broker.client(), sleep=no_sleep)
+    )
 
 
 async def test_get_update_append_round_trip() -> None:
@@ -27,7 +29,9 @@ async def test_get_update_append_round_trip() -> None:
 
         return handler
 
-    broker.overrides[("POST", "/google/sheets/values:get")] = record({"range": "A", "values": [["a"]]})  # type: ignore[assignment]
+    broker.overrides[("POST", "/google/sheets/values:get")] = record(
+        {"range": "A", "values": [["a"]]}
+    )  # type: ignore[assignment]
     broker.overrides[("POST", "/google/sheets/values:update")] = record(  # type: ignore[assignment]
         {"updatedRange": "Results!A2:B2", "updatedRows": 1}
     )

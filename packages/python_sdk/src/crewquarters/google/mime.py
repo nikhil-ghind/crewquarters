@@ -116,7 +116,9 @@ def _part_headers(part: dict[str, Any]) -> dict[str, str]:
 
 
 def _charset(part: dict[str, Any]) -> str:
-    match = re.search(r'charset="?([^";\s]+)"?', _part_headers(part).get("content-type", ""), re.IGNORECASE)
+    match = re.search(
+        r'charset="?([^";\s]+)"?', _part_headers(part).get("content-type", ""), re.IGNORECASE
+    )
     return match.group(1) if match else "utf-8"
 
 

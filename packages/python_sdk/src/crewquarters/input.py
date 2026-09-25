@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
 
 Style = Literal["primary", "secondary", "danger"]
 POLL_SECONDS = 25
+# Input keys are part of the request identity and URL-safe by construction.
+KEY_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 
 @dataclass(frozen=True)
@@ -29,9 +32,10 @@ class Choice:
 @dataclass(frozen=True)
 class InputAnswer:
     data: Any
+    """The answer object exactly as submitted (it validates against the request's schema)."""
     value: Any
+    """For a choices question, the chosen value; otherwise the same as ``data``."""
     answered_at: datetime | None
-    answered_by: str | None
 
 
 def text_block(text: str) -> dict[str, Any]:
@@ -39,11 +43,18 @@ def text_block(text: str) -> dict[str, Any]:
 
 
 def key_value_block(items: Iterable[tuple[str, str]]) -> dict[str, Any]:
-    return {"type": "keyValue", "items": [{"label": label, "value": value} for label, value in items]}
+    return {
+        "type": "keyValue",
+        "items": [{"label": label, "value": value} for label, value in items],
+    }
 
 
 def table_block(columns: Sequence[str], rows: Iterable[Sequence[object]]) -> dict[str, Any]:
-    return {"type": "table", "columns": list(columns), "rows": [[str(cell) for cell in row] for row in rows]}
+    return {
+        "type": "table",
+        "columns": list(columns),
+        "rows": [[str(cell) for cell in row] for row in rows],
+    }
 
 
 def _normalise_choices(choices: Sequence[Choice | str]) -> list[Choice]:
@@ -57,7 +68,11 @@ def _normalise_choices(choices: Sequence[Choice | str]) -> list[Choice]:
 
 class InputClient:
     def __init__(
-        self, transport: BrokerClient, limits: Limits, *, clock: Callable[[], float] = time.monotonic
+        self,
+        transport: BrokerClient,
+        limits: Limits,
+        *,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._transport = transport
         self._budget = limits.input_wait_remaining_seconds
@@ -80,6 +95,10 @@ class InputClient:
         consequence: str | None = None,
         timeout_seconds: int,
     ) -> InputAnswer:
+        if not KEY_PATTERN.match(key):
+            raise InvalidInput(
+                "input keys are 1-128 characters of letters, digits, '_', '.', ':' or '-'"
+            )
         if (schema is None) == (choices is None):
             raise InvalidInput("pass exactly one of schema or choices")
         if timeout_seconds < 1:
@@ -96,22 +115,29 @@ class InputClient:
             "prompt": prompt,
             "timeoutSeconds": timeout_seconds,
         }
+        # The control plane stores one preview object that the approval card renders.
+        card: dict[str, Any] = {}
         if choices is not None:
             normalised = _normalise_choices(choices)
             if not normalised:
                 raise InvalidInput("choices must not be empty")
-            body["choices"] = [{"value": c.value, "label": c.label, "style": c.style} for c in normalised]
+            values = [c.value for c in normalised]
             body["schema"] = {
                 "type": "object",
                 "required": ["choice"],
-                "properties": {"choice": {"type": "string", "enum": [c.value for c in normalised]}},
+                "properties": {"choice": {"type": "string", "enum": values}},
             }
+            card["choices"] = [
+                {"value": c.value, "label": c.label, "style": c.style} for c in normalised
+            ]
         else:
             body["schema"] = schema
         if preview is not None:
-            body["preview"] = list(preview)
+            card["blocks"] = list(preview)
         if consequence is not None:
-            body["consequence"] = consequence
+            card["consequence"] = consequence
+        if card:
+            body["preview"] = {"blocks": [], **card}
 
         request = await self._transport.request(
             "POST", "/input-requests", operation="input.create", idempotent=True, json=body
@@ -121,10 +147,10 @@ class InputClient:
             while request["state"] == "pending":
                 request = await self._transport.request(
                     "GET",
-                    f"/input-requests/{quote(key, safe='')}",
+                    f"/input-requests/{quote(str(request['id']), safe='')}",
                     operation="input.get",
                     idempotent=True,
-                    params={"waitSeconds": POLL_SECONDS},
+                    params={"wait": POLL_SECONDS},
                     read_timeout=POLL_SECONDS + 10,
                 )
         finally:
@@ -135,13 +161,13 @@ class InputClient:
             raise InputTimeout(f"input request {key} expired without an answer")
         if state == "cancelled":
             raise Cancelled(f"input request {key} was cancelled")
-        answer = request.get("answer") or {}
-        data = answer.get("data")
+        data = request.get("answer")
         value = data.get("choice") if choices is not None and isinstance(data, dict) else data
-        answered_at = answer.get("answeredAt")
+        answered_at = request.get("answeredAt")
         return InputAnswer(
             data=data,
             value=value,
-            answered_at=datetime.fromisoformat(answered_at) if isinstance(answered_at, str) else None,
-            answered_by=answer.get("answeredBy"),
+            answered_at=datetime.fromisoformat(answered_at)
+            if isinstance(answered_at, str)
+            else None,
         )

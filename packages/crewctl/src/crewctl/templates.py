@@ -12,14 +12,19 @@ metadata:
   id: $agent_id
   name: $title
   version: 0.1.0
-  description: $title agent scaffolded by crewctl.
+  summary: $title agent scaffolded by crewctl.
 spec:
   # `crewctl build --push` replaces REQUIRED_DIGEST with the pushed image digest.
   image: localhost:5001/crewquarters/$agent_id@sha256:REQUIRED_DIGEST
   entrypoint: ["python", "-m", "$module"]
   architectures: ["linux/amd64", "linux/arm64"]
   triggers: ["manual"]
+  # Every entry is required. The owner approves exactly this list at install time.
   permissions:
+    llmProfiles: []
+    knowledge: []
+    connectors: {}
+    cloudProviders: []
     userInput: true
   resources:
     cpu: 0.5
@@ -32,6 +37,12 @@ spec:
       greeting:
         type: string
         default: Hello
+  resultSchema:
+    type: object
+    required: [greeting, confirmed]
+    properties:
+      greeting: {type: string}
+      confirmed: {type: boolean}
 """
 )
 
@@ -122,7 +133,7 @@ timezone: UTC
 inputs:
   autoAnswers:
     - keyPattern: "confirm-*"
-      data: {choice: "yes"}
+      value: {choice: "yes"}
 """
 
 CONFIG = "greeting: Hello\n"

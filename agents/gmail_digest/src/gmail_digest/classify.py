@@ -27,14 +27,22 @@ class DigestBatch(BaseModel):
     items: list[BatchItem]
 
 
-NOT_CLASSIFIED = Classification("important", "Not classified automatically", "Review this message", True)
+NOT_CLASSIFIED = Classification(
+    "important", "Not classified automatically", "Review this message", True
+)
 BATCH_FAILED = Classification(
     "important", "Could not be classified automatically", "Review this message", True
 )
 
 
 async def classify_batch(
-    ctx: Any, messages: list[FetchedMessage], index: int, *, boundary: str, profile: str, tz_name: str
+    ctx: Any,
+    messages: list[FetchedMessage],
+    index: int,
+    *,
+    boundary: str,
+    profile: str,
+    tz_name: str,
 ) -> tuple[dict[str, Classification], ChatResult | None]:
     """Classify ``messages``; every message gets a classification keyed by its Gmail id."""
     refs = {f"m{position + 1}": message for position, message in enumerate(messages)}
@@ -60,7 +68,10 @@ async def classify_batch(
                 "warning", f"batch {index} output did not match the schema (attempt {attempt})"
             )
             if attempt == 1:
-                prompt = [*prompt, {"role": "assistant", "content": str(exc.details.get("raw", ""))}]
+                prompt = [
+                    *prompt,
+                    {"role": "assistant", "content": str(exc.details.get("raw", ""))},
+                ]
                 prompt.append({"role": "user", "content": REPAIR})
     if chat is None:
         return {message.id: BATCH_FAILED for message in messages}, None

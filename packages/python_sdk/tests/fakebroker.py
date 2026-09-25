@@ -1,4 +1,9 @@
-"""A scripted in-memory broker for SDK unit tests (served through httpx.MockTransport)."""
+"""A scripted in-memory broker for SDK unit tests (served through httpx.MockTransport).
+
+Its semantics mirror the control plane's /internal/v1 run API, which the capability broker passes
+through: results are ``succeeded`` or ``failed``; the first claim of an action key is ``claimed``
+and any later claim of an uncompleted key is ``in_doubt``; input requests are polled by id.
+"""
 
 from __future__ import annotations
 
@@ -10,11 +15,13 @@ from urllib.parse import unquote
 import httpx
 
 PREFIX = "/internal/v1/sdk"
-STATE_FOR_OUTCOME = {"succeeded": "SUCCEEDED", "failed": "FAILED", "cancelled": "CANCELLED"}
+STATE_FOR_STATUS = {"succeeded": "SUCCEEDED", "failed": "FAILED"}
 
 
 def error(status: int, code: str, message: str = "") -> httpx.Response:
-    return httpx.Response(status, json={"error": {"code": code, "message": message or code.lower()}})
+    return httpx.Response(
+        status, json={"error": {"code": code, "message": message or code.lower()}}
+    )
 
 
 class FakeBroker:
@@ -22,7 +29,7 @@ class FakeBroker:
         self,
         *,
         config: dict[str, Any] | None = None,
-        capabilities: tuple[str, ...] = ("input.ask",),
+        capabilities: tuple[str, ...] = ("user_input", "events.write", "idempotency"),
         llm_profiles: tuple[str, ...] = ("local.general.small",),
         heartbeat_interval: float = 0.01,
         input_wait_remaining: float = 3600,
@@ -44,7 +51,7 @@ class FakeBroker:
         self.cancel_on_heartbeat: int | None = None
         self.input_creates: list[dict[str, Any]] = []
         self.input_script: dict[str, list[dict[str, Any]]] = {}
-        self.idempotency: dict[str, dict[str, Any]] = {}
+        self.actions: dict[str, dict[str, Any]] = {}
         self.requests: list[httpx.Request] = []
         self.overrides: dict[tuple[str, str], Callable[[httpx.Request], httpx.Response]] = {}
 
@@ -67,12 +74,16 @@ class FakeBroker:
             "capabilities": self.capabilities,
             "grants": {
                 "llmProfiles": self.llm_profiles,
+                "modelBindings": {"local.general": "local.general.small"},
                 "knowledgeBaseIds": ["kb-1"],
                 "google": [],
                 "twilio": [],
                 "cloudProviders": [],
             },
-            "limits": {"activeTimeoutSeconds": 600, "inputWaitRemainingSeconds": self.input_wait_remaining},
+            "limits": {
+                "activeTimeoutSeconds": 600,
+                "inputWaitRemainingSeconds": self.input_wait_remaining,
+            },
             "heartbeatIntervalSeconds": self.heartbeat_interval,
             "serverTime": "2026-09-24T10:00:00+00:00",
         }
@@ -88,8 +99,10 @@ class FakeBroker:
             return httpx.Response(200, json=self.handshake_body())
         if request.method == "POST" and path == "/heartbeat":
             self.heartbeats += 1
-            cancel = self.cancel_on_heartbeat is not None and self.heartbeats >= self.cancel_on_heartbeat
-            return httpx.Response(200, json={"cancelRequested": cancel, "serverTime": "2026-09-24T10:00:00Z"})
+            cancel = (
+                self.cancel_on_heartbeat is not None and self.heartbeats >= self.cancel_on_heartbeat
+            )
+            return httpx.Response(200, json={"state": "RUNNING", "cancelRequested": cancel})
         if request.method == "POST" and path == "/events":
             self.event_batches.append(len(body["events"]))
             self.events.extend(body["events"])
@@ -98,21 +111,23 @@ class FakeBroker:
             )
         if request.method == "POST" and path == "/result":
             self.results.append(body)
-            return httpx.Response(200, json={"runState": STATE_FOR_OUTCOME[body["outcome"]]})
+            return httpx.Response(
+                200, json={"state": STATE_FOR_STATUS[body["status"]], "cancelRequested": False}
+            )
         if request.method == "POST" and path == "/input-requests":
             self.input_creates.append(body)
             return httpx.Response(200, json=self._input_state(body["key"]))
         if request.method == "GET" and path.startswith("/input-requests/"):
-            return httpx.Response(200, json=self._input_state(unquote(path.removeprefix("/input-requests/"))))
-        if request.method == "POST" and path == "/idempotency/claim":
-            return self._claim(body["key"], bool(body.get("takeover")))
-        if request.method == "POST" and path == "/idempotency/complete":
-            record = self.idempotency[body["key"]]
-            record.update(state="completed", result=body["result"], completedAt="2026-09-24T10:00:01Z")
-            return httpx.Response(200, json=record)
-        if request.method == "GET" and path.startswith("/idempotency/"):
-            record = self.idempotency.get(unquote(path.removeprefix("/idempotency/")))
-            return httpx.Response(200, json=record) if record else error(404, "NOT_FOUND")
+            request_id = unquote(path.removeprefix("/input-requests/"))
+            return httpx.Response(200, json=self._input_state(request_id.removeprefix("in-")))
+        if request.method == "POST" and path.startswith("/actions/") and path.endswith("/claim"):
+            return self._claim(unquote(path.removeprefix("/actions/").removesuffix("/claim")))
+        if request.method == "POST" and path.startswith("/actions/") and path.endswith("/complete"):
+            key = unquote(path.removeprefix("/actions/").removesuffix("/complete"))
+            if key not in self.actions:
+                return error(409, "ACTION_NOT_CLAIMED")
+            self.actions[key].update(status="completed", result=body.get("result"))
+            return httpx.Response(200, json=self.actions[key])
         return error(404, "NOT_FOUND", f"{request.method} {path}")
 
     def _input_state(self, key: str) -> dict[str, Any]:
@@ -125,26 +140,20 @@ class FakeBroker:
             "createdAt": "2026-09-24T10:00:00Z",
             "deadline": "2026-09-25T10:00:00Z",
             "answer": None,
+            "answeredAt": None,
             **step,
         }
 
-    def _claim(self, key: str, takeover: bool) -> httpx.Response:
-        record = self.idempotency.get(key)
-        if record is None:
-            record = {"key": key, "state": "in_progress", "result": None, "claimedByAttempt": self.attempt}
-            record["completedAt"] = None
-            self.idempotency[key] = record
-            return httpx.Response(200, json={**record, "state": "claimed"})
-        if record["state"] == "completed":
-            return httpx.Response(200, json=record)
-        if record["claimedByAttempt"] == self.attempt or takeover:
-            record["claimedByAttempt"] = self.attempt
-            return httpx.Response(200, json={**record, "state": "claimed"})
-        return httpx.Response(200, json=record)
+    def _claim(self, key: str) -> httpx.Response:
+        action = self.actions.get(key)
+        if action is None:
+            self.actions[key] = {"key": key, "status": "claimed", "result": None}
+            return httpx.Response(200, json=self.actions[key])
+        if action["status"] == "completed":
+            return httpx.Response(200, json=action)
+        action["status"] = "in_doubt"
+        return httpx.Response(200, json=action)
 
 
-def answered(data: Any) -> dict[str, Any]:
-    return {
-        "state": "answered",
-        "answer": {"data": data, "answeredAt": "2026-09-24T10:05:00Z", "answeredBy": "owner"},
-    }
+def answered(value: Any) -> dict[str, Any]:
+    return {"state": "answered", "answer": value, "answeredAt": "2026-09-24T10:05:00Z"}

@@ -14,10 +14,16 @@ CONFIG = CallerConfig.model_validate({"spreadsheetId": "s1"})
 
 def test_key_is_stable_and_changes_with_script_or_recipients() -> None:
     base = approval_key(plan(["+15555550101", "+15555550102"]), "Hello {name}", "Automated call.")
-    assert base == approval_key(plan(["+15555550101", "+15555550102"]), "Hello {name}", "Automated call.")
+    assert base == approval_key(
+        plan(["+15555550101", "+15555550102"]), "Hello {name}", "Automated call."
+    )
     assert base.startswith("confirm-calls-v1:") and len(base) == len("confirm-calls-v1:") + 16
-    assert base != approval_key(plan(["+15555550101", "+15555550103"]), "Hello {name}", "Automated call.")
-    assert base != approval_key(plan(["+15555550101", "+15555550102"]), "Hi {name}", "Automated call.")
+    assert base != approval_key(
+        plan(["+15555550101", "+15555550103"]), "Hello {name}", "Automated call."
+    )
+    assert base != approval_key(
+        plan(["+15555550101", "+15555550102"]), "Hi {name}", "Automated call."
+    )
     assert base != approval_key(
         plan(["+15555550101", "+15555550102"]), "Hello {name}", "Different disclosure."
     )

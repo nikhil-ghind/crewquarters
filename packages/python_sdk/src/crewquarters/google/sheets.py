@@ -1,4 +1,4 @@
-"""Google Sheets client. ``append_values`` is never retried; prefer ``update_values`` at a fixed range."""
+"""Google Sheets client. ``append_values`` is never retried; prefer ``update_values``."""
 
 from __future__ import annotations
 

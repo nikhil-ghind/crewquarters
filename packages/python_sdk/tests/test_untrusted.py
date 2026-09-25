@@ -35,7 +35,9 @@ def test_evidence_sanitises_ref_and_source() -> None:
 
 def test_multiple_blocks_parse_in_order() -> None:
     boundary = new_boundary()
-    text = "\n\n".join(evidence(f"body {i}", ref=f"m{i}", source="s", boundary=boundary) for i in range(3))
+    text = "\n\n".join(
+        evidence(f"body {i}", ref=f"m{i}", source="s", boundary=boundary) for i in range(3)
+    )
     assert [b.ref for b in parse_evidence(text)] == ["m0", "m1", "m2"]
 
 

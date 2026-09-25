@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from crewquarters_fake.broker.audit import audited
-from crewquarters_fake.broker.auth import RunAuth, require, run_auth
+from crewquarters_fake.broker.auth import RunAuth, deny, require, run_auth
 from crewquarters_fake.errors import ApiError
 
 router = APIRouter()
@@ -26,18 +26,17 @@ class SearchIn(BaseModel):
     maxContextTokens: int | None = Field(None, ge=1)
 
 
+CAPABILITY = "knowledge.search:config"
+
+
 @router.post("/knowledge/search")
-async def search(body: SearchIn, request: Request, auth: RunAuth = Depends(run_auth)) -> dict[str, Any]:
-    require(auth, "knowledge.search", "broker.knowledge.search")
+async def search(
+    body: SearchIn, request: Request, auth: RunAuth = Depends(run_auth)
+) -> dict[str, Any]:
+    require(auth, CAPABILITY, "broker.knowledge.search")
     if body.knowledgeBaseId not in auth.installation.knowledge_base_ids:
-        auth.store.append_event(
-            auth.run,
-            "capability.denied",
-            {"capability": "knowledge.search", "operation": "broker.knowledge.search"},
-        )
-        raise ApiError(
-            403, "CAPABILITY_DENIED", f"knowledge base {body.knowledgeBaseId} is not bound to this agent"
-        )
+        # Only the knowledge base selected in the installation config is searchable.
+        deny(auth, CAPABILITY, "broker.knowledge.search")
     if not auth.store.knowledge.has(body.knowledgeBaseId):
         raise ApiError(404, "NOT_FOUND", f"knowledge base {body.knowledgeBaseId} not found")
 

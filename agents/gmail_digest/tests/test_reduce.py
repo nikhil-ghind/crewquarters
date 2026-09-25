@@ -30,11 +30,19 @@ def test_groups_sort_and_count() -> None:
     digest = build_digest(
         day=date(2026, 9, 23),
         tz=tz,
-        window=(datetime(2026, 9, 22, 18, 30, tzinfo=UTC), datetime(2026, 9, 23, 18, 30, tzinfo=UTC)),
+        window=(
+            datetime(2026, 9, 22, 18, 30, tzinfo=UTC),
+            datetime(2026, 9, 23, 18, 30, tzinfo=UTC),
+        ),
         messages=messages,
         classifications=classifications,
         truncated=True,
-        model={"profile": "local.general.small", "provider": "mock-local", "model": "m", "locality": "local"},
+        model={
+            "profile": "local.general.small",
+            "provider": "mock-local",
+            "model": "m",
+            "locality": "local",
+        },
     )
     assert [i.message_id for i in digest.groups.urgent] == ["id2", "id1"]
     assert [i.message_id for i in digest.groups.important] == ["id5", "id4"]
@@ -53,7 +61,10 @@ def test_groups_sort_and_count() -> None:
     assert digest.processed_count == 5
     assert digest.truncated is True
     dumped = digest.model_dump(mode="json", by_alias=True)
-    assert dumped["window"] == {"startUtc": "2026-09-22T18:30:00Z", "endUtc": "2026-09-23T18:30:00Z"}
+    assert dumped["window"] == {
+        "startUtc": "2026-09-22T18:30:00Z",
+        "endUtc": "2026-09-23T18:30:00Z",
+    }
     assert dumped["groups"]["urgent"][0]["receivedAt"] == "2026-09-23T10:30:00+05:30"
     assert dumped["groups"]["urgent"][0]["from"] == "S2"
     assert dumped["groups"]["important"][1]["receivedAt"] is None

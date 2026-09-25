@@ -1,4 +1,4 @@
-"""Independent contract checks. Each returns (status, detail); platform errors fail only that check."""
+"""Independent contract checks. Each returns (status, detail); an error fails only that check."""
 
 from __future__ import annotations
 
@@ -52,7 +52,9 @@ async def check_input(ctx: Ctx) -> tuple[Status, str]:
 
 
 async def check_llm(ctx: Ctx) -> tuple[Status, str]:
-    result = await ctx.llm.chat("local.general", [{"role": "user", "content": "Reply with the word pong."}])
+    result = await ctx.llm.chat(
+        "local.general", [{"role": "user", "content": "Reply with the word pong."}]
+    )
     if not result.text.strip():
         return "failed", "empty completion"
     if result.locality != "local":
@@ -77,7 +79,10 @@ async def check_knowledge(ctx: Ctx) -> tuple[Status, str]:
     result = await ctx.knowledge.search(kb, "contract probe knowledge search", top_k=3)
     if not result.passages or not result.passages[0].citation_id:
         return "failed", "no cited passages returned"
-    return "passed", f"{len(result.passages)} passages, top citation {result.passages[0].citation_id}"
+    return (
+        "passed",
+        f"{len(result.passages)} passages, top citation {result.passages[0].citation_id}",
+    )
 
 
 async def check_idempotency(ctx: Ctx) -> tuple[Status, str]:
@@ -122,15 +127,19 @@ def _filesystem_problems() -> list[str]:
     except OSError:
         pass
     try:
-        Path("/tmp/probe-write-test").write_text("x")
+        # The check itself: the container's private tmpfs must be writable.
+        Path("/tmp/probe-write-test").write_text("x")  # noqa: S108
     except OSError:
-        problems.append("/tmp is not writable")
+        problems.append("/tmp is not writable")  # noqa: S108 - a message, not a path
     return problems
 
 
 async def check_isolation(ctx: Ctx) -> tuple[Status, str]:
     if not ctx.config.expect_isolation:
-        return "skipped", "expectIsolation is false (agent is not running in the hardened container)"
+        return (
+            "skipped",
+            "expectIsolation is false (agent is not running in the hardened container)",
+        )
     problems = await asyncio.to_thread(_filesystem_problems)
     for host, port in EGRESS_TARGETS:
         if await _connects(host, port):
@@ -139,7 +148,8 @@ async def check_isolation(ctx: Ctx) -> tuple[Status, str]:
         return "failed", "; ".join(problems)
     return (
         "passed",
-        f"uid {os.getuid()}, read-only root, writable /tmp, no egress to {len(EGRESS_TARGETS)} targets",
+        f"uid {os.getuid()}, read-only root, writable /tmp, "
+        f"no egress to {len(EGRESS_TARGETS)} targets",
     )
 
 
@@ -157,7 +167,9 @@ REGISTRY: dict[str, Check] = {
 
 
 def ordered(checks: list[str]) -> list[str]:
-    return [c for c in checks if c != "cancellation"] + (["cancellation"] if "cancellation" in checks else [])
+    return [c for c in checks if c != "cancellation"] + (
+        ["cancellation"] if "cancellation" in checks else []
+    )
 
 
 async def wait_for_cancellation(ctx: Ctx) -> CheckResult:

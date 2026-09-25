@@ -26,7 +26,10 @@ def cli() -> None:
 @cli.command()
 @click.argument("name")
 @click.option(
-    "--dir", "directory", type=click.Path(path_type=Path), help="Target directory (default: ./NAME)."
+    "--dir",
+    "directory",
+    type=click.Path(path_type=Path),
+    help="Target directory (default: ./NAME).",
 )
 def init(name: str, directory: Path | None) -> None:
     """Create a new agent from the standard template."""
@@ -68,27 +71,33 @@ def validate(path: Path, allow_unbuilt: bool, as_json: bool) -> None:
 def _summary(event: dict[str, Any]) -> str:
     payload = event["payload"]
     kind = event["type"]
-    if kind == "status":
+    if kind == "run.state_changed":
         return f"{payload.get('from')} → {payload.get('to')}"
-    if kind == "log":
+    if kind == "run.log":
         return f"[{payload.get('level')}] {payload.get('message')}"
-    if kind == "progress":
-        return f"{payload.get('percent')}% {payload.get('message')}"
-    if kind in {"input.requested", "input.answered"}:
-        return str(payload.get("key"))
-    if kind == "llm.call":
-        return f"{payload.get('profile')} ({payload.get('locality')})"
-    if kind == "connector.call":
-        return f"{payload.get('operation')} {payload.get('outcome')}"
+    if kind == "run.progress":
+        percent = payload.get("percent")
+        return f"{percent}% {payload.get('message')}" if percent is not None else payload["message"]
+    if kind in {"run.input_requested", "run.input_answered", "run.input_closed"}:
+        return f"{payload.get('key')} ({payload.get('state')})"
+    if kind == "run.result":
+        return str(payload.get("status"))
+    if kind == "run.error":
+        return f"{payload.get('code')}: {payload.get('message')}"
     return json.dumps(payload)
 
 
 @cli.command("test")
 @click.argument("path", default=".", type=click.Path(path_type=Path))
 @click.option("--scenario", default="default", show_default=True)
-@click.option("--docker", is_flag=True, help="Run the pinned image against the Compose fake platform.")
 @click.option(
-    "--platform-url", default="http://127.0.0.1:8080", show_default=True, help="Fake platform for --docker."
+    "--docker", is_flag=True, help="Run the pinned image against the Compose fake platform."
+)
+@click.option(
+    "--platform-url",
+    default="http://127.0.0.1:8090",
+    show_default=True,
+    help="Fake platform for --docker (make fake-up).",
 )
 @click.option("--timeout", default=60.0, show_default=True, type=float)
 @click.option("--json", "as_json", is_flag=True)
@@ -97,7 +106,9 @@ def test_command(
 ) -> None:
     """Run the agent against a fake-platform scenario."""
     try:
-        outcome = run_scenario(path, scenario, docker=docker, timeout=timeout, platform_url=platform_url)
+        outcome = run_scenario(
+            path, scenario, docker=docker, timeout=timeout, platform_url=platform_url
+        )
     except (ScenarioError, FakePlatformError, FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     if as_json:
@@ -114,7 +125,7 @@ def test_command(
         )
     else:
         for event in outcome.events:
-            click.echo(f"{event['sequence']:>4}  {event['type']:<17} {_summary(event)}")
+            click.echo(f"{event['sequence']:>4}  {event['type']:<20} {_summary(event)}")
         click.echo(f"\nRun {outcome.state} (exit {outcome.exit_code})")
         if outcome.result is not None:
             click.echo(json.dumps(outcome.result, indent=2))
@@ -126,8 +137,12 @@ def test_command(
 
 @cli.command("build")
 @click.argument("path", default=".", type=click.Path(path_type=Path))
-@click.option("--platform", "platforms", help="Comma-separated platforms (default: both when pushing).")
-@click.option("--push", is_flag=True, help="Push to the registry and pin the digest in manifest.yaml.")
+@click.option(
+    "--platform", "platforms", help="Comma-separated platforms (default: both when pushing)."
+)
+@click.option(
+    "--push", is_flag=True, help="Push to the registry and pin the digest in manifest.yaml."
+)
 @click.option("--registry", default="localhost:5001", show_default=True)
 @click.option(
     "--output-manifest",
@@ -138,27 +153,48 @@ def build_command(
     path: Path, platforms: str | None, push: bool, registry: str, output_manifest: Path | None
 ) -> None:
     """Build the agent image with docker buildx."""
-    result = build(path, platforms=platforms, push=push, registry=registry, output_manifest=output_manifest)
+    result = build(
+        path, platforms=platforms, push=push, registry=registry, output_manifest=output_manifest
+    )
     if result.pinned_image:
         click.echo(f"Pushed {result.tag} for {result.platforms}")
         click.echo(f"Pinned manifest image to {result.pinned_image}")
     else:
-        click.echo(f"Built {result.tag} for {result.platforms}; manifest.yaml is not pinned (use --push).")
+        click.echo(
+            f"Built {result.tag} for {result.platforms}; manifest.yaml is not pinned (use --push)."
+        )
 
 
 @cli.command("publish")
 @click.argument("path", default=".", type=click.Path(path_type=Path))
 @click.option(
-    "--target", type=click.Choice(["local"]), required=True, help="Only the local catalog is supported."
+    "--target",
+    type=click.Choice(["local"]),
+    required=True,
+    help="Only the local catalog is supported.",
 )
 @click.option("--platform-url", default="http://localhost:8080", show_default=True)
-def publish_command(path: Path, target: str, platform_url: str) -> None:
+@click.option(
+    "--username", envvar="CREWQ_USERNAME", help="Owner account (needed by the real control API)."
+)
+@click.option(
+    "--password",
+    envvar="CREWQ_PASSWORD",
+    help="Owner password; prefer the CREWQ_PASSWORD environment variable.",
+)
+def publish_command(
+    path: Path, target: str, platform_url: str, username: str | None, password: str | None
+) -> None:
     """Import the digest-pinned agent into the owner-operated local catalog."""
     try:
-        entry = publish(path, platform_url)
+        entry = publish(path, platform_url, username=username, password=password)
     except PublishError as exc:
         raise click.ClickException(str(exc)) from exc
-    click.echo(f"Published {entry['agentId']} {entry['version']} ({entry['imageDigest']}) to {platform_url}")
+    latest = entry["latest"]
+    click.echo(
+        f"Published {entry['agentId']} {latest['version']} ({latest['imageDigest']}) "
+        f"to {platform_url}"
+    )
 
 
 def main() -> None:

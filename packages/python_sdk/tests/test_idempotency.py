@@ -28,8 +28,13 @@ async def test_first_claim_runs_fn_and_completes() -> None:
     fn = Counter({"sid": "CA1"})
     assert await make(broker).once("call:1", fn) == {"sid": "CA1"}
     assert fn.calls == 1
-    assert broker.idempotency["call:1"]["state"] == "completed"
-    assert broker.idempotency["call:1"]["result"] == {"sid": "CA1"}
+    assert broker.actions["call:1"] == {
+        "key": "call:1",
+        "status": "completed",
+        "result": {"sid": "CA1"},
+    }
+    claim = next(r for r in broker.requests if r.url.path.endswith("/claim"))
+    assert claim.url.raw_path == b"/internal/v1/sdk/actions/call%3A1/claim"
 
 
 async def test_completed_key_returns_stored_result_without_calling() -> None:
@@ -41,24 +46,22 @@ async def test_completed_key_returns_stored_result_without_calling() -> None:
     assert fn.calls == 0
 
 
-async def test_in_progress_from_earlier_attempt_raises_outcome_unknown() -> None:
+async def test_in_doubt_key_raises_outcome_unknown() -> None:
     broker = FakeBroker()
-    await make(broker).claim("k")
-    broker.attempt = 2
+    await make(broker).claim("k")  # an earlier call claimed it and never completed
     fn = Counter(1)
     with pytest.raises(OutcomeUnknown):
         await make(broker).once("k", fn)
     assert fn.calls == 0
 
 
-async def test_resume_in_progress_takes_over_and_runs() -> None:
+async def test_resume_in_progress_runs_an_in_doubt_action_and_completes_it() -> None:
     broker = FakeBroker()
     await make(broker).claim("k")
-    broker.attempt = 2
     fn = Counter("done")
     assert await make(broker).once("k", fn, resume_in_progress=True) == "done"
     assert fn.calls == 1
-    assert broker.idempotency["k"]["claimedByAttempt"] == 2
+    assert broker.actions["k"]["status"] == "completed"
 
 
 class CallResult(BaseModel):
@@ -69,11 +72,9 @@ class CallResult(BaseModel):
 async def test_result_type_round_trips_the_same_type() -> None:
     broker = FakeBroker()
     client = make(broker)
-    first = await client.once("k", Counter(CallResult(sid="CA1", minutes=2)), result_type=CallResult)
+    first = await client.once(
+        "k", Counter(CallResult(sid="CA1", minutes=2)), result_type=CallResult
+    )
     replay = await client.once("k", Counter(None), result_type=CallResult)
     assert first == replay == CallResult(sid="CA1", minutes=2)
-    assert broker.idempotency["k"]["result"] == {"sid": "CA1", "minutes": 2}
-
-
-async def test_get_returns_none_for_unknown_key() -> None:
-    assert await make(FakeBroker()).get("missing") is None
+    assert broker.actions["k"]["result"] == {"sid": "CA1", "minutes": 2}

@@ -1,9 +1,13 @@
-"""Run-scoped idempotency records that guard external side effects across retried attempts."""
+"""Run-scoped action keys that guard external side effects across retried attempts.
+
+The broker passes these through to the control plane's action records: the call that creates a
+key gets ``claimed``; any later claim of a key that was never completed gets ``in_doubt`` (the side
+effect may already have happened); a completed key returns its stored result.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from typing import Any, Literal, TypeVar, overload
 from urllib.parse import quote
 
@@ -12,54 +16,40 @@ from pydantic_core import to_jsonable_python
 
 from crewquarters._models import WireModel
 from crewquarters._transport import BrokerClient
-from crewquarters.errors import OutcomeUnknown, PlatformError
+from crewquarters.errors import OutcomeUnknown
 
 M = TypeVar("M", bound=BaseModel)
 T = TypeVar("T")
 
 
-class IdempotencyRecord(WireModel):
+class ActionRecord(WireModel):
     key: str
-    state: Literal["claimed", "in_progress", "completed"]
+    status: Literal["claimed", "in_doubt", "completed"]
     result: Any = None
-    claimed_by_attempt: int
-    completed_at: datetime | None = None
 
 
 class IdempotencyClient:
     def __init__(self, transport: BrokerClient) -> None:
         self._transport = transport
 
-    async def claim(self, key: str, *, takeover: bool = False) -> IdempotencyRecord:
+    async def claim(self, key: str) -> ActionRecord:
         data = await self._transport.request(
             "POST",
-            "/idempotency/claim",
-            operation="idempotency.claim",
+            f"/actions/{quote(key, safe='')}/claim",
+            operation="actions.claim",
             idempotent=True,
-            json={"key": key, "takeover": takeover},
         )
-        return IdempotencyRecord.model_validate(data)
+        return ActionRecord.model_validate(data)
 
-    async def complete(self, key: str, result: Any) -> IdempotencyRecord:
+    async def complete(self, key: str, result: Any) -> ActionRecord:
         data = await self._transport.request(
             "POST",
-            "/idempotency/complete",
-            operation="idempotency.complete",
+            f"/actions/{quote(key, safe='')}/complete",
+            operation="actions.complete",
             idempotent=True,
-            json={"key": key, "result": result},
+            json={"result": result},
         )
-        return IdempotencyRecord.model_validate(data)
-
-    async def get(self, key: str) -> IdempotencyRecord | None:
-        try:
-            data = await self._transport.request(
-                "GET", f"/idempotency/{quote(key, safe='')}", operation="idempotency.get", idempotent=True
-            )
-        except PlatformError as exc:
-            if exc.code == "NOT_FOUND":
-                return None
-            raise
-        return IdempotencyRecord.model_validate(data)
+        return ActionRecord.model_validate(data)
 
     @overload
     async def once(
@@ -91,20 +81,19 @@ class IdempotencyClient:
     ) -> Any:
         """Run ``fn`` at most once per key for this run, across attempts.
 
-        A completed key returns its stored result without calling ``fn``. A key claimed by an earlier
-        attempt that never completed raises ``OutcomeUnknown`` unless ``resume_in_progress`` is set,
-        which is only safe when ``fn`` is itself idempotent at the provider.
+        A completed key returns its stored result without calling ``fn``. A key that was claimed
+        and never completed is ``in_doubt`` and raises ``OutcomeUnknown`` unless
+        ``resume_in_progress`` is set, which is only safe when ``fn`` is itself idempotent at the
+        provider (for example, it passes a provider idempotency key).
         """
         record = await self.claim(key)
-        if record.state == "in_progress":
-            if not resume_in_progress:
-                raise OutcomeUnknown(
-                    f"action {key} was started by attempt {record.claimed_by_attempt} and never completed",
-                    details={"key": key},
-                )
-            record = await self.claim(key, takeover=True)
-        if record.state == "completed":
+        if record.status == "completed":
             return _decode(record.result, result_type)
+        if record.status == "in_doubt" and not resume_in_progress:
+            raise OutcomeUnknown(
+                f"action {key} was started earlier and never completed; it may have happened",
+                details={"key": key},
+            )
         value = await fn()
         await self.complete(key, _encode(value))
         return value

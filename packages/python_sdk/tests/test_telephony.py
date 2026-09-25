@@ -77,7 +77,9 @@ async def test_invalid_number_is_rejected_before_any_request() -> None:
 async def test_wait_for_call_polls_until_terminal() -> None:
     states = iter(["ringing", "in-progress", "completed"])
     broker = FakeBroker()
-    broker.overrides[("GET", "/telephony/calls/CA1")] = lambda r: httpx.Response(200, json=call(next(states)))
+    broker.overrides[("GET", "/telephony/calls/CA1")] = lambda r: httpx.Response(
+        200, json=call(next(states))
+    )
     telephony = TelephonyClient(BrokerClient("http://broker.test", "t", http=broker.client()))
     final = await telephony.wait_for_call("CA1", timeout_seconds=5, poll_seconds=0)
     assert final.state == "completed"
@@ -86,7 +88,9 @@ async def test_wait_for_call_polls_until_terminal() -> None:
 
 async def test_wait_for_call_returns_last_state_at_timeout() -> None:
     broker = FakeBroker()
-    broker.overrides[("GET", "/telephony/calls/CA1")] = lambda r: httpx.Response(200, json=call("ringing"))
+    broker.overrides[("GET", "/telephony/calls/CA1")] = lambda r: httpx.Response(
+        200, json=call("ringing")
+    )
     telephony = TelephonyClient(BrokerClient("http://broker.test", "t", http=broker.client()))
     final = await telephony.wait_for_call("CA1", timeout_seconds=0.05, poll_seconds=0.01)
     assert final.state == "ringing"

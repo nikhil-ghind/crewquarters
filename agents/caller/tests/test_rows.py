@@ -11,7 +11,10 @@ def reasons(plan_skipped: list) -> dict[int, str]:  # type: ignore[type-arg]
 
 def test_read_rows_pads_missing_cells_trims_and_skips_empty_rows() -> None:
     contacts = rows(
-        ["Asha", " +15555550101 ", "yes"], [], ["", "", "", ""], ["Ben", "+15555550102", "no", "done"]
+        ["Asha", " +15555550101 ", "yes"],
+        [],
+        ["", "", "", ""],
+        ["Ben", "+15555550102", "no", "done"],
     )
     assert contacts == [
         ContactRow(2, "Asha", "+15555550101", "yes", ""),
@@ -53,7 +56,12 @@ def test_every_skip_rule() -> None:
 
 def test_header_row_is_skipped_not_called() -> None:
     plan = classify(
-        rows(["name", "phone_e164", "consent", "status"], ["Asha", "+15555550101", "yes", ""], start=1), 3
+        rows(
+            ["name", "phone_e164", "consent", "status"],
+            ["Asha", "+15555550101", "yes", ""],
+            start=1,
+        ),
+        3,
     )
     assert [c.row for c in plan.eligible] == [2]
     assert reasons(plan.skipped) == {1: "consent"}

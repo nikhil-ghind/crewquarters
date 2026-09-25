@@ -11,7 +11,7 @@ def test_crewctl_test_runs_a_scaffolded_agent_against_the_fake(tmp_path: Path) -
     result = CliRunner().invoke(cli, ["test", str(target), "--timeout", "30"])
     assert result.exit_code == 0, result.output
     assert "SUCCEEDED" in result.output
-    assert "input.requested" in result.output
+    assert "run.input_requested" in result.output
     assert '"greeting": "Hello"' in result.output
 
 
@@ -40,4 +40,4 @@ def test_crewctl_test_json_output(tmp_path: Path) -> None:
     report = json.loads(result.output)
     assert report["state"] == "SUCCEEDED"
     assert report["result"] == {"greeting": "Hello", "confirmed": True}
-    assert any(e["type"] == "status" for e in report["events"])
+    assert any(e["type"] == "run.state_changed" for e in report["events"])

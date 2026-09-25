@@ -83,4 +83,10 @@ def test_ring_polls_keeps_a_call_ringing() -> None:
     twilio = TwilioProvider()
     twilio.load({"+15555550301": {"status": "completed", "ringPolls": 3}})
     call = twilio.create("run-1", "+15555550301", SCRIPT, GATHER, "k")
-    assert poll_to_end(twilio, call["id"]) == ["ringing", "ringing", "ringing", "in-progress", "completed"]
+    assert poll_to_end(twilio, call["id"]) == [
+        "ringing",
+        "ringing",
+        "ringing",
+        "in-progress",
+        "completed",
+    ]

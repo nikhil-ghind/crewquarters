@@ -1,4 +1,4 @@
-"""HTTP transport to the capability broker with bounded, idempotency-aware retries (spec section 5.4)."""
+"""HTTP transport to the capability broker with bounded, idempotency-aware retries (spec 5.4)."""
 
 from __future__ import annotations
 
@@ -20,11 +20,11 @@ _CONNECT_TIMEOUT = 5.0
 
 
 def _default_jitter() -> float:
-    return random.uniform(0.0, 0.25)
+    return random.uniform(0.0, 0.25)  # noqa: S311 - retry jitter, not a secret
 
 
 class BrokerClient:
-    """Sends broker requests. Only operations marked idempotent are retried after they may have been sent."""
+    """Sends broker requests. Only idempotent operations are retried after they may have run."""
 
     def __init__(
         self,
@@ -107,7 +107,9 @@ class BrokerClient:
                 return response.json() if response.content else None
 
             error = error_from_response(response.status_code, _safe_json(response), request_id)
-            retry_status = response.status_code in _RETRYABLE_STATUSES and error.code != "MODEL_UNAVAILABLE"
+            retry_status = (
+                response.status_code in _RETRYABLE_STATUSES and error.code != "MODEL_UNAVAILABLE"
+            )
             if idempotent and retry_status and attempt < self._max_attempts:
                 await self._sleep(_retry_after(response) or self._backoff(attempt))
                 continue
@@ -121,7 +123,7 @@ class BrokerClient:
     async def stream_sse(
         self, path: str, *, operation: str, json: Any, read_timeout: float | None = None
     ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
-        """POST and yield ``(event, data)`` pairs from a server-sent-events response. Never retried."""
+        """POST and yield ``(event, data)`` pairs from a server-sent-events stream; no retries."""
         request_id = str(uuid.uuid4())
         try:
             async with self._http.stream(
@@ -133,7 +135,9 @@ class BrokerClient:
             ) as response:
                 if response.status_code >= 400:
                     await response.aread()
-                    raise error_from_response(response.status_code, _safe_json(response), request_id)
+                    raise error_from_response(
+                        response.status_code, _safe_json(response), request_id
+                    )
                 event = "message"
                 data: list[str] = []
                 async for line in response.aiter_lines():
@@ -161,7 +165,9 @@ class BrokerClient:
             ) from exc
         except httpx.TransportError as exc:
             raise ProviderError(
-                f"{operation} stream interrupted: {exc}", code="STREAM_INTERRUPTED", request_id=request_id
+                f"{operation} stream interrupted: {exc}",
+                code="STREAM_INTERRUPTED",
+                request_id=request_id,
             ) from exc
 
     async def aclose(self) -> None:

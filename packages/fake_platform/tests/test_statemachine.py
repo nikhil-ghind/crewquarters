@@ -1,6 +1,7 @@
 import pytest
 
 from crewquarters_fake.statemachine import ACTIVE, TRANSITIONS, IllegalTransition, check_transition
+from crewquarters_shared.runs import states
 
 # Edges copied from the PLAN.md section 7.2 state diagram.
 PLAN_EDGES = {
@@ -29,9 +30,17 @@ PLAN_EDGES = {
 }
 
 
-def test_transition_table_matches_plan() -> None:
+def test_transition_table_is_the_control_planes() -> None:
     edges = {(src, dst) for src, dsts in TRANSITIONS.items() for dst in dsts}
-    assert edges == PLAN_EDGES
+    canonical = {(str(a), str(b)) for a, bs in states.TRANSITIONS.items() for b in bs}
+    assert edges == canonical
+
+
+def test_transition_table_covers_plan() -> None:
+    edges = {(src, dst) for src, dsts in TRANSITIONS.items() for dst in dsts}
+    # The control plane adds WAITING_INPUT -> FAILED (an expired input fails the run).
+    assert edges - PLAN_EDGES == {("WAITING_INPUT", "FAILED")}
+    assert edges >= PLAN_EDGES
 
 
 def test_final_states_have_no_exits() -> None:

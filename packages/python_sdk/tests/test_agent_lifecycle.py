@@ -16,6 +16,12 @@ async def no_sleep(_: float) -> None:
     return None
 
 
+def assert_cancelled(broker: FakeBroker) -> None:
+    [result] = broker.results
+    assert result["status"] == "failed"
+    assert (result["error"]["code"], result["error"]["retryable"]) == ("RUN_CANCELLED", False)
+
+
 async def execute(agent: Agent, broker: FakeBroker) -> int:
     return await agent.execute(
         broker_url="http://broker.test", token="t", run_id="run-1", http=broker.client()
@@ -33,7 +39,7 @@ async def test_success_posts_succeeded_and_exits_zero() -> None:
 
     broker = FakeBroker()
     assert await execute(agent, broker) == 0
-    assert broker.results == [{"outcome": "succeeded", "result": {"answer": 42}}]
+    assert broker.results == [{"status": "succeeded", "result": {"answer": 42}}]
     handshake = json.loads(broker.requests[0].content)
     assert handshake == {"protocol": PROTOCOL, "sdkVersion": __version__, "agentId": "test-agent"}
 
@@ -48,7 +54,7 @@ async def test_exception_posts_failed_with_redacted_message() -> None:
     broker = FakeBroker()
     assert await execute(agent, broker) == 1
     [result] = broker.results
-    assert result["outcome"] == "failed"
+    assert result["status"] == "failed"
     assert result["error"]["code"] == "AGENT_ERROR"
     assert "+14155550123" not in result["error"]["message"]
     assert "••••0123" in result["error"]["message"]
@@ -109,7 +115,7 @@ async def test_heartbeat_cancel_request_cancels_the_run() -> None:
     broker = FakeBroker(heartbeat_interval=0.01)
     broker.cancel_on_heartbeat = 1
     assert await execute(agent, broker) == 1
-    assert broker.results == [{"outcome": "cancelled"}]
+    assert_cancelled(broker)
 
 
 async def test_agent_raising_cancelled_posts_cancelled() -> None:
@@ -121,7 +127,7 @@ async def test_agent_raising_cancelled_posts_cancelled() -> None:
 
     broker = FakeBroker()
     assert await execute(agent, broker) == 1
-    assert broker.results == [{"outcome": "cancelled"}]
+    assert_cancelled(broker)
 
 
 async def test_dict_result_with_datetime_is_serialized() -> None:
@@ -256,7 +262,7 @@ async def test_event_delivery_failure_never_blocks_the_outcome() -> None:
     broker = FakeBroker(heartbeat_interval=60)
     broker.overrides[("POST", "/events")] = explode
     assert await execute(agent, broker) == 0
-    assert broker.results == [{"outcome": "succeeded", "result": {"ok": True}}]
+    assert broker.results == [{"status": "succeeded", "result": {"ok": True}}]
 
 
 async def test_datetime_log_field_does_not_break_a_successful_run() -> None:
@@ -270,3 +276,15 @@ async def test_datetime_log_field_does_not_break_a_successful_run() -> None:
     broker = FakeBroker(heartbeat_interval=60)
     assert await execute(agent, broker) == 0
     assert broker.events[0]["payload"]["fields"] == {"when": "2026-09-24T00:00:00Z"}
+
+
+async def test_non_object_result_fails_the_run() -> None:
+    agent = Agent("test-agent")
+
+    @agent.run
+    async def run(ctx: RunContext[Any]) -> list[int]:
+        return [1, 2, 3]
+
+    broker = FakeBroker()
+    assert await execute(agent, broker) == 1
+    assert broker.results[0]["error"]["code"] == "RESULT_INVALID"

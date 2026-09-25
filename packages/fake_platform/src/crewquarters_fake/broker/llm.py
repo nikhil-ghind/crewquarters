@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from crewquarters_fake.broker.audit import request_id
-from crewquarters_fake.broker.auth import RunAuth, require, run_auth
+from crewquarters_fake.broker.auth import RunAuth, deny, require, run_auth
 from crewquarters_fake.errors import ApiError
 from crewquarters_fake.gateway import ProfileInfo
 
@@ -35,26 +35,24 @@ class ChatIn(BaseModel):
     idempotencyKey: str | None = None
 
 
-def _capability(profile: str) -> str:
-    if profile.startswith("cloud."):
-        return f"llm.cloud.{profile.split('.')[1]}"
-    return "llm.local"
+CLOUD_PROVIDERS = frozenset({"openai", "anthropic"})
 
 
 async def _prepare(auth: RunAuth, body: ChatIn, operation: str) -> ProfileInfo:
-    require(auth, _capability(body.profile), operation)
+    """Capabilities per packages/contracts/capabilities.yaml: ``llm.profile:<variant>`` for every
+    profile, plus ``cloud.<provider>`` for cloud profiles."""
+    require(auth, f"llm.profile:{body.profile}", operation)
+    provider = body.profile.split(".", 1)[0]
+    if provider in CLOUD_PROVIDERS:
+        require(auth, f"cloud.{provider}", operation)
     if body.tools:
         raise ApiError(422, "UNSUPPORTED_FEATURE", "tools are not supported in v1alpha1")
     if body.profile not in auth.installation.resolved_profiles:
-        auth.store.append_event(
-            auth.run, "capability.denied", {"capability": _capability(body.profile), "operation": operation}
-        )
-        raise ApiError(
-            403, "CAPABILITY_DENIED", f"profile {body.profile} is not granted to this installation"
-        )
+        deny(auth, f"llm.profile:{body.profile}", operation)
     info = auth.store.gateway.profile(body.profile)
     gateway, store, run = auth.store.gateway, auth.store, auth.run
-    if info.locality == "local" and body.profile not in gateway.loaded and gateway.cold_start_seconds > 0:
+    cold = body.profile not in gateway.loaded and gateway.cold_start_seconds > 0
+    if info.locality == "local" and cold:
         if run.state == "RUNNING":
             store.transition(run, "LOADING_MODEL", f"loading {body.profile}")
             await store.notify()
@@ -91,7 +89,7 @@ async def _complete(auth: RunAuth, body: ChatIn, info: ProfileInfo, req_id: str)
             "response": completion.text,
         }
     )
-    auth.store.append_event(
+    auth.store.audit_event(
         auth.run,
         "llm.call",
         {
@@ -125,7 +123,9 @@ async def chat(body: ChatIn, request: Request, auth: RunAuth = Depends(run_auth)
 
 
 @router.post("/llm/chat:stream")
-async def chat_stream(body: ChatIn, request: Request, auth: RunAuth = Depends(run_auth)) -> StreamingResponse:
+async def chat_stream(
+    body: ChatIn, request: Request, auth: RunAuth = Depends(run_auth)
+) -> StreamingResponse:
     async def prepare() -> ProfileInfo:
         return await _prepare(auth, body, "broker.llm.stream")
 

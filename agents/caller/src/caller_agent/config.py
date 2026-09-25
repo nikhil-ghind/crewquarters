@@ -12,7 +12,9 @@ DEFAULT_SCRIPT = (
     "Hello {name}. This is an automated demo call from the Crewquarters team. "
     "Please say a short reply after the tone."
 )
-DEFAULT_DISCLOSURE = "This is an automated demonstration call. Your spoken reply will be transcribed."
+DEFAULT_DISCLOSURE = (
+    "This is an automated demonstration call. Your spoken reply will be transcribed."
+)
 _PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
 _TAB = r"(?P<tab>'(?:[^']|'')+'|[^!']+)"
 _INPUT_RE = re.compile(_TAB + r"!A(?P<row>[1-9]\d*):D(?:\d+)?$")
@@ -51,7 +53,9 @@ class CallerConfig(BaseModel):
     @classmethod
     def _input_range(cls, value: str) -> str:
         if not _INPUT_RE.match(value):
-            raise ValueError("inputRange must look like Contacts!A2:D (columns A-D starting at a row)")
+            raise ValueError(
+                "inputRange must look like Contacts!A2:D (columns A-D starting at a row)"
+            )
         return value
 
     @field_validator("result_range")
@@ -74,7 +78,8 @@ class CallerConfig(BaseModel):
     def _separate_tabs(self) -> CallerConfig:
         if _unquote(self.input_tab) == _unquote(self.result_tab):
             raise ValueError(
-                "resultRange must use a different tab than inputRange so results never overwrite contacts"
+                "resultRange must use a different tab than inputRange "
+                "so results never overwrite contacts"
             )
         return self
 

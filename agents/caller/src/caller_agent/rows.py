@@ -34,7 +34,7 @@ class Plan:
 
 
 def read_rows(values: list[list[str]], start_row: int) -> list[ContactRow]:
-    """Rows of ``name, phone_e164, consent, status``; missing cells are empty and blank rows are ignored."""
+    """Rows of ``name, phone_e164, consent, status``; missing cells empty, blank rows skipped."""
     contacts = []
     for offset, cells in enumerate(values):
         name, phone, consent, status = ([str(c).strip() for c in cells] + ["", "", "", ""])[:4]
@@ -43,7 +43,9 @@ def read_rows(values: list[list[str]], start_row: int) -> list[ContactRow]:
     return contacts
 
 
-def _skip_reason(contact: ContactRow, seen: set[str], eligible_count: int, max_calls: int) -> str | None:
+def _skip_reason(
+    contact: ContactRow, seen: set[str], eligible_count: int, max_calls: int
+) -> str | None:
     if contact.consent.lower() not in CONSENT_YES:
         return "consent"
     if not is_e164(contact.phone):

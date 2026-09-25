@@ -35,7 +35,10 @@ def test_get_reads_range_and_trims_trailing_blanks() -> None:
 
 
 def test_get_column_subset() -> None:
-    assert provider().get("sheet-1", "Contacts!B2:B3")["values"] == [["+15555550101"], ["+15555550102"]]
+    assert provider().get("sheet-1", "Contacts!B2:B3")["values"] == [
+        ["+15555550101"],
+        ["+15555550102"],
+    ]
 
 
 def test_update_writes_at_the_row_and_is_idempotent() -> None:

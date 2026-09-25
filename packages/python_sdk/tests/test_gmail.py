@@ -14,7 +14,10 @@ def paged_broker(total: int, page_size: int = 100) -> tuple[FakeBroker, list[dic
         params = dict(request.url.params)
         seen.append(params)
         start = int(params.get("pageToken", "0"))
-        ids = [{"id": f"m{i}", "threadId": f"t{i}"} for i in range(start, min(total, start + page_size))]
+        ids = [
+            {"id": f"m{i}", "threadId": f"t{i}"}
+            for i in range(start, min(total, start + page_size))
+        ]
         body: dict[str, Any] = {"messages": ids, "resultSizeEstimate": total}
         if start + page_size < total:
             body["nextPageToken"] = str(start + page_size)

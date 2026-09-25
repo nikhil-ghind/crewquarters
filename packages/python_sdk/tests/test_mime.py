@@ -76,7 +76,12 @@ def test_nested_multipart_is_searched() -> None:
         "parts": [
             {
                 "mimeType": "multipart/related",
-                "parts": [{"mimeType": "multipart/alternative", "parts": [part("text/plain", "Deep text")]}],
+                "parts": [
+                    {
+                        "mimeType": "multipart/alternative",
+                        "parts": [part("text/plain", "Deep text")],
+                    }
+                ],
             },
             {
                 "mimeType": "application/pdf",
@@ -92,7 +97,9 @@ def test_attachment_only_message_has_empty_body() -> None:
     raw = message(
         {
             "mimeType": "multipart/mixed",
-            "parts": [{"mimeType": "text/plain", "filename": "notes.txt", "body": {"attachmentId": "a"}}],
+            "parts": [
+                {"mimeType": "text/plain", "filename": "notes.txt", "body": {"attachmentId": "a"}}
+            ],
         }
     )
     parsed = parse_message(raw)
@@ -102,7 +109,9 @@ def test_attachment_only_message_has_empty_body() -> None:
 
 def test_malformed_base64_and_missing_payload_do_not_raise() -> None:
     assert (
-        parse_message(message({"mimeType": "text/plain", "body": {"data": "!!!not base64***"}})).text_body
+        parse_message(
+            message({"mimeType": "text/plain", "body": {"data": "!!!not base64***"}})
+        ).text_body
         == ""
     )
     parsed = parse_message({"id": "x", "threadId": "x"})
@@ -116,11 +125,16 @@ def test_malformed_base64_and_missing_payload_do_not_raise() -> None:
 def test_padded_and_unpadded_base64_both_decode() -> None:
     padded = {"mimeType": "text/plain", "body": {"data": b64("ab", pad=True)}}
     assert parse_message(message(padded)).text_body == "ab"
-    assert parse_message(message({"mimeType": "text/plain", "body": {"data": b64("ab")}})).text_body == "ab"
+    assert (
+        parse_message(message({"mimeType": "text/plain", "body": {"data": b64("ab")}})).text_body
+        == "ab"
+    )
 
 
 def test_latin1_and_missing_internal_date() -> None:
-    raw = message(part("text/plain", "Café résumé", charset="iso-8859-1"), internalDate="not-a-number")
+    raw = message(
+        part("text/plain", "Café résumé", charset="iso-8859-1"), internalDate="not-a-number"
+    )
     parsed = parse_message(raw)
     assert parsed.text_body == "Café résumé"
     assert parsed.internal_date == datetime(2026, 9, 23, 3, 45, tzinfo=UTC)
@@ -128,7 +142,9 @@ def test_latin1_and_missing_internal_date() -> None:
 
 def test_unknown_charset_falls_back_to_utf8() -> None:
     unknown = part("text/plain", "hello")
-    unknown["headers"] = [{"name": "Content-Type", "value": 'text/plain; charset="x-unknown-charset"'}]
+    unknown["headers"] = [
+        {"name": "Content-Type", "value": 'text/plain; charset="x-unknown-charset"'}
+    ]
     raw = message(unknown)
     assert parse_message(raw).text_body == "hello"
 

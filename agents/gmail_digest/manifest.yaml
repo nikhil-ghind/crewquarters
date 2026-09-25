@@ -4,6 +4,7 @@ metadata:
   id: daily-gmail-digest
   name: Daily Gmail Digest
   version: 0.1.0
+  summary: Yesterday's Gmail, grouped into Urgent, Important, and Low priority.
   description: Summarises the previous local calendar day's Gmail into Urgent, Important, and Low priority.
   publisher: Crewquarters (Person 5)
 spec:
@@ -14,8 +15,10 @@ spec:
   triggers: ["manual", "schedule"]
   permissions:
     llmProfiles: ["local.general"]
+    knowledge: []
     connectors:
       google: ["gmail.readonly"]
+    cloudProviders: []
     userInput: false
   resources:
     cpu: 1
@@ -65,58 +68,57 @@ spec:
         default: null
         description: Re-run a specific local date (YYYY-MM-DD) instead of yesterday.
         x-crewquarters-group: Advanced
-  result:
-    renderer: crewquarters.gmail-digest/v1
-    schema:
-      type: object
-      required: [date, timezone, window, processedCount, truncated, counts, groups, model]
-      properties:
-        date: {type: string, format: date}
-        timezone: {type: string}
-        window:
-          type: object
-          required: [startUtc, endUtc]
-          properties:
-            startUtc: {type: string}
-            endUtc: {type: string}
-        processedCount: {type: integer, minimum: 0}
-        truncated: {type: boolean}
-        counts:
-          type: object
-          required: [urgent, important, lowPriority, needsReview]
-          properties:
-            urgent: {type: integer}
-            important: {type: integer}
-            lowPriority: {type: integer}
-            needsReview: {type: integer}
-        groups:
-          type: object
-          required: [urgent, important, lowPriority]
-          properties:
-            urgent: {$ref: "#/$defs/items"}
-            important: {$ref: "#/$defs/items"}
-            lowPriority: {$ref: "#/$defs/items"}
-        model:
-          type: object
-          required: [profile]
-          properties:
-            profile: {type: string}
-            provider: {type: [string, "null"]}
-            model: {type: [string, "null"]}
-            locality: {type: [string, "null"]}
-      $defs:
+  resultSchema:
+    x-crewquarters-renderer: crewquarters.gmail-digest/v1
+    type: object
+    required: [date, timezone, window, processedCount, truncated, counts, groups, model]
+    properties:
+      date: {type: string, format: date}
+      timezone: {type: string}
+      window:
+        type: object
+        required: [startUtc, endUtc]
+        properties:
+          startUtc: {type: string}
+          endUtc: {type: string}
+      processedCount: {type: integer, minimum: 0}
+      truncated: {type: boolean}
+      counts:
+        type: object
+        required: [urgent, important, lowPriority, needsReview]
+        properties:
+          urgent: {type: integer}
+          important: {type: integer}
+          lowPriority: {type: integer}
+          needsReview: {type: integer}
+      groups:
+        type: object
+        required: [urgent, important, lowPriority]
+        properties:
+          urgent: {$ref: "#/$defs/items"}
+          important: {$ref: "#/$defs/items"}
+          lowPriority: {$ref: "#/$defs/items"}
+      model:
+        type: object
+        required: [profile]
+        properties:
+          profile: {type: string}
+          provider: {type: [string, "null"]}
+          model: {type: [string, "null"]}
+          locality: {type: [string, "null"]}
+    $defs:
+      items:
+        type: array
         items:
-          type: array
-          items:
-            type: object
-            required: [messageId, threadId, from, subject, receivedAt, reason, nextAction, needsReview, gmailLink]
-            properties:
-              messageId: {type: string}
-              threadId: {type: string}
-              from: {type: string}
-              subject: {type: string}
-              receivedAt: {type: [string, "null"]}
-              reason: {type: string}
-              nextAction: {type: string}
-              needsReview: {type: boolean}
-              gmailLink: {type: string}
+          type: object
+          required: [messageId, threadId, from, subject, receivedAt, reason, nextAction, needsReview, gmailLink]
+          properties:
+            messageId: {type: string}
+            threadId: {type: string}
+            from: {type: string}
+            subject: {type: string}
+            receivedAt: {type: [string, "null"]}
+            reason: {type: string}
+            nextAction: {type: string}
+            needsReview: {type: boolean}
+            gmailLink: {type: string}

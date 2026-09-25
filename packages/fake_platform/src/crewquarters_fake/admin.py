@@ -13,7 +13,14 @@ from crewquarters_fake import scenario, services
 from crewquarters_fake.control import store_of
 from crewquarters_fake.errors import ApiError
 from crewquarters_fake.store import AutoAnswer
-from crewquarters_fake.views import catalog_view, event_view, idempotency_view, input_control_view, run_view
+from crewquarters_fake.views import (
+    action_view,
+    catalog_view,
+    event_view,
+    input_control_view,
+    installation_view,
+    run_view,
+)
 
 router = APIRouter(prefix="/fake/v1")
 
@@ -42,13 +49,19 @@ class FaultIn(BaseModel):
 
 class AutoAnswerIn(BaseModel):
     keyPattern: str
-    data: Any = None
+    value: Any = None
     delaySeconds: float = 0.0
 
 
 class ScenarioIn(BaseModel):
     path: str
     now: str | None = None
+
+
+class ScheduledRunIn(BaseModel):
+    installationId: str
+    trigger: Literal["manual", "schedule"] = "schedule"
+    scheduledFor: str | None = None
 
 
 class ConnectionIn(BaseModel):
@@ -76,7 +89,16 @@ async def load_scenario(body: ScenarioIn, request: Request) -> dict[str, Any]:
 
 @router.post("/catalog")
 async def register(body: ManifestIn, request: Request) -> dict[str, Any]:
-    return catalog_view(services.import_manifest(store_of(request), body.manifest, allow_unbuilt=True))
+    store = store_of(request)
+    return catalog_view(store, services.import_manifest(store, body.manifest, allow_unbuilt=True))
+
+
+@router.post("/runs", status_code=201)
+async def create_scheduled_run(body: ScheduledRunIn, request: Request) -> dict[str, Any]:
+    """Create a run the way the scheduler does (the public API only starts manual runs)."""
+    store = store_of(request)
+    run = services.create_run(store, body.installationId, body.trigger, body.scheduledFor, None)
+    return run_view(store, run)
 
 
 @router.post("/runs/{run_id}/dispatch")
@@ -92,12 +114,13 @@ async def exited(run_id: str, body: ExitIn, request: Request) -> dict[str, Any]:
     store = store_of(request)
     run = services.report_exit(store, run_id, body.attempt, body.exitCode)
     await store.notify()
-    return run_view(run)
+    return run_view(store, run)
 
 
 @router.post("/faults")
 async def add_fault(body: FaultIn, request: Request) -> dict[str, Any]:
-    store_of(request).faults.add(body.target, body.mode, body.count, body.status, body.code, body.delayMs)
+    faults = store_of(request).faults
+    faults.add(body.target, body.mode, body.count, body.status, body.code, body.delayMs)
     return {"faults": len(store_of(request).faults.list())}
 
 
@@ -109,7 +132,9 @@ async def clear_faults(request: Request) -> dict[str, Any]:
 
 @router.post("/auto-answers")
 async def add_auto_answer(body: AutoAnswerIn, request: Request) -> dict[str, Any]:
-    store_of(request).auto_answers.append(AutoAnswer(body.keyPattern, body.data, body.delaySeconds))
+    store_of(request).auto_answers.append(
+        AutoAnswer(body.keyPattern, body.value, body.delaySeconds)
+    )
     return {"autoAnswers": len(store_of(request).auto_answers)}
 
 
@@ -122,14 +147,18 @@ async def set_connection(body: ConnectionIn, request: Request) -> dict[str, Any]
 @router.get("/state/{kind}")
 async def state(kind: str, request: Request) -> Any:
     store = store_of(request)
+    if kind == "installations":
+        return [installation_view(store, i) for i in store.installations.values()]
     if kind == "runs":
-        return [run_view(r) for r in store.runs.values()]
+        return [run_view(store, r) for r in store.runs.values()]
     if kind == "events":
-        return {run_id: [event_view(e) for e in events] for run_id, events in store.events.items()}
+        return {run_id: [event_view(e) for e in items] for run_id, items in store.events.items()}
     if kind == "inputs":
-        return [input_control_view(r) for r in store.inputs.values()]
-    if kind == "idempotency":
-        return [{"runId": run_id, **idempotency_view(r)} for (run_id, _), r in store.idempotency.items()]
+        return [input_control_view(store, r) for r in store.inputs.values()]
+    if kind == "actions":
+        return [{"runId": run_id, **action_view(r)} for (run_id, _), r in store.actions.items()]
+    if kind == "audit":
+        return store.audit
     if kind == "traffic":
         return store.traffic
     if kind == "calls":

@@ -45,7 +45,9 @@ def build_digest(
             thread_id=message.thread_id,
             sender=message.sender,
             subject=message.subject,
-            received_at=message.received_at.astimezone(tz).isoformat() if message.received_at else None,
+            received_at=message.received_at.astimezone(tz).isoformat()
+            if message.received_at
+            else None,
             reason=verdict.reason,
             next_action=verdict.next_action,
             needs_review=verdict.needs_review,

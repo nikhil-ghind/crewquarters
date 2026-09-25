@@ -13,7 +13,11 @@ KOLKATA_10AM = "2026-09-24T04:30:00Z"
 
 
 def digest(
-    client: FakePlatformClient, tmp_path: Path, scenario: str, config: dict[str, Any], scheduled_for: str
+    client: FakePlatformClient,
+    tmp_path: Path,
+    scenario: str,
+    config: dict[str, Any],
+    scheduled_for: str,
 ) -> RunOutcome:
     manifest, installation = prepare(client, "gmail_digest", scenario, config)
     outcome = launch(
@@ -34,12 +38,19 @@ def ids(outcome: RunOutcome, group: str) -> list[str]:
     return [item["messageId"] for item in outcome.result["groups"][group]]
 
 
-def test_basic_day_is_grouped_by_the_rubric(fake_client: FakePlatformClient, tmp_path: Path) -> None:
-    outcome = digest(fake_client, tmp_path, "digest-basic", {"timezone": "Asia/Kolkata"}, KOLKATA_10AM)
+def test_basic_day_is_grouped_by_the_rubric(
+    fake_client: FakePlatformClient, tmp_path: Path
+) -> None:
+    outcome = digest(
+        fake_client, tmp_path, "digest-basic", {"timezone": "Asia/Kolkata"}, KOLKATA_10AM
+    )
     assert outcome.state == "SUCCEEDED", outcome.log
     result = outcome.result
     assert result["date"] == "2026-09-23"
-    assert result["window"] == {"startUtc": "2026-09-22T18:30:00Z", "endUtc": "2026-09-23T18:30:00Z"}
+    assert result["window"] == {
+        "startUtc": "2026-09-22T18:30:00Z",
+        "endUtc": "2026-09-23T18:30:00Z",
+    }
     assert ids(outcome, "urgent") == ["b-urgent-2", "b-urgent-1"]
     assert ids(outcome, "important") == ["b-quoted", "b-imp-2", "b-unsure", "b-imp-1"]
     assert ids(outcome, "lowPriority") == ["b-low-2", "b-low-1"]
@@ -58,31 +69,53 @@ def test_basic_day_is_grouped_by_the_rubric(fake_client: FakePlatformClient, tmp
     assert "track()" not in prompts
 
 
-def test_volume_paginates_and_stops_at_the_cap(fake_client: FakePlatformClient, tmp_path: Path) -> None:
+def test_volume_paginates_and_stops_at_the_cap(
+    fake_client: FakePlatformClient, tmp_path: Path
+) -> None:
     outcome = digest(
-        fake_client, tmp_path, "digest-volume", {"timezone": "Asia/Kolkata", "maxMessages": 120}, KOLKATA_10AM
+        fake_client,
+        tmp_path,
+        "digest-volume",
+        {"timezone": "Asia/Kolkata", "maxMessages": 120},
+        KOLKATA_10AM,
     )
     assert outcome.state == "SUCCEEDED", outcome.log
     assert outcome.result["processedCount"] == 120
     assert outcome.result["truncated"] is True
+    audit = fake_client.state("audit")
     lists = [
-        e for e in outcome.events_of("connector.call") if e["payload"]["operation"] == "broker.gmail.list"
+        a
+        for a in audit
+        if a["action"] == "connector.call" and a["operation"] == "broker.gmail.list"
     ]
     assert len(lists) == 2
-    assert len(outcome.events_of("llm.call")) == 12
-    assert any("maxMessages=120" in e["payload"]["message"] for e in outcome.events_of("log"))
+    assert len([a for a in audit if a["action"] == "llm.call"]) == 12
+    assert any("maxMessages=120" in e["payload"]["message"] for e in outcome.events_of("run.log"))
 
 
-def test_zero_messages_is_a_successful_empty_digest(fake_client: FakePlatformClient, tmp_path: Path) -> None:
-    outcome = digest(fake_client, tmp_path, "digest-empty", {"timezone": "UTC"}, "2026-09-24T09:00:00Z")
+def test_zero_messages_is_a_successful_empty_digest(
+    fake_client: FakePlatformClient, tmp_path: Path
+) -> None:
+    outcome = digest(
+        fake_client, tmp_path, "digest-empty", {"timezone": "UTC"}, "2026-09-24T09:00:00Z"
+    )
     assert outcome.state == "SUCCEEDED", outcome.log
     assert outcome.result["processedCount"] == 0
-    assert outcome.result["counts"] == {"urgent": 0, "important": 0, "lowPriority": 0, "needsReview": 0}
-    assert outcome.events_of("llm.call") == []
+    assert outcome.result["counts"] == {
+        "urgent": 0,
+        "important": 0,
+        "lowPriority": 0,
+        "needsReview": 0,
+    }
+    assert not [a for a in fake_client.state("audit") if a["action"] == "llm.call"]
 
 
-def test_malformed_messages_do_not_crash_the_run(fake_client: FakePlatformClient, tmp_path: Path) -> None:
-    outcome = digest(fake_client, tmp_path, "digest-malformed", {"timezone": "UTC"}, "2026-09-24T09:00:00Z")
+def test_malformed_messages_do_not_crash_the_run(
+    fake_client: FakePlatformClient, tmp_path: Path
+) -> None:
+    outcome = digest(
+        fake_client, tmp_path, "digest-malformed", {"timezone": "UTC"}, "2026-09-24T09:00:00Z"
+    )
     assert outcome.state == "SUCCEEDED", outcome.log
     everything = {i["messageId"]: i for group in outcome.result["groups"].values() for i in group}
     assert set(everything) == {
@@ -105,13 +138,16 @@ def test_malformed_messages_do_not_crash_the_run(fake_client: FakePlatformClient
 def test_prompt_injection_cannot_change_the_schema_or_reach_other_capabilities(
     fake_client: FakePlatformClient, tmp_path: Path
 ) -> None:
-    outcome = digest(fake_client, tmp_path, "digest-injection", {"timezone": "UTC"}, "2026-09-24T09:00:00Z")
+    outcome = digest(
+        fake_client, tmp_path, "digest-injection", {"timezone": "UTC"}, "2026-09-24T09:00:00Z"
+    )
     assert outcome.state == "SUCCEEDED", outcome.log
     assert ids(outcome, "urgent") == ["inj-outage"]
     assert set(ids(outcome, "lowPriority")) == {"inj-attack", "inj-news"}
-    operations = {e["payload"]["operation"] for e in outcome.events_of("connector.call")}
-    assert operations <= {"broker.gmail.list", "broker.gmail.get"}
-    assert outcome.events_of("capability.denied") == []
+    audit = fake_client.state("audit")
+    operations = {a["operation"] for a in audit if a["action"] == "connector.call"}
+    assert operations and operations <= {"broker.gmail.list", "broker.gmail.get"}
+    assert not [a for a in audit if a["action"] == "capability.denied"]
     [call] = fake_client.state("llm")
     system, user = call["messages"]
     assert "Ignore previous instructions" not in system["content"]
@@ -126,12 +162,19 @@ def test_dst_fall_back_day_includes_both_repeated_hours(
     fake_client: FakePlatformClient, tmp_path: Path
 ) -> None:
     outcome = digest(
-        fake_client, tmp_path, "digest-dst", {"timezone": "America/New_York"}, "2026-11-02T15:00:00Z"
+        fake_client,
+        tmp_path,
+        "digest-dst",
+        {"timezone": "America/New_York"},
+        "2026-11-02T15:00:00Z",
     )
     assert outcome.state == "SUCCEEDED", outcome.log
     everything = {i["messageId"] for group in outcome.result["groups"].values() for i in group}
     assert everything == {"dst-a", "dst-b", "dst-c", "dst-d"}
-    assert outcome.result["window"] == {"startUtc": "2026-11-01T04:00:00Z", "endUtc": "2026-11-02T05:00:00Z"}
+    assert outcome.result["window"] == {
+        "startUtc": "2026-11-01T04:00:00Z",
+        "endUtc": "2026-11-02T05:00:00Z",
+    }
 
 
 def test_late_scheduled_run_still_digests_the_scheduled_day(
@@ -143,14 +186,20 @@ def test_late_scheduled_run_still_digests_the_scheduled_day(
     assert outcome.result["date"] == "2026-09-23"
 
 
-def test_expired_google_access_asks_for_reconnect(fake_client: FakePlatformClient, tmp_path: Path) -> None:
-    outcome = digest(fake_client, tmp_path, "digest-expired", {"timezone": "UTC"}, "2026-09-24T09:00:00Z")
+def test_expired_google_access_asks_for_reconnect(
+    fake_client: FakePlatformClient, tmp_path: Path
+) -> None:
+    outcome = digest(
+        fake_client, tmp_path, "digest-expired", {"timezone": "UTC"}, "2026-09-24T09:00:00Z"
+    )
     assert outcome.state == "FAILED"
     assert outcome.error["code"] == "GOOGLE_RECONNECT_REQUIRED"
     assert outcome.error["retryable"] is False
 
 
-def test_target_date_override_digests_that_day(fake_client: FakePlatformClient, tmp_path: Path) -> None:
+def test_target_date_override_digests_that_day(
+    fake_client: FakePlatformClient, tmp_path: Path
+) -> None:
     outcome = digest(
         fake_client,
         tmp_path,
@@ -180,4 +229,6 @@ def test_a_message_deleted_between_list_and_get_is_skipped(
     )
     assert outcome.state == "SUCCEEDED", outcome.log
     assert outcome.result["processedCount"] == 7
-    assert any("no longer available" in e["payload"]["message"] for e in outcome.events_of("log"))
+    assert any(
+        "no longer available" in e["payload"]["message"] for e in outcome.events_of("run.log")
+    )

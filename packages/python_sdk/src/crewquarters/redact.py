@@ -12,7 +12,16 @@ _SECRET_PARAM_RE = re.compile(
     r"(?i)\b(token|access_token|refresh_token|api_key|apikey|key|secret|password|code)=([^&\s\"']+)"
 )
 _SENSITIVE_KEYS = frozenset(
-    {"token", "accesstoken", "refreshtoken", "apikey", "secret", "password", "authorization", "clientsecret"}
+    {
+        "token",
+        "accesstoken",
+        "refreshtoken",
+        "apikey",
+        "secret",
+        "password",
+        "authorization",
+        "clientsecret",
+    }
 )
 
 
@@ -33,7 +42,8 @@ def redact_value(value: Any) -> Any:
     if isinstance(value, dict):
         return {
             key: "[REDACTED]"
-            if isinstance(key, str) and key.replace("_", "").replace("-", "").lower() in _SENSITIVE_KEYS
+            if isinstance(key, str)
+            and key.replace("_", "").replace("-", "").lower() in _SENSITIVE_KEYS
             else redact_value(item)
             for key, item in value.items()
         }

@@ -28,7 +28,12 @@ def test_per_evidence_emits_one_item_per_block_with_overrides() -> None:
                 "respond": {
                     "perEvidence": {
                         "arrayField": "items",
-                        "item": {"ref": "{ref}", "priority": "low", "reason": "Routine", "uncertain": False},
+                        "item": {
+                            "ref": "{ref}",
+                            "priority": "low",
+                            "reason": "Routine",
+                            "uncertain": False,
+                        },
                         "overrides": [
                             {
                                 "when": {"contains": ["outage", "down"]},
@@ -48,7 +53,9 @@ def test_per_evidence_emits_one_item_per_block_with_overrides() -> None:
             evidence("Weekly newsletter", ref="m3", source="gmail", boundary="aa"),
         ]
     )
-    text, structured = rules.respond([{"role": "user", "content": prompt}], Batch.model_json_schema())
+    text, structured = rules.respond(
+        [{"role": "user", "content": prompt}], Batch.model_json_schema()
+    )
     assert structured == json.loads(text)
     assert structured == {
         "items": [
@@ -62,12 +69,18 @@ def test_per_evidence_emits_one_item_per_block_with_overrides() -> None:
 def test_text_and_json_rules_match_on_contains_and_regex() -> None:
     rules = RuleSet.from_list(
         [
-            {"name": "json", "match": {"regex": r"capital of \w+"}, "respond": {"json": {"answer": "Paris"}}},
+            {
+                "name": "json",
+                "match": {"regex": r"capital of \w+"},
+                "respond": {"json": {"answer": "Paris"}},
+            },
             {"name": "hello", "match": {"contains": ["hello"]}, "respond": {"text": "Hi there"}},
         ]
     )
     assert rules.respond([{"role": "user", "content": "Say HELLO"}], None) == ("Hi there", None)
-    _text, structured = rules.respond([{"role": "user", "content": "What is the capital of France?"}], None)
+    _text, structured = rules.respond(
+        [{"role": "user", "content": "What is the capital of France?"}], None
+    )
     assert structured == {"answer": "Paris"}
 
 
@@ -91,7 +104,13 @@ def test_minimal_instance_handles_refs_enums_and_bounds() -> None:
             "nested": {"$ref": "#/$defs/N"},
             "optional": {"type": "string"},
         },
-        "$defs": {"N": {"type": "object", "required": ["flag"], "properties": {"flag": {"type": "boolean"}}}},
+        "$defs": {
+            "N": {
+                "type": "object",
+                "required": ["flag"],
+                "properties": {"flag": {"type": "boolean"}},
+            }
+        },
     }
     instance = minimal_instance(schema)
     validate(instance, schema)
@@ -99,5 +118,7 @@ def test_minimal_instance_handles_refs_enums_and_bounds() -> None:
 
 
 def test_rule_delay_is_reported() -> None:
-    rules = RuleSet.from_list([{"name": "slow", "match": {}, "respond": {"text": "ok"}, "delayMs": 25}])
+    rules = RuleSet.from_list(
+        [{"name": "slow", "match": {}, "respond": {"text": "ok"}, "delayMs": 25}]
+    )
     assert rules.match([{"role": "user", "content": "x"}], None).delay_ms == 25  # type: ignore[union-attr]

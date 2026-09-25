@@ -1,4 +1,4 @@
-"""Drive one agent attempt end to end: create or re-dispatch a run, launch it, and collect the outcome."""
+"""Drive one agent attempt end to end: create or re-dispatch a run, launch it, get the outcome."""
 
 from __future__ import annotations
 
@@ -54,8 +54,11 @@ def run_agent(
 ) -> RunOutcome:
     if run_id is None:
         if installation_id is None:
-            raise ValueError("pass installation_id for a new run or run_id to re-dispatch a retried run")
-        run_id = client.create_run(installation_id, trigger=trigger, scheduled_for=scheduled_for)["id"]
+            raise ValueError(
+                "pass installation_id for a new run or run_id to re-dispatch a retried run"
+            )
+        created = client.create_run(installation_id, trigger=trigger, scheduled_for=scheduled_for)
+        run_id = str(created["id"])
     dispatch = client.dispatch(run_id, launcher.broker_url_for(client.base_url))
     handle = launcher.start(dispatch)
     timed_out = False
@@ -71,5 +74,8 @@ def run_agent(
         if handle.process.poll() is None:
             handle.kill()
             handle.wait(15)
-    client.report_exit(run_id, int(dispatch["attempt"]), exit_code if exit_code is not None else -1)
-    return RunOutcome(client.get_run(run_id), client.events(run_id), exit_code, handle.log_text(), timed_out)
+    code = exit_code if exit_code is not None else -1
+    client.report_exit(run_id, int(dispatch["attempt"]), code)
+    return RunOutcome(
+        client.get_run(run_id), client.events(run_id), exit_code, handle.log_text(), timed_out
+    )

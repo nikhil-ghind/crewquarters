@@ -45,7 +45,10 @@ def _part(spec: dict[str, Any]) -> dict[str, Any]:
             "mimeType": spec.get("mimeType", "application/octet-stream"),
             "filename": spec.get("filename", "attachment.bin"),
             "headers": [{"name": "Content-Disposition", "value": "attachment"}],
-            "body": {"size": int(spec.get("size", 1024)), "attachmentId": f"att-{spec.get('filename', 'x')}"},
+            "body": {
+                "size": int(spec.get("size", 1024)),
+                "attachmentId": f"att-{spec.get('filename', 'x')}",
+            },
         }
     if "multipart" in spec:
         return {
@@ -68,7 +71,12 @@ def _payload(body: dict[str, Any]) -> dict[str, Any]:
         return dict(body["rawPayload"])
     if "multipart" in body:
         return {
-            **_part({"multipart": body["multipart"], "mimeType": body.get("mimeType", "multipart/mixed")})
+            **_part(
+                {
+                    "multipart": body["multipart"],
+                    "mimeType": body.get("mimeType", "multipart/mixed"),
+                }
+            )
         }
     if "text" in body and "html" in body:
         charset = body.get("charset", "utf-8")
@@ -95,7 +103,9 @@ def build_message(spec: dict[str, Any], tz: ZoneInfo, now: datetime) -> dict[str
     when = resolve_when(spec, tz, now)
     body = spec.get("body", {"text": ""})
     labels = list(spec.get("labels", ["INBOX"]))
-    category = CATEGORY_LABELS.get(str(spec.get("category", "personal")).lower(), "CATEGORY_PERSONAL")
+    category = CATEGORY_LABELS.get(
+        str(spec.get("category", "personal")).lower(), "CATEGORY_PERSONAL"
+    )
     if category not in labels:
         labels.append(category)
     payload = _payload(body)
@@ -122,7 +132,9 @@ def build_message(spec: dict[str, Any], tz: ZoneInfo, now: datetime) -> dict[str
     }
 
 
-def expand_mailbox(entries: list[dict[str, Any]], tz: ZoneInfo, now: datetime) -> list[dict[str, Any]]:
+def expand_mailbox(
+    entries: list[dict[str, Any]], tz: ZoneInfo, now: datetime
+) -> list[dict[str, Any]]:
     """Expand ``{generate: {...}}`` entries into individual message specs."""
     specs: list[dict[str, Any]] = []
     for entry in entries:

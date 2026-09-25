@@ -34,7 +34,9 @@ async def _fetch_all(ctx: RunContext[DigestConfig], ids: list[str]) -> list[Fetc
                 if exc.code != "NOT_FOUND":
                     raise
                 # Deleted or moved between list and get: skip it rather than fail the whole digest.
-                await ctx.events.log("warning", f"message {message_id} is no longer available; skipped")
+                await ctx.events.log(
+                    "warning", f"message {message_id} is no longer available; skipped"
+                )
                 return None
         return FetchedMessage(
             id=message.id or message_id,
@@ -58,7 +60,9 @@ async def run(ctx: RunContext[DigestConfig]) -> DigestResult:
     reference = ctx.run.scheduled_for if scheduled and ctx.run.scheduled_for else datetime.now(UTC)
     day = target_date(reference, tz, config.target_date)
     window = day_window(day, tz)
-    query = build_query(window[0], window[1], list(config.exclude_categories), config.include_labels)
+    query = build_query(
+        window[0], window[1], list(config.exclude_categories), config.include_labels
+    )
     await ctx.events.progress(
         5, f"Listing Gmail messages for {day.isoformat()} ({config.timezone})", step="list"
     )
@@ -81,10 +85,17 @@ async def run(ctx: RunContext[DigestConfig]) -> DigestResult:
     classifications: dict[str, Classification] = {}
     model: dict[str, str | None] = {"profile": config.model_profile}
     boundary = new_boundary()
-    batches = [messages[i : i + config.batch_size] for i in range(0, len(messages), config.batch_size)]
+    batches = [
+        messages[i : i + config.batch_size] for i in range(0, len(messages), config.batch_size)
+    ]
     for index, batch in enumerate(batches):
         verdicts, chat = await classify_batch(
-            ctx, batch, index, boundary=boundary, profile=config.model_profile, tz_name=config.timezone
+            ctx,
+            batch,
+            index,
+            boundary=boundary,
+            profile=config.model_profile,
+            tz_name=config.timezone,
         )
         classifications.update(verdicts)
         if chat is not None:

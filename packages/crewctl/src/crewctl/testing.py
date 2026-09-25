@@ -9,9 +9,9 @@ from typing import Any
 import yaml
 
 from crewctl.build import find_repo_root
-from crewquarters_contracts.manifest import load_manifest
 from crewquarters_fake.app import create_app
 from crewquarters_fake.client import FakePlatformClient
+from crewquarters_fake.contracts import load_manifest
 from crewquarters_fake.harness import Launcher, RunOutcome, run_agent
 from crewquarters_fake.launcher import DockerLauncher, ProcessLauncher
 from crewquarters_fake.server import BackgroundServer
@@ -34,7 +34,7 @@ def run_scenario(
     docker: bool = False,
     timeout: float = 60.0,
     log_dir: Path | None = None,
-    platform_url: str = "http://127.0.0.1:8080",
+    platform_url: str = "http://127.0.0.1:8090",
 ) -> RunOutcome:
     agent_dir = Path(agent_dir).resolve()
     manifest = load_manifest(agent_dir / "manifest.yaml")
@@ -58,7 +58,9 @@ def run_scenario(
         client = FakePlatformClient(server.url)
         client.load_scenario(str(scenario_dir))
         client.register_manifest(manifest)
-        launcher = ProcessLauncher(manifest["spec"]["entrypoint"], agent_dir=agent_dir, log_dir=log_dir)
+        launcher = ProcessLauncher(
+            manifest["spec"]["entrypoint"], agent_dir=agent_dir, log_dir=log_dir
+        )
         return _install_and_run(client, launcher, manifest, config, run_spec, timeout)
 
 
@@ -70,11 +72,22 @@ def _install_and_run(
     run_spec: dict[str, Any],
     timeout: float,
 ) -> RunOutcome:
-    installation = client.install(manifest["metadata"]["id"], manifest["metadata"]["version"], config)
+    # A developer running their own agent approves exactly what it requests.
+    installation = client.install(
+        manifest["metadata"]["id"],
+        manifest["metadata"]["version"],
+        config,
+        manifest["spec"]["permissions"],
+    )
     trigger = str(run_spec.get("trigger", "manual"))
     scheduled_for = run_spec.get("scheduledFor")
     if scheduled_for == "now":
         scheduled_for = iso(utcnow())
     return run_agent(
-        client, launcher, installation["id"], trigger=trigger, scheduled_for=scheduled_for, timeout=timeout
+        client,
+        launcher,
+        installation["id"],
+        trigger=trigger,
+        scheduled_for=scheduled_for,
+        timeout=timeout,
     )

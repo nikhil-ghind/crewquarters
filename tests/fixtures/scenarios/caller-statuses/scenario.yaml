@@ -22,4 +22,4 @@ twilio:
 inputs:
   autoAnswers:
     - keyPattern: "confirm-calls-v1:*"
-      data: {choice: approve}
+      value: {choice: approve}

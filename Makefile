@@ -1,17 +1,36 @@
 # Crewquarters developer commands. Requires: uv, Docker with Compose, Node (npx) for contracts.
 SHELL := /bin/bash
 COMPOSE := docker compose -f infra/compose/compose.yaml
+FAKE_COMPOSE := $(COMPOSE) --profile fake
 OPENAPI_PY_CLIENT := openapi-python-client==0.29.1
 OPENAPI_TS := openapi-typescript@7.4.4
 
+# Every Python package with a src/ tree that `make lint` type-checks.
+MYPY_PATHS := packages/shared_python/src services/control_api/src services/scheduler/src \
+	packages/python_sdk/src packages/fake_platform/src packages/crewctl/src \
+	agents/contract_probe/src agents/gmail_digest/src agents/caller/src
+# Suites that need no PostgreSQL (SDK, fake platform, crewctl, agents, fake-platform integration).
+SDK_TESTS := packages/python_sdk packages/fake_platform packages/crewctl agents tests/integration \
+	tests/contract/test_broker_contract_files.py tests/contract/test_fake_route_parity.py \
+	tests/contract/test_fake_traffic_conformance.py
+
+AGENTS := contract_probe gmail_digest caller
+REGISTRY ?= localhost:5001
+FAKE_URL ?= http://127.0.0.1:8090
+DEMO := tests/fixtures/scenarios/demo
+# Lazy (=) so it is only evaluated by the targets that need it.
+HOST_PLATFORM = $(shell uv run python -c "from crewctl.build import host_platform; print(host_platform())")
+
 .PHONY: help sync db-up db-down migrate dev-up dev-down dev-bootstrap dev-logs coverage \
-        test test-platform test-contract contracts contracts-check lint fmt image image-arm64
+        test test-platform test-contract test-sdk contracts contracts-check lint fmt image image-arm64 \
+        fake-up fake-down agent-images e2e-images e2e \
+        demo-seed demo-reset demo-run demo-pending demo-approve evidence
 
 help:
 	@grep -E '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-16s %s\n", $$1, $$2}'
 
-sync: ## Install the Python workspace (uv)
-	uv sync --frozen
+sync: ## Install the Python workspace (uv), including the SDK, crewctl, fake platform, and agents
+	uv sync --frozen --all-packages
 
 db-up: ## Start PostgreSQL + pgvector on 127.0.0.1:55432
 	$(COMPOSE) up -d --wait postgres
@@ -38,8 +57,11 @@ dev-down: ## Stop the stack (keeps data)
 
 test: test-platform ## Alias for test-platform
 
-test-platform: db-up ## Control-plane unit, integration, and contract tests
+test-platform: db-up ## All unit, integration, and contract tests (control plane, SDK, agents)
 	uv run pytest -q
+
+test-sdk: ## SDK, fake platform, crewctl, and agent tests (no database needed)
+	uv run pytest -q -m "not e2e and not live" $(SDK_TESTS)
 
 coverage: db-up ## Tests with coverage; enforces thresholds on security/state modules
 	uv run pytest -q --cov --cov-report=term --cov-report=json
@@ -65,7 +87,7 @@ contracts-check: contracts ## Fail if generated contracts differ from what is co
 lint: ## Ruff lint + format check, mypy
 	uv run ruff check .
 	uv run ruff format --check .
-	uv run mypy packages/shared_python/src services/control_api/src services/scheduler/src
+	uv run mypy $(MYPY_PATHS)
 
 fmt: ## Apply ruff fixes and formatting
 	uv run ruff check --fix .
@@ -76,3 +98,46 @@ image: ## Build the platform image for this machine
 
 image-arm64: ## Build the linux/arm64 platform image (needs buildx + QEMU off-device)
 	docker buildx build --platform linux/arm64 -f infra/docker/python.Dockerfile -t crewquarters/platform:arm64 --load .
+
+# --- Person 5: agent development stack, images, E2E, demo ---------------------------------
+
+fake-up: ## Start the fake platform (http://127.0.0.1:8090) and local registry (127.0.0.1:5001)
+	$(FAKE_COMPOSE) up -d --build --wait fake-platform registry
+
+fake-down: ## Stop the fake platform and registry
+	$(FAKE_COMPOSE) stop fake-platform registry
+
+agent-images: ## Build agent images for amd64+arm64, push to the local registry, pin into .e2e/
+	@for agent in $(AGENTS); do \
+		uv run crewctl build agents/$$agent --push --registry $(REGISTRY) \
+			--platform linux/amd64,linux/arm64 --output-manifest .e2e/manifests/$$agent.yaml || exit 1; \
+	done
+
+e2e-images: ## Build host-architecture agent images, push, and pin into .e2e/ (needs make fake-up)
+	@for agent in $(AGENTS); do \
+		uv run crewctl build agents/$$agent --push --registry $(REGISTRY) \
+			--platform $(HOST_PLATFORM) --output-manifest .e2e/manifests/$$agent.yaml || exit 1; \
+	done
+
+e2e: e2e-images ## Agents in hardened containers against the fake platform (needs make fake-up)
+	CREWQ_E2E_PLATFORM_URL=$(FAKE_URL) uv run pytest -q -m e2e tests/e2e
+
+demo-seed: ## Reset the fake platform and load the demo scenario
+	CREWQ_FAKE_URL=$(FAKE_URL) infra/scripts/demo-seed.sh
+
+demo-reset: ## Between rehearsals: clear runs/calls/sheets and reseed
+	CREWQ_FAKE_URL=$(FAKE_URL) infra/scripts/demo-reset.sh
+
+demo-run: ## make demo-run AGENT=gmail_digest|caller|contract_probe [RUN_ARGS=...]
+	@test -n "$(AGENT)" || { echo "usage: make demo-run AGENT=gmail_digest|caller|contract_probe"; exit 2; }
+	uv run crewq-fake run agents/$(AGENT) --url $(FAKE_URL) --launcher docker \
+		--manifest .e2e/manifests/$(AGENT).yaml --config $(DEMO)/configs/$(AGENT).yaml $(RUN_ARGS)
+
+demo-pending: ## List pending operator input requests on the fake platform
+	uv run crewq-fake pending --url $(FAKE_URL)
+
+demo-approve: ## Approve the pending input request on the fake platform
+	uv run crewq-fake answer --url $(FAKE_URL) --choice approve
+
+evidence: ## Run every suite and write evidence/<UTC>/report.md
+	CREWQ_FAKE_URL=$(FAKE_URL) infra/scripts/collect-evidence.sh

@@ -57,7 +57,9 @@ def test_late_scheduled_reference_still_uses_the_scheduled_day() -> None:
     scheduled_for = datetime(2026, 9, 24, 4, 30, tzinfo=UTC)
     assert target_date(scheduled_for, zone, None) == date(2026, 9, 23)
     late_but_same_reference = scheduled_for
-    assert target_date(late_but_same_reference + timedelta(hours=0), zone, None) == date(2026, 9, 23)
+    assert target_date(late_but_same_reference + timedelta(hours=0), zone, None) == date(
+        2026, 9, 23
+    )
 
 
 def test_reference_just_after_local_midnight_picks_the_previous_day() -> None:
@@ -66,6 +68,6 @@ def test_reference_just_after_local_midnight_picks_the_previous_day() -> None:
 
 
 def test_override_wins() -> None:
-    assert target_date(datetime(2026, 9, 24, tzinfo=UTC), ZoneInfo("UTC"), date(2026, 1, 2)) == date(
-        2026, 1, 2
-    )
+    assert target_date(
+        datetime(2026, 9, 24, tzinfo=UTC), ZoneInfo("UTC"), date(2026, 1, 2)
+    ) == date(2026, 1, 2)

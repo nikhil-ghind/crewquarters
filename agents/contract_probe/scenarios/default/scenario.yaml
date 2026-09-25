@@ -13,4 +13,4 @@ llm:
 inputs:
   autoAnswers:
     - keyPattern: "probe-input-*"
-      data: {choice: ok}
+      value: {choice: ok}

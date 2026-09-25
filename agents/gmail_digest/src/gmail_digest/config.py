@@ -21,10 +21,12 @@ def _zones() -> frozenset[str]:
 
 
 def validate_timezone(value: str) -> str:
-    """Accept IANA names (including legacy links such as Asia/Calcutta) and UTC; reject abbreviations."""
+    """Accept IANA names (including legacy links like Asia/Calcutta) and UTC, not abbreviations."""
     abbreviation = bool(re.fullmatch(r"[A-Z]{2,5}", value)) or value in _LEGACY_ZONES
     if value != "UTC" and (abbreviation or "/" not in value or value not in _zones()):
-        raise ValueError(f"use an IANA timezone such as Asia/Kolkata or America/New_York, not {value!r}")
+        raise ValueError(
+            f"use an IANA timezone such as Asia/Kolkata or America/New_York, not {value!r}"
+        )
     return value
 
 

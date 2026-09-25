@@ -4,6 +4,7 @@ metadata:
   id: hello-agent
   name: Hello Agent
   version: 0.1.0
+  summary: Minimal integration-test agent that asks one question.
   description: Minimal integration-test agent that asks one question.
 spec:
   image: localhost:5001/crewquarters/hello-agent@sha256:REQUIRED_DIGEST
@@ -11,6 +12,10 @@ spec:
   architectures: ["linux/amd64", "linux/arm64"]
   triggers: ["manual", "schedule"]
   permissions:
+    llmProfiles: []
+    knowledge: []
+    connectors: {}
+    cloudProviders: []
     userInput: true
   resources:
     cpu: 0.5

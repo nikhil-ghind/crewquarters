@@ -82,8 +82,8 @@ class FakePlatformClient:
     def clear_faults(self) -> None:
         self._call("DELETE", "/fake/v1/faults")
 
-    def add_auto_answer(self, key_pattern: str, data: Any, delay_seconds: float = 0.0) -> None:
-        body = {"keyPattern": key_pattern, "data": data, "delaySeconds": delay_seconds}
+    def add_auto_answer(self, key_pattern: str, value: Any, delay_seconds: float = 0.0) -> None:
+        body = {"keyPattern": key_pattern, "value": value, "delaySeconds": delay_seconds}
         self._call("POST", "/fake/v1/auto-answers", json=body)
 
     def set_connection(self, provider: str, status: str) -> None:
@@ -95,22 +95,26 @@ class FakePlatformClient:
     # --- control API ---------------------------------------------------------------------------
     def import_manifest(self, manifest: dict[str, Any]) -> dict[str, Any]:
         result: dict[str, Any] = self._call(
-            "POST", "/api/v1/catalog/agents:import", json={"manifest": manifest}
+            "POST", "/api/v1/catalog/agents/import", json={"manifest": manifest}
         )
         return result
 
     def install(
         self,
         agent_id: str,
-        version: str,
+        version: str | None,
         config: dict[str, Any],
-        approved_permissions: dict[str, Any] | None = None,
+        approved_permissions: dict[str, Any],
+        model_bindings: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        """Install with the owner's approval. ``approved_permissions`` must equal the manifest's
+        requested permissions exactly (the control API refuses anything else)."""
         body = {
             "agentId": agent_id,
             "version": version,
             "config": config,
             "approvedPermissions": approved_permissions,
+            "modelBindings": model_bindings or {},
         }
         result: dict[str, Any] = self._call("POST", "/api/v1/agent-installations", json=body)
         return result
@@ -121,11 +125,19 @@ class FakePlatformClient:
         *,
         trigger: str = "manual",
         scheduled_for: str | None = None,
-        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        headers = {"Idempotency-Key": idempotency_key} if idempotency_key else {}
-        body = {"installationId": installation_id, "trigger": trigger, "scheduledFor": scheduled_for}
-        result: dict[str, Any] = self._call("POST", "/api/v1/runs", json=body, headers=headers)
+        """A manual run goes through the control API. A scheduled run is what the scheduler
+        creates, so it goes through the admin API."""
+        if trigger == "manual" and scheduled_for is None:
+            body: dict[str, Any] = {"installationId": installation_id}
+            result: dict[str, Any] = self._call("POST", "/api/v1/runs", json=body)
+            return result
+        body = {
+            "installationId": installation_id,
+            "trigger": trigger,
+            "scheduledFor": scheduled_for,
+        }
+        result = self._call("POST", "/fake/v1/runs", json=body)
         return result
 
     def get_run(self, run_id: str) -> dict[str, Any]:
@@ -133,16 +145,31 @@ class FakePlatformClient:
         return result
 
     def events(self, run_id: str, after: int = 0) -> list[dict[str, Any]]:
-        body = self._call("GET", f"/api/v1/runs/{run_id}/events", params={"after": after})
-        return list(body["items"])
+        events: list[dict[str, Any]] = []
+        while True:
+            page = self._call(
+                "GET",
+                f"/api/v1/runs/{run_id}/events/history",
+                params={"after": after, "limit": 500},
+            )
+            events.extend(page)
+            if len(page) < 500:
+                return events
+            after = int(page[-1]["sequence"])
 
-    def input_requests(self, state: str | None = None) -> list[dict[str, Any]]:
-        params = {"state": state} if state else {}
+    def input_requests(
+        self, state: str = "pending", run_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"state": state, "limit": 200}
+        if run_id is not None:
+            params["runId"] = run_id
         return list(self._call("GET", "/api/v1/input-requests", params=params)["items"])
 
-    def answer(self, request_id: str, version: int, data: Any) -> dict[str, Any]:
-        body = {"version": version, "data": data}
-        result: dict[str, Any] = self._call("POST", f"/api/v1/input-requests/{request_id}/answer", json=body)
+    def answer(self, request_id: str, version: int, value: Any) -> dict[str, Any]:
+        body = {"version": version, "value": value}
+        result: dict[str, Any] = self._call(
+            "POST", f"/api/v1/input-requests/{request_id}/answer", json=body
+        )
         return result
 
     def cancel(self, run_id: str) -> dict[str, Any]:
@@ -154,7 +181,9 @@ class FakePlatformClient:
         return result
 
     # --- helpers -------------------------------------------------------------------------------
-    def wait_for(self, predicate: Callable[[], bool], timeout: float, interval: float = 0.05) -> None:
+    def wait_for(
+        self, predicate: Callable[[], bool], timeout: float, interval: float = 0.05
+    ) -> None:
         deadline = time.monotonic() + timeout
         while not predicate():
             if time.monotonic() > deadline:

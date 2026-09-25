@@ -27,8 +27,9 @@ from crewquarters_fake.timeutil import iso, utcnow
 __all__ = ["iso", "utcnow"]
 
 
-def new_id(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:20]}"
+def new_id(prefix: str = "") -> str:
+    """UUIDs, like the control plane (the prefix argument is accepted for readability only)."""
+    return str(uuid.uuid4())
 
 
 @dataclass
@@ -39,6 +40,8 @@ class CatalogEntry:
     manifest: dict[str, Any]
     image_digest: str | None
     trust_status: str
+    version_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = field(default_factory=utcnow)
 
 
 @dataclass
@@ -50,10 +53,16 @@ class Installation:
     config: dict[str, Any]
     approved_permissions: dict[str, Any]
     capabilities: frozenset[str]
-    resolved_profiles: list[str]
+    model_bindings: dict[str, str]
     knowledge_base_ids: list[str]
     enabled: bool = True
     revision: int = 1
+    created_at: datetime = field(default_factory=utcnow)
+
+    @property
+    def resolved_profiles(self) -> list[str]:
+        """The exact model variants this installation may use."""
+        return sorted(set(self.model_bindings.values()))
 
 
 @dataclass
@@ -74,8 +83,15 @@ class Run:
     scheduled_for: str | None
     created_at: datetime
     updated_at: datetime
+    agent_name: str = ""
     state: str = "QUEUED"
-    attempts: list[Attempt] = field(default_factory=list)
+    # Like the control plane: a run starts at attempt 1 and each owner retry adds one.
+    current_attempt: int = 1
+    attempts: dict[int, Attempt] = field(default_factory=dict)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    retryable: bool = False
+    cancel_requested: bool = False
     result: Any = None
     error: dict[str, Any] | None = None
     waiting_since: float | None = None
@@ -84,12 +100,9 @@ class Run:
     client_event_ids: set[str] = field(default_factory=set)
 
     @property
-    def current_attempt(self) -> int:
-        return len(self.attempts)
-
-    @property
     def attempt(self) -> Attempt | None:
-        return self.attempts[-1] if self.attempts else None
+        """The current attempt once it has been dispatched."""
+        return self.attempts.get(self.current_attempt)
 
 
 @dataclass
@@ -108,34 +121,35 @@ class InputRequest:
     run_id: str
     agent_id: str
     key: str
+    attempt: int
     title: str
     prompt: str
     schema: dict[str, Any]
-    choices: list[dict[str, Any]] | None
-    preview: list[dict[str, Any]] | None
-    consequence: str | None
+    preview: dict[str, Any] | None
     timeout_seconds: int
-    content_hash: str
     created_at: datetime
     deadline: datetime
     state: str = "pending"
     version: int = 1
-    answer: dict[str, Any] | None = None
+    answer: Any = None
+    answered_at: datetime | None = None
 
 
 @dataclass
-class IdempotencyRecord:
+class ActionRecord:
+    """An external-action key (``ctx.idempotency``): claimed, in doubt, or completed."""
+
     key: str
-    state: str
-    result: Any
-    claimed_by_attempt: int
+    status: str
+    attempt: int
+    result: Any = None
     completed_at: datetime | None = None
 
 
 @dataclass
 class AutoAnswer:
     key_pattern: str
-    data: Any
+    value: Any
     delay_seconds: float = 0.0
 
 
@@ -155,11 +169,12 @@ class Store:
         self.events: dict[str, list[Event]] = {}
         self.inputs: dict[str, InputRequest] = {}
         self.input_keys: dict[tuple[str, str], str] = {}
-        self.idempotency: dict[tuple[str, str], IdempotencyRecord] = {}
+        self.actions: dict[tuple[str, str], ActionRecord] = {}
         self.tokens: dict[str, tuple[str, int]] = {}
         self.connections: dict[str, str] = {"google": "connected", "twilio": "connected"}
         self.auto_answers: list[AutoAnswer] = []
         self.traffic: list[dict[str, Any]] = []
+        self.audit: list[dict[str, Any]] = []
         self.faults.clear()
         self.reset_providers()
 
@@ -182,6 +197,14 @@ class Store:
     def events_after(self, run_id: str, after: int) -> list[Event]:
         return [e for e in self.events.get(run_id, []) if e.sequence > after]
 
+    def audit_event(self, run: Run, action: str, payload: dict[str, Any]) -> None:
+        """Security and usage records (LLM calls, connector calls, capability denials).
+
+        The control plane keeps these in ``audit_events``, not in the run event stream."""
+        self.audit.append(
+            {"runId": run.id, "action": action, "createdAt": iso(utcnow()), **payload}
+        )
+
     # --- run state ----------------------------------------------------------------------------
     def transition(self, run: Run, target: str, reason: str | None = None) -> None:
         check_transition(run.state, target)
@@ -193,7 +216,18 @@ class Store:
             run.waiting_since = now
         previous, run.state = run.state, target
         run.updated_at = utcnow()
-        self.append_event(run, "status", {"from": previous, "to": target, "reason": reason})
+        if target == "RUNNING" and run.started_at is None:
+            run.started_at = run.updated_at
+        if target in {"SUCCEEDED", "FAILED", "CANCELLED", "INTERRUPTED"}:
+            run.finished_at = run.updated_at
+        elif target == "QUEUED":
+            run.finished_at = None
+        payload: dict[str, Any] = {"from": previous, "to": target}
+        if reason:
+            payload["reason"] = reason
+        if target in {"FAILED", "INTERRUPTED"} and run.error:
+            payload["errorCode"] = str(run.error.get("code"))
+        self.append_event(run, "run.state_changed", payload)
 
     def input_wait_used(self, run: Run) -> float:
         used = run.waited_seconds

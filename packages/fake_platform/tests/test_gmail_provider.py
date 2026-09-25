@@ -68,7 +68,9 @@ def test_build_message_with_attachment_and_category() -> None:
             "date": "2026-09-23T10:00:00+05:30",
             "category": "promotions",
             "body": {
-                "multipart": [{"filename": "invoice.pdf", "mimeType": "application/pdf", "attachment": True}]
+                "multipart": [
+                    {"filename": "invoice.pdf", "mimeType": "application/pdf", "attachment": True}
+                ]
             },
         },
         KOLKATA,
@@ -114,7 +116,12 @@ def mailbox(count: int) -> GmailProvider:
         )
     messages.append(
         build_message(
-            {"id": "old", "subject": "old", "date": "2026-09-21T10:00:00+05:30", "body": {"text": "x"}},
+            {
+                "id": "old",
+                "subject": "old",
+                "date": "2026-09-21T10:00:00+05:30",
+                "body": {"text": "x"},
+            },
             KOLKATA,
             NOW,
         )

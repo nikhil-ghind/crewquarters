@@ -17,7 +17,7 @@ async def test_log_is_redacted_and_buffered_until_flush() -> None:
     assert broker.events == []
     await events.flush()
     [event] = broker.events
-    assert event["type"] == "log"
+    assert event["type"] == "run.log"
     assert event["payload"] == {
         "level": "info",
         "message": "dialing ••••0123",
@@ -42,10 +42,32 @@ async def test_progress_metric_and_artifact_payloads() -> None:
     await events.metric("messages", 12, unit="count")
     await events.artifact("digest.json", "application/json", summary="3 groups", size_bytes=120)
     await events.flush()
+    assert [(e["type"], e["payload"]) for e in broker.events] == [
+        ("run.progress", {"percent": 40, "message": "Fetching", "step": "fetch"}),
+        ("run.metric", {"name": "messages", "value": 12, "unit": "count"}),
+        (
+            "run.artifact",
+            {
+                "name": "digest.json",
+                "mediaType": "application/json",
+                "summary": "3 groups",
+                "bytes": 120,
+            },
+        ),
+    ]
+
+
+async def test_absent_optional_fields_are_omitted_not_null() -> None:
+    broker = FakeBroker()
+    events = make(broker)
+    await events.progress(None, "Working")
+    await events.metric("n", 1)
+    await events.artifact("report")
+    await events.flush()
     assert [e["payload"] for e in broker.events] == [
-        {"percent": 40, "message": "Fetching", "step": "fetch"},
-        {"name": "messages", "value": 12, "unit": "count"},
-        {"name": "digest.json", "mediaType": "application/json", "summary": "3 groups", "sizeBytes": 120},
+        {"percent": None, "message": "Working"},
+        {"name": "n", "value": 1},
+        {"name": "report"},
     ]
 
 
@@ -78,7 +100,9 @@ async def test_retryable_flush_failure_keeps_events_and_does_not_raise_from_add(
 async def test_background_flusher_sends_events() -> None:
     broker = FakeBroker()
     events = EventsClient(
-        BrokerClient("http://broker.test", "t", http=broker.client()), flush_interval=0.01, echo=None
+        BrokerClient("http://broker.test", "t", http=broker.client()),
+        flush_interval=0.01,
+        echo=None,
     )
     events.start()
     await events.log("info", "hello")
@@ -136,12 +160,16 @@ async def test_rejected_batch_is_salvaged_event_by_event() -> None:
                 422, json={"error": {"code": "INVALID_REQUEST", "message": "invalid event"}}
             )
         broker.events.extend(batch)
-        return httpx.Response(200, json={"accepted": len(batch), "lastSequence": len(broker.events)})
+        return httpx.Response(
+            200, json={"accepted": len(batch), "lastSequence": len(broker.events)}
+        )
 
     broker = FakeBroker()
     broker.overrides[("POST", "/events")] = handler
     notes: list[str] = []
-    events = EventsClient(BrokerClient("http://broker.test", "t", http=broker.client()), echo=notes.append)
+    events = EventsClient(
+        BrokerClient("http://broker.test", "t", http=broker.client()), echo=notes.append
+    )
     for message in ("ok1", "bad", "ok2"):
         await events.log("info", message)
     await events.flush()

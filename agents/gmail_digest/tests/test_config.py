@@ -14,7 +14,9 @@ def test_defaults() -> None:
     assert config.target_date is None
 
 
-@pytest.mark.parametrize("zone", ["Asia/Kolkata", "Asia/Calcutta", "UTC", "America/New_York", "Etc/UTC"])
+@pytest.mark.parametrize(
+    "zone", ["Asia/Kolkata", "Asia/Calcutta", "UTC", "America/New_York", "Etc/UTC"]
+)
 def test_timezone_aliases_and_abbreviations(zone: str) -> None:
     assert DigestConfig.model_validate({"timezone": zone}).timezone == zone
 
@@ -28,7 +30,12 @@ def test_abbreviations_and_unknown_zones_are_rejected(zone: str) -> None:
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("maxMessages", 0), ("maxMessages", 501), ("batchSize", 26), ("excludeCategories", ["CATEGORY_SPAM"])],
+    [
+        ("maxMessages", 0),
+        ("maxMessages", 501),
+        ("batchSize", 26),
+        ("excludeCategories", ["CATEGORY_SPAM"]),
+    ],
 )
 def test_bounds(field: str, value: object) -> None:
     with pytest.raises(ValidationError):

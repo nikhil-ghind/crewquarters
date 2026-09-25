@@ -10,6 +10,16 @@ info:
     Every request carries `Authorization: Bearer <PLATFORM_RUN_TOKEN>` and an `X-Request-Id` header.
     JSON uses camelCase. Errors use the PLAN.md section 4.3 envelope.
 
+    Run lifecycle, input, and action operations mirror the control plane's
+    `/internal/v1` run API (packages/contracts/openapi.yaml) so the broker can pass them
+    through, adding the attempt from the verified run token:
+      /handshake, /heartbeat, /events, /result -> /internal/v1/runs/{runId}/...
+      /input-requests                          -> /internal/v1/runs/{runId}/input-requests
+      /input-requests/{id}                     -> /internal/v1/input-requests/{id}
+      /actions/{key}/claim|complete            -> /internal/v1/runs/{runId}/actions/{key}/...
+    Capability strings come from packages/contracts/capabilities.yaml. Event payloads follow
+    packages/contracts/events/run-event.schema.json.
+
     Operation extensions:
       x-capability   capability string required, or null for baseline operations
       x-idempotent   true, false, or "with-idempotency-key" (safe to retry only when the key is present)
@@ -49,16 +59,18 @@ paths:
       x-idempotent: true
       x-fault-target: broker.heartbeat
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema: {type: object}
       responses:
         "200":
-          description: Liveness acknowledged.
+          description: |
+            Liveness acknowledged. `cancelRequested` is true once the owner cancelled the run or
+            the run has already ended; the agent should stop and post its result.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/HeartbeatResponse"}
+              schema: {$ref: "#/components/schemas/RunStateResponse"}
         default: {$ref: "#/components/responses/Error"}
 
   /events:
@@ -93,16 +105,18 @@ paths:
             schema: {$ref: "#/components/schemas/ResultRequest"}
       responses:
         "200":
-          description: Outcome recorded (re-posting the same outcome is a no-op).
+          description: |
+            The first result wins; later posts return the recorded state. A result posted after
+            the owner cancelled ends the run CANCELLED.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/ResultResponse"}
+              schema: {$ref: "#/components/schemas/RunStateResponse"}
         default: {$ref: "#/components/responses/Error"}
 
   /input-requests:
     post:
       operationId: createInputRequest
-      x-capability: input.ask
+      x-capability: user_input
       x-idempotent: true
       x-fault-target: broker.input.create
       requestBody:
@@ -112,25 +126,28 @@ paths:
             schema: {$ref: "#/components/schemas/InputRequestCreate"}
       responses:
         "200":
-          description: The request for this key (existing or newly created).
+          description: |
+            The request for this key. Asking an existing key returns it (an answer given to an
+            earlier attempt is returned as is); a request an earlier attempt left cancelled or
+            expired is reopened with a new version.
           content:
             application/json:
               schema: {$ref: "#/components/schemas/InputRequest"}
         default: {$ref: "#/components/responses/Error"}
 
-  /input-requests/{key}:
+  /input-requests/{id}:
     get:
       operationId: getInputRequest
-      x-capability: input.ask
+      x-capability: user_input
       x-idempotent: true
       x-fault-target: broker.input.get
       parameters:
-        - {name: key, in: path, required: true, schema: {type: string}}
-        - name: waitSeconds
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - name: wait
           in: query
           required: false
-          description: Long-poll up to this many seconds for a state change.
-          schema: {type: integer, minimum: 0, maximum: 25, default: 0}
+          description: Long-poll up to this many seconds for the request to close.
+          schema: {type: number, minimum: 0, maximum: 30, default: 0}
       responses:
         "200":
           description: Current state of the request.
@@ -142,7 +159,7 @@ paths:
   /llm/chat:
     post:
       operationId: llmChat
-      x-capability: "llm.*"
+      x-capability: "llm.profile:<variant> (and cloud.<provider> for cloud profiles)"
       x-idempotent: with-idempotency-key
       x-fault-target: broker.llm.chat
       requestBody:
@@ -161,7 +178,7 @@ paths:
   /llm/chat:stream:
     post:
       operationId: llmChatStream
-      x-capability: "llm.*"
+      x-capability: "llm.profile:<variant> (and cloud.<provider> for cloud profiles)"
       x-idempotent: false
       x-fault-target: broker.llm.stream
       requestBody:
@@ -182,7 +199,7 @@ paths:
   /knowledge/search:
     post:
       operationId: knowledgeSearch
-      x-capability: knowledge.search
+      x-capability: knowledge.search:config
       x-idempotent: true
       x-fault-target: broker.knowledge.search
       requestBody:
@@ -192,7 +209,7 @@ paths:
             schema: {$ref: "#/components/schemas/KnowledgeSearchRequest"}
       responses:
         "200":
-          description: Passages from the authorised knowledge base.
+          description: Passages from the knowledge base selected in the installation config.
           content:
             application/json:
               schema: {$ref: "#/components/schemas/KnowledgeSearchResponse"}
@@ -236,7 +253,7 @@ paths:
   /google/sheets/values:get:
     post:
       operationId: sheetsGetValues
-      x-capability: google.sheets
+      x-capability: google.spreadsheets
       x-idempotent: true
       x-fault-target: broker.sheets.get
       requestBody:
@@ -255,7 +272,7 @@ paths:
   /google/sheets/values:update:
     post:
       operationId: sheetsUpdateValues
-      x-capability: google.sheets
+      x-capability: google.spreadsheets
       x-idempotent: true
       x-fault-target: broker.sheets.update
       requestBody:
@@ -274,7 +291,7 @@ paths:
   /google/sheets/values:append:
     post:
       operationId: sheetsAppendValues
-      x-capability: google.sheets
+      x-capability: google.spreadsheets
       x-idempotent: false
       x-fault-target: broker.sheets.append
       requestBody:
@@ -293,7 +310,7 @@ paths:
   /telephony/calls:
     post:
       operationId: createCall
-      x-capability: twilio.voice.call
+      x-capability: twilio.call.fixed_script
       x-idempotent: true
       x-fault-target: broker.telephony.create
       requestBody:
@@ -312,7 +329,7 @@ paths:
   /telephony/calls/{id}:
     get:
       operationId: getCall
-      x-capability: twilio.voice.call
+      x-capability: twilio.call.fixed_script
       x-idempotent: true
       x-fault-target: broker.telephony.get
       parameters:
@@ -325,60 +342,44 @@ paths:
               schema: {$ref: "#/components/schemas/Call"}
         default: {$ref: "#/components/responses/Error"}
 
-  /idempotency/claim:
+  /actions/{key}/claim:
     post:
-      operationId: idempotencyClaim
+      operationId: claimAction
       x-capability: null
-      x-idempotent: true
-      x-fault-target: broker.idempotency.claim
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/IdempotencyClaim"}
+      x-idempotent: false
+      x-fault-target: broker.actions.claim
+      parameters:
+        - {name: key, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
       responses:
         "200":
           description: |
-            `claimed`: the caller owns the action now. `in_progress`: an earlier attempt claimed it and did not
-            complete (pass takeover=true to reclaim). `completed`: the stored result is returned.
+            `claimed`: this call created the key, so proceed with the side effect. `in_doubt`: the
+            key was claimed before (by this or an earlier attempt) and never completed; the side
+            effect may already have happened. `completed`: the stored result is returned.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/IdempotencyRecord"}
+              schema: {$ref: "#/components/schemas/ActionRecord"}
         default: {$ref: "#/components/responses/Error"}
 
-  /idempotency/complete:
+  /actions/{key}/complete:
     post:
-      operationId: idempotencyComplete
+      operationId: completeAction
       x-capability: null
       x-idempotent: true
-      x-fault-target: broker.idempotency.complete
+      x-fault-target: broker.actions.complete
+      parameters:
+        - {name: key, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/IdempotencyComplete"}
+            schema: {$ref: "#/components/schemas/ActionComplete"}
       responses:
         "200":
-          description: Record completed with the given result.
+          description: The action is completed with this result (the first result is kept).
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/IdempotencyRecord"}
-        default: {$ref: "#/components/responses/Error"}
-
-  /idempotency/{key}:
-    get:
-      operationId: idempotencyGet
-      x-capability: null
-      x-idempotent: true
-      x-fault-target: broker.idempotency.get
-      parameters:
-        - {name: key, in: path, required: true, schema: {type: string}}
-      responses:
-        "200":
-          description: The record for this key.
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/IdempotencyRecord"}
+              schema: {$ref: "#/components/schemas/ActionRecord"}
         default: {$ref: "#/components/responses/Error"}
 
 components:
@@ -391,9 +392,10 @@ components:
   responses:
     Error:
       description: |
-        Error envelope. Codes by status: 401 UNAUTHENTICATED; 403 CAPABILITY_DENIED; 404 NOT_FOUND;
-        409 RUN_NOT_ACTIVE, RUN_CANCELLED, NEEDS_CONNECTION, INPUT_KEY_CONFLICT, OUTCOME_ALREADY_RECORDED,
-        IDEMPOTENCY_CONFLICT, PROTOCOL_UNSUPPORTED; 422 INVALID_REQUEST, INPUT_WAIT_BUDGET_EXCEEDED,
+        Error envelope. Codes by status: 401 UNAUTHENTICATED; 403 CAPABILITY_DENIED,
+        PERMISSION_DENIED; 404 NOT_FOUND; 409 RUN_NOT_ACTIVE, RUN_CANCELLED, INVALID_RUN_STATE,
+        NEEDS_CONNECTION, ACTION_NOT_CLAIMED, PROTOCOL_UNSUPPORTED; 422 INVALID_REQUEST,
+        INVALID_EVENT_TYPE, INVALID_EVENT, INVALID_INPUT_SCHEMA, INPUT_WAIT_BUDGET_EXCEEDED,
         UNSUPPORTED_FEATURE; 429 RATE_LIMITED (with Retry-After); 502 PROVIDER_ERROR;
         503 MODEL_UNAVAILABLE, PROVIDER_UNAVAILABLE; 504 TIMEOUT.
       content:
@@ -437,9 +439,13 @@ components:
 
     Grants:
       type: object
-      required: [llmProfiles, knowledgeBaseIds, google, twilio, cloudProviders]
+      required: [llmProfiles, modelBindings, knowledgeBaseIds, google, twilio, cloudProviders]
       properties:
-        llmProfiles: {type: array, items: {type: string}, description: Resolved profile variants.}
+        llmProfiles: {type: array, items: {type: string}, description: Bound profile variants.}
+        modelBindings:
+          type: object
+          additionalProperties: {type: string}
+          description: Requested profile (family or exact) to the variant the owner approved.
         knowledgeBaseIds: {type: array, items: {type: string}}
         google: {type: array, items: {type: string}}
         twilio: {type: array, items: {type: string}}
@@ -464,21 +470,26 @@ components:
         heartbeatIntervalSeconds: {type: number, exclusiveMinimum: 0}
         serverTime: {type: string, format: date-time}
 
-    HeartbeatResponse:
+    RunStateResponse:
+      description: The control plane's HeartbeatOut.
       type: object
-      required: [cancelRequested, serverTime]
+      required: [state, cancelRequested]
       properties:
+        state:
+          enum: [QUEUED, PREPARING, LOADING_MODEL, RUNNING, WAITING_INPUT, CANCELLING, SUCCEEDED,
+                 FAILED, CANCELLED, INTERRUPTED]
         cancelRequested: {type: boolean}
-        serverTime: {type: string, format: date-time}
 
     AgentEvent:
       type: object
       required: [clientEventId, type, occurredAt, payload]
       properties:
         clientEventId: {type: string, minLength: 1, maxLength: 64}
-        type: {enum: [log, progress, metric, artifact]}
+        type: {enum: [run.log, run.progress, run.metric, run.artifact]}
         occurredAt: {type: string, format: date-time}
-        payload: {type: object}
+        payload:
+          type: object
+          description: The payload for this type in packages/contracts/events/run-event.schema.json.
 
     EventsRequest:
       type: object
@@ -502,22 +513,24 @@ components:
       properties:
         code: {type: string}
         message: {type: string}
-        retryable: {type: boolean, default: false}
+        retryable: {type: boolean, default: true}
         details: {type: object}
 
     ResultRequest:
+      description: |
+        The control plane's RunResultIn without `attempt` (the broker adds it from the token).
+        A cancelled run reports `failed` with error code RUN_CANCELLED.
       type: object
-      required: [outcome]
+      required: [status]
       properties:
-        outcome: {enum: [succeeded, failed, cancelled]}
-        result: {}
-        error: {$ref: "#/components/schemas/RunError"}
-
-    ResultResponse:
-      type: object
-      required: [runState]
-      properties:
-        runState: {type: string}
+        status: {enum: [succeeded, failed]}
+        result:
+          type: [object, "null"]
+          description: Validated against the manifest's resultSchema by the platform.
+        error:
+          oneOf:
+            - {type: "null"}
+            - {$ref: "#/components/schemas/RunError"}
 
     Choice:
       type: object
@@ -553,32 +566,38 @@ components:
             columns: {type: array, items: {type: string}}
             rows: {type: array, items: {type: array, items: {type: string}}}
 
+    Preview:
+      description: |
+        The approval card the owner sees (stored by the control plane as the request's `preview`).
+      type: object
+      required: [blocks]
+      properties:
+        blocks: {type: array, items: {$ref: "#/components/schemas/PreviewBlock"}}
+        choices: {type: array, items: {$ref: "#/components/schemas/Choice"}}
+        consequence: {type: string}
+
     InputRequestCreate:
+      description: The control plane's AskIn without `attempt`.
       type: object
       required: [key, title, prompt, schema, timeoutSeconds]
       properties:
-        key: {type: string, minLength: 1, maxLength: 200}
+        key: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_.:-]+$"}
         title: {type: string, minLength: 1, maxLength: 200}
-        prompt: {type: string, minLength: 1}
+        prompt: {type: string, minLength: 1, maxLength: 4000}
         schema:
           type: object
-          description: JSON Schema the answer must satisfy. With choices, it is {"type":"object","required":["choice"],"properties":{"choice":{"type":"string","enum":[...]}}}.
-        choices: {type: array, items: {$ref: "#/components/schemas/Choice"}}
-        preview: {type: array, items: {$ref: "#/components/schemas/PreviewBlock"}}
-        consequence: {type: string}
+          description: |
+            JSON Schema the answer must satisfy; `pattern` and `patternProperties` are not allowed.
+            With choices it is {"type":"object","required":["choice"],"properties":{"choice":{"type":"string","enum":[...]}}}.
+        preview: {$ref: "#/components/schemas/Preview"}
         timeoutSeconds: {type: integer, minimum: 1, maximum: 86400}
 
-    InputAnswer:
-      type: object
-      required: [data, answeredAt]
-      properties:
-        data: {}
-        answeredAt: {type: string, format: date-time}
-        answeredBy: {type: [string, "null"]}
-
     InputRequest:
+      description: |
+        The fields the SDK reads from the control plane's InputRequestOut (the broker may return
+        the whole InputRequestOut).
       type: object
-      required: [id, key, state, version, createdAt, deadline]
+      required: [id, key, state, version, createdAt, deadline, answeredAt]
       properties:
         id: {type: string}
         key: {type: string}
@@ -586,10 +605,8 @@ components:
         version: {type: integer, minimum: 1}
         createdAt: {type: string, format: date-time}
         deadline: {type: string, format: date-time}
-        answer:
-          oneOf:
-            - {type: "null"}
-            - {$ref: "#/components/schemas/InputAnswer"}
+        answer: {description: The submitted answer object; null until answered.}
+        answeredAt: {type: [string, "null"], format: date-time}
 
     ChatMessage:
       type: object
@@ -761,26 +778,16 @@ components:
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
 
-    IdempotencyClaim:
+    ActionComplete:
       type: object
-      required: [key]
       properties:
-        key: {type: string, minLength: 1, maxLength: 200}
-        takeover: {type: boolean, default: false}
+        result: {description: Stored and returned to later claims of this key.}
 
-    IdempotencyComplete:
+    ActionRecord:
+      description: The control plane's ActionOut.
       type: object
-      required: [key, result]
-      properties:
-        key: {type: string, minLength: 1, maxLength: 200}
-        result: {}
-
-    IdempotencyRecord:
-      type: object
-      required: [key, state, result, claimedByAttempt, completedAt]
+      required: [key, status]
       properties:
         key: {type: string}
-        state: {enum: [claimed, in_progress, completed]}
+        status: {enum: [claimed, in_doubt, completed]}
         result: {}
-        claimedByAttempt: {type: integer, minimum: 1}
-        completedAt: {type: [string, "null"], format: date-time}

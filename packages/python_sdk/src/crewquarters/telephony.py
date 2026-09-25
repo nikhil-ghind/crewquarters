@@ -61,12 +61,17 @@ class TelephonyClient:
 
     async def get_call(self, call_id: str) -> Call:
         data = await self._transport.request(
-            "GET", f"/telephony/calls/{quote(call_id, safe='')}", operation="telephony.get", idempotent=True
+            "GET",
+            f"/telephony/calls/{quote(call_id, safe='')}",
+            operation="telephony.get",
+            idempotent=True,
         )
         return Call.model_validate(data)
 
-    async def wait_for_call(self, call_id: str, *, timeout_seconds: float, poll_seconds: float = 2.0) -> Call:
-        """Poll until the call reaches a terminal state; returns the last state seen at the timeout."""
+    async def wait_for_call(
+        self, call_id: str, *, timeout_seconds: float, poll_seconds: float = 2.0
+    ) -> Call:
+        """Poll until the call reaches a terminal state; returns the last state seen on timeout."""
         deadline = time.monotonic() + timeout_seconds
         while True:
             call = await self.get_call(call_id)

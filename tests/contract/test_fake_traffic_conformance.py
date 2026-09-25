@@ -1,31 +1,35 @@
-"""Every request and response exchanged while the bundled agents run matches the draft contracts."""
+"""Every request and response exchanged while the bundled agents run matches the contracts:
+control API traffic against the canonical openapi.yaml, SDK traffic against the broker draft, and
+every run event against the canonical run-event schema."""
 
-import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
+from openapi_check import find_operation, request_schema, response_schema, validator
 
-from crewquarters_contracts import loader
-from crewquarters_contracts.manifest import load_manifest
+from crewquarters_fake import contracts
 from crewquarters_fake.app import create_app
 from crewquarters_fake.client import FakePlatformClient
+from crewquarters_fake.contracts import load_manifest
 from crewquarters_fake.harness import run_agent
 from crewquarters_fake.launcher import ProcessLauncher
 from crewquarters_fake.server import BackgroundServer
 from crewquarters_fake.settings import FakeSettings
-
-sys.path.insert(0, str(Path(__file__).parent))
-from openapi_check import find_operation, request_schema, response_schema, validator
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "fixtures" / "scenarios"
 
 
 def run(
-    client: FakePlatformClient, tmp: Path, agent: str, scenario: Path, config: dict[str, Any], **kw: Any
+    client: FakePlatformClient,
+    tmp: Path,
+    agent: str,
+    scenario: Path,
+    config: dict[str, Any],
+    **kw: Any,
 ) -> str:
     agent_dir = REPO / "agents" / agent
     manifest = load_manifest(agent_dir / "manifest.yaml")
@@ -33,7 +37,12 @@ def run(
     client.register_manifest(manifest)
     if kw.pop("approve", False):
         client.add_auto_answer("confirm-calls-v1:*", {"choice": "approve"})
-    installation = client.install(manifest["metadata"]["id"], manifest["metadata"]["version"], config)
+    installation = client.install(
+        manifest["metadata"]["id"],
+        manifest["metadata"]["version"],
+        config,
+        manifest["spec"]["permissions"],
+    )
     launcher = ProcessLauncher(manifest["spec"]["entrypoint"], agent_dir=agent_dir, log_dir=tmp)
     outcome = run_agent(client, launcher, installation["id"], timeout=90, **kw)
     assert outcome.state == "SUCCEEDED", outcome.log
@@ -43,10 +52,17 @@ def run(
 @pytest.fixture(scope="module")
 def traffic(tmp_path_factory: pytest.TempPathFactory) -> Iterator[list[dict[str, Any]]]:
     tmp = tmp_path_factory.mktemp("traffic")
-    with BackgroundServer(create_app(FakeSettings(heartbeat_seconds=0.2, record_traffic=True))) as server:
+    settings = FakeSettings(heartbeat_seconds=0.2, record_traffic=True)
+    with BackgroundServer(create_app(settings)) as server:
         client = FakePlatformClient(server.url)
         probe = REPO / "agents" / "contract_probe"
-        run(client, tmp, "contract_probe", probe / "scenarios" / "default", {"expectIsolation": False})
+        run(
+            client,
+            tmp,
+            "contract_probe",
+            probe / "scenarios" / "default",
+            {"expectIsolation": False},
+        )
         run(
             client,
             tmp,
@@ -64,6 +80,8 @@ def traffic(tmp_path_factory: pytest.TempPathFactory) -> Iterator[list[dict[str,
             {"spreadsheetId": "caller-sheet", "callPollSeconds": 0.05},
             approve=True,
         )
+        # The operator paths the UI uses: list pending requests and page through events.
+        client.input_requests(state="all")
         yield list(client.state("traffic"))
 
 
@@ -71,7 +89,9 @@ def split(traffic: list[dict[str, Any]], prefix: str) -> list[dict[str, Any]]:
     return [t for t in traffic if t["path"].startswith(prefix)]
 
 
-def check(records: list[dict[str, Any]], document: dict[str, Any], prefix: str) -> tuple[list[str], set[str]]:
+def check(
+    records: list[dict[str, Any]], document: dict[str, Any], prefix: str
+) -> tuple[list[str], set[str]]:
     problems: list[str] = []
     seen: set[str] = set()
     for record in records:
@@ -96,8 +116,9 @@ def check(records: list[dict[str, Any]], document: dict[str, Any], prefix: str) 
     return problems, seen
 
 
-def test_broker_traffic_matches_the_broker_contract(traffic: list[dict[str, Any]]) -> None:
-    problems, seen = check(split(traffic, "/internal/v1/sdk"), loader.broker_openapi(), "/internal/v1/sdk")
+def test_broker_traffic_matches_the_broker_draft(traffic: list[dict[str, Any]]) -> None:
+    prefix = "/internal/v1/sdk"
+    problems, seen = check(split(traffic, prefix), contracts.broker_openapi(), prefix)
     assert problems == []
     assert {
         "handshake",
@@ -114,24 +135,37 @@ def test_broker_traffic_matches_the_broker_contract(traffic: list[dict[str, Any]
         "sheetsUpdateValues",
         "createCall",
         "getCall",
-        "idempotencyClaim",
-        "idempotencyComplete",
+        "claimAction",
+        "completeAction",
     } <= seen
 
 
-def test_control_traffic_matches_the_control_contract(traffic: list[dict[str, Any]]) -> None:
-    problems, seen = check(split(traffic, "/api/v1"), loader.control_openapi(), "")
+def test_control_traffic_matches_the_canonical_control_api(
+    traffic: list[dict[str, Any]],
+) -> None:
+    problems, seen = check(split(traffic, "/api/v1"), contracts.control_openapi(), "")
     assert problems == []
-    assert {"createInstallation", "createRun", "getRun", "listRunEvents"} <= seen
+    assert {
+        "create_installation_api_v1_agent_installations_post",
+        "create_run_api_v1_runs_post",
+        "get_run_api_v1_runs__run_id__get",
+        "run_events_history_api_v1_runs__run_id__events_history_get",
+        "list_input_requests_api_v1_input_requests_get",
+    } <= seen
 
 
-def test_every_run_event_matches_the_event_schema(traffic: list[dict[str, Any]]) -> None:
-    event_validator = Draft202012Validator(loader.run_event_schema())
+def test_every_run_event_matches_the_canonical_event_schema(
+    traffic: list[dict[str, Any]],
+) -> None:
+    schema = contracts.run_event_schema()
+    event_validator = Draft202012Validator(
+        schema, format_checker=Draft202012Validator.FORMAT_CHECKER
+    )
     events = [
         item
         for record in traffic
-        if record["path"].endswith("/events") and record["method"] == "GET" and record["responseBody"]
-        for item in record["responseBody"]["items"]
+        if record["path"].endswith("/events/history") and record["responseBody"]
+        for item in record["responseBody"]
     ]
     assert len(events) > 100
     problems = [
@@ -141,11 +175,12 @@ def test_every_run_event_matches_the_event_schema(traffic: list[dict[str, Any]])
     ]
     assert problems == []
     assert {
-        "status",
-        "log",
-        "progress",
-        "input.requested",
-        "llm.call",
-        "connector.call",
-        "capability.denied",
+        "run.state_changed",
+        "run.log",
+        "run.progress",
+        "run.metric",
+        "run.artifact",
+        "run.input_requested",
+        "run.input_answered",
+        "run.result",
     } <= {e["type"] for e in events}

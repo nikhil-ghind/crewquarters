@@ -1,4 +1,4 @@
-"""Broker telephony routes. The broker, not the agent, builds the call script (TwiML in production)."""
+"""Broker telephony routes. The broker, not the agent, builds the call script (TwiML)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from crewquarters_fake.broker.auth import RunAuth, require, run_auth
 from crewquarters_fake.errors import ApiError
 
 router = APIRouter()
+CAPABILITY = "twilio.call.fixed_script"
 
 
 class ScriptIn(BaseModel):
@@ -32,21 +33,29 @@ class CallIn(BaseModel):
 
 
 @router.post("/telephony/calls")
-async def create_call(body: CallIn, request: Request, auth: RunAuth = Depends(run_auth)) -> dict[str, Any]:
-    require(auth, "twilio.voice.call", "broker.telephony.create")
+async def create_call(
+    body: CallIn, request: Request, auth: RunAuth = Depends(run_auth)
+) -> dict[str, Any]:
+    require(auth, CAPABILITY, "broker.telephony.create")
     require_connection(auth, "twilio")
 
     async def call() -> dict[str, Any]:
         return auth.store.twilio.create(
-            auth.run.id, body.to, body.script.model_dump(), body.gather.model_dump(), body.idempotencyKey
+            auth.run.id,
+            body.to,
+            body.script.model_dump(),
+            body.gather.model_dump(),
+            body.idempotencyKey,
         )
 
     return await audited(auth, request, "twilio", "broker.telephony.create", call)
 
 
 @router.get("/telephony/calls/{call_id}")
-async def get_call(call_id: str, request: Request, auth: RunAuth = Depends(run_auth)) -> dict[str, Any]:
-    require(auth, "twilio.voice.call", "broker.telephony.get")
+async def get_call(
+    call_id: str, request: Request, auth: RunAuth = Depends(run_auth)
+) -> dict[str, Any]:
+    require(auth, CAPABILITY, "broker.telephony.get")
     require_connection(auth, "twilio")
 
     async def call() -> dict[str, Any]:

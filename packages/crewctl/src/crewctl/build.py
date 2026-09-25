@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from crewquarters_contracts.manifest import load_manifest
+from crewquarters_fake.contracts import load_manifest
 
 Runner = Callable[[list[str]], Any]
 _IMAGE_LINE_RE = re.compile(r"^(?P<prefix>\s*image:\s*)(?P<value>\S+)", re.MULTILINE)
@@ -49,7 +49,17 @@ def build_command(
     push: bool,
     metadata_file: Path | None,
 ) -> list[str]:
-    command = ["docker", "buildx", "build", "--platform", platforms, "-f", str(dockerfile), "-t", tag]
+    command = [
+        "docker",
+        "buildx",
+        "build",
+        "--platform",
+        platforms,
+        "-f",
+        str(dockerfile),
+        "-t",
+        tag,
+    ]
     command.append("--push" if push else "--load")
     if metadata_file is not None:
         command += ["--metadata-file", str(metadata_file)]

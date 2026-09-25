@@ -33,14 +33,14 @@ async def audited[T](
     operation: str,
     call: Callable[[], Awaitable[T]],
 ) -> T:
-    """Run a connector operation through fault injection and record a payload-free connector.call event."""
+    """Run a connector operation through fault injection and audit it without its payload."""
     payload = {"connector": connector, "operation": operation, "requestId": request_id(request)}
     try:
         result = await auth.store.faults.run(operation, call)
     except ApiError:
-        auth.store.append_event(auth.run, "connector.call", {**payload, "outcome": "error"})
+        auth.store.audit_event(auth.run, "connector.call", {**payload, "outcome": "error"})
         await auth.store.notify()
         raise
-    auth.store.append_event(auth.run, "connector.call", {**payload, "outcome": "ok"})
+    auth.store.audit_event(auth.run, "connector.call", {**payload, "outcome": "ok"})
     await auth.store.notify()
     return result

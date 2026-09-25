@@ -22,7 +22,11 @@ def test_unknown_check_names_are_rejected() -> None:
 
 
 def test_cancellation_always_runs_last() -> None:
-    assert ordered(["cancellation", "events", "handshake"]) == ["events", "handshake", "cancellation"]
+    assert ordered(["cancellation", "events", "handshake"]) == [
+        "events",
+        "handshake",
+        "cancellation",
+    ]
 
 
 async def test_isolation_is_skipped_when_not_expected() -> None:

@@ -1,4 +1,4 @@
-"""Validate recorded HTTP traffic against the draft OpenAPI documents."""
+"""Validate recorded HTTP traffic against OpenAPI documents (formats included)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,9 @@ def _template_regex(template: str) -> re.Pattern[str]:
     return re.compile(f"^{pattern}$")
 
 
-def find_operation(document: dict[str, Any], prefix: str, method: str, path: str) -> dict[str, Any] | None:
+def find_operation(
+    document: dict[str, Any], prefix: str, method: str, path: str
+) -> dict[str, Any] | None:
     for template, item in document["paths"].items():
         if _template_regex(prefix + template).match(path):
             operation = item.get(method.lower())
@@ -26,7 +28,10 @@ def find_operation(document: dict[str, Any], prefix: str, method: str, path: str
 
 
 def validator(document: dict[str, Any], schema: dict[str, Any]) -> Draft202012Validator:
-    return Draft202012Validator({**schema, "components": document["components"]})
+    return Draft202012Validator(
+        {**schema, "components": document["components"]},
+        format_checker=Draft202012Validator.FORMAT_CHECKER,
+    )
 
 
 def _json_schema(entry: dict[str, Any] | None) -> dict[str, Any] | None:

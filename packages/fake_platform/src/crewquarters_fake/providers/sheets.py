@@ -35,7 +35,10 @@ class SheetsProvider:
 
     def load(self, spreadsheets: dict[str, dict[str, list[list[Any]]]]) -> None:
         self.books = {
-            sheet_id: {tab: [[cell_text(c) for c in row] for row in rows or []] for tab, rows in tabs.items()}
+            sheet_id: {
+                tab: [[cell_text(c) for c in row] for row in rows or []]
+                for tab, rows in tabs.items()
+            }
             for sheet_id, tabs in spreadsheets.items()
         }
 
@@ -76,7 +79,11 @@ class SheetsProvider:
             for col, value in enumerate(row_values):
                 row[rng.start_col + col] = cell_text(value)
         updated = format_range(
-            rng.tab, rng.start_col, row_index + 1, rng.start_col + max(width, 1) - 1, row_index + len(values)
+            rng.tab,
+            rng.start_col,
+            row_index + 1,
+            rng.start_col + max(width, 1) - 1,
+            row_index + len(values),
         )
         return {"updatedRange": updated, "updatedRows": len(values)}
 

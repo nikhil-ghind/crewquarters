@@ -35,7 +35,9 @@ def _received(message: FetchedMessage, tz: ZoneInfo) -> str:
 
 
 def _render(message: FetchedMessage, tz: ZoneInfo) -> str:
-    header = f"From: {message.sender}\nSubject: {message.subject}\nReceived: {_received(message, tz)}"
+    header = (
+        f"From: {message.sender}\nSubject: {message.subject}\nReceived: {_received(message, tz)}"
+    )
     return f"{header}\n\n{message.text}"
 
 

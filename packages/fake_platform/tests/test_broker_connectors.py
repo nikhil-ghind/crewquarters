@@ -4,16 +4,17 @@ from typing import Any
 
 import httpx
 import yaml
+from fake_helpers import SDK, audit, events, manifest, run_state, start
 from fastapi import FastAPI
-from helpers import SDK, events, manifest, run_state, start
 
 PERMISSIONS: dict[str, Any] = {
     "userInput": True,
-    "llmProfiles": ["local.general", "cloud.openai.gpt-small"],
+    "llmProfiles": ["local.general", "openai.gpt-small"],
     "cloudProviders": ["openai"],
-    "knowledge": ["search"],
-    "connectors": {"google": ["gmail.readonly", "spreadsheets"], "twilio": ["voice.call"]},
+    "knowledge": ["config"],
+    "connectors": {"google": ["gmail.readonly", "spreadsheets"], "twilio": ["call.fixed_script"]},
 }
+AUDIT_FIELDS = {"runId", "action", "createdAt"}
 
 
 def full_manifest() -> dict[str, Any]:
@@ -52,7 +53,9 @@ def scenario(root: Path) -> Path:
                         },
                     ]
                 },
-                "sheets": {"spreadsheets": {"s1": {"Contacts": [["name"], ["Asha"]], "Results": []}}},
+                "sheets": {
+                    "spreadsheets": {"s1": {"Contacts": [["name"], ["Asha"]], "Results": []}}
+                },
                 "twilio": {"outcomes": {"+15555550101": {"status": "completed", "speech": "yes"}}},
                 "llm": {
                     "rules": [
@@ -75,29 +78,38 @@ async def load(api: httpx.AsyncClient, root: Path) -> None:
     assert r.status_code == 200, r.text
 
 
-async def test_gmail_list_and_get_are_capability_gated(api: httpx.AsyncClient, tmp_path: Path) -> None:
+async def test_gmail_list_and_get_are_capability_gated(
+    api: httpx.AsyncClient, tmp_path: Path
+) -> None:
     await load(api, tmp_path)
     started = await start(api, full_manifest())
-    listed = await api.get(f"{SDK}/google/gmail/messages", params={"q": "after:0"}, headers=started.headers)
+    gmail = f"{SDK}/google/gmail/messages"
+    listed = await api.get(gmail, params={"q": "after:0"}, headers=started.headers)
     assert [m["id"] for m in listed.json()["messages"]] == ["m2", "m1"]
-    got = await api.get(f"{SDK}/google/gmail/messages/m1", headers=started.headers)
+    got = await api.get(f"{gmail}/m1", headers=started.headers)
     assert got.json()["id"] == "m1"
-    bad = await api.get(f"{SDK}/google/gmail/messages", params={"q": "from:me"}, headers=started.headers)
+    bad = await api.get(gmail, params={"q": "from:me"}, headers=started.headers)
     assert bad.status_code == 400
-    calls = [e for e in await events(api, started.run_id) if e["type"] == "connector.call"]
-    assert [(c["payload"]["operation"], c["payload"]["outcome"]) for c in calls] == [
+    # Connector calls are payload-free audit records, not run events.
+    calls = [a for a in await audit(api) if a["action"] == "connector.call"]
+    assert [(c["operation"], c["outcome"]) for c in calls] == [
         ("broker.gmail.list", "ok"),
         ("broker.gmail.get", "ok"),
         ("broker.gmail.list", "error"),
     ]
-    assert set(calls[0]["payload"]) == {"connector", "operation", "outcome", "requestId"}
+    assert set(calls[0]) - AUDIT_FIELDS == {"connector", "operation", "outcome", "requestId"}
+    assert all(e["type"].startswith("run.") for e in await events(api, started.run_id))
 
-    plain = await start(api)
-    denied = await api.get(f"{SDK}/google/gmail/messages", headers=plain.headers)
+    no_google = manifest()
+    no_google["metadata"]["version"] = "0.2.0"  # a published version is immutable
+    plain = await start(api, no_google)
+    denied = await api.get(gmail, headers=plain.headers)
     assert denied.status_code == 403
 
 
-async def test_expired_google_connection_needs_reconnect(api: httpx.AsyncClient, tmp_path: Path) -> None:
+async def test_expired_google_connection_needs_reconnect(
+    api: httpx.AsyncClient, tmp_path: Path
+) -> None:
     await load(api, tmp_path)
     await api.post("/fake/v1/connections", json={"provider": "google", "status": "expired"})
     started = await start(api, full_manifest())
@@ -136,7 +148,9 @@ async def test_apply_then_drop_on_sheets_append_applies_the_write(
 ) -> None:
     await load(api, tmp_path)
     started = await start(api, full_manifest())
-    await api.post("/fake/v1/faults", json={"target": "broker.sheets.append", "mode": "apply-then-drop"})
+    await api.post(
+        "/fake/v1/faults", json={"target": "broker.sheets.append", "mode": "apply-then-drop"}
+    )
     r = await api.post(
         f"{SDK}/google/sheets/values:append",
         json={"spreadsheetId": "s1", "range": "Results!A:B", "values": [["x"]]},
@@ -163,7 +177,8 @@ async def test_telephony_create_is_deduplicated_and_progresses(
     assert "+15555550101" not in first.text
     states = []
     for _ in range(5):
-        call = (await api.get(f"{SDK}/telephony/calls/{first.json()['id']}", headers=started.headers)).json()
+        url = f"{SDK}/telephony/calls/{first.json()['id']}"
+        call = (await api.get(url, headers=started.headers)).json()
         states.append(call["state"])
     assert states[-1] == "completed"
     assert call["transcript"] == "yes"
@@ -175,21 +190,31 @@ async def test_telephony_create_is_deduplicated_and_progresses(
     assert invalid.status_code == 422
 
 
-async def test_llm_chat_resolves_rules_and_records_usage(api: httpx.AsyncClient, tmp_path: Path) -> None:
+def chat(profile: str, content: str = "x") -> dict[str, Any]:
+    return {"profile": profile, "messages": [{"role": "user", "content": content}]}
+
+
+async def test_llm_chat_resolves_rules_and_records_usage(
+    api: httpx.AsyncClient, tmp_path: Path
+) -> None:
     await load(api, tmp_path)
     started = await start(api, full_manifest())
     r = await api.post(
         f"{SDK}/llm/chat",
-        json={"profile": "local.general.small", "messages": [{"role": "user", "content": "say hello"}]},
+        json=chat("local.general.small", "say hello"),
         headers={**started.headers, "X-Request-Id": "req-1"},
     )
     body = r.json()
     assert body["text"] == "Hi there friend"
-    assert (body["locality"], body["provider"], body["finishReason"]) == ("local", "mock-local", "stop")
+    assert (body["locality"], body["provider"], body["finishReason"]) == (
+        "local",
+        "mock-local",
+        "stop",
+    )
     assert body["requestId"] == "req-1"
-    llm_events = [e for e in await events(api, started.run_id) if e["type"] == "llm.call"]
-    assert llm_events[0]["payload"]["profile"] == "local.general.small"
-    assert "messages" not in llm_events[0]["payload"]
+    [usage] = [a for a in await audit(api) if a["action"] == "llm.call"]
+    assert usage["profile"] == "local.general.small"
+    assert "messages" not in usage
     log = (await api.get("/fake/v1/state/llm")).json()
     assert log[0]["messages"][0]["content"] == "say hello"
 
@@ -198,18 +223,19 @@ async def test_llm_profile_must_be_granted(api: httpx.AsyncClient, tmp_path: Pat
     await load(api, tmp_path)
     started = await start(api, full_manifest())
     r = await api.post(
-        f"{SDK}/llm/chat",
-        json={"profile": "local.general.quality", "messages": [{"role": "user", "content": "x"}]},
-        headers=started.headers,
+        f"{SDK}/llm/chat", json=chat("local.general.quality"), headers=started.headers
     )
     assert r.status_code == 403
+    [denied] = [a for a in await audit(api) if a["action"] == "capability.denied"]
+    assert denied["capability"] == "llm.profile:local.general.quality"
     cloud = await api.post(
-        f"{SDK}/llm/chat",
-        json={"profile": "cloud.openai.gpt-small", "messages": [{"role": "user", "content": "x"}]},
-        headers=started.headers,
+        f"{SDK}/llm/chat", json=chat("openai.gpt-small"), headers=started.headers
     )
-    assert cloud.json()["locality"] == "cloud"
-    assert cloud.json()["provider"] == "openai"
+    assert (cloud.json()["locality"], cloud.json()["provider"]) == ("cloud", "openai")
+    other_cloud = await api.post(
+        f"{SDK}/llm/chat", json=chat("anthropic.claude-small"), headers=started.headers
+    )
+    assert other_cloud.status_code == 403
 
 
 async def test_llm_tools_are_unsupported(api: httpx.AsyncClient, tmp_path: Path) -> None:
@@ -228,7 +254,9 @@ async def test_llm_tools_are_unsupported(api: httpx.AsyncClient, tmp_path: Path)
     assert r.json()["error"]["code"] == "UNSUPPORTED_FEATURE"
 
 
-async def test_llm_idempotency_key_returns_cached_response(api: httpx.AsyncClient, tmp_path: Path) -> None:
+async def test_llm_idempotency_key_returns_cached_response(
+    api: httpx.AsyncClient, tmp_path: Path
+) -> None:
     await load(api, tmp_path)
     started = await start(api, full_manifest())
     body = {
@@ -248,41 +276,41 @@ async def test_cold_start_moves_run_through_loading_model(
     await load(api, tmp_path)
     app.state.store.gateway.cold_start_seconds = 0.2
     started = await start(api, full_manifest())
-    chat = asyncio.create_task(
-        api.post(
-            f"{SDK}/llm/chat",
-            json={"profile": "local.general.small", "messages": [{"role": "user", "content": "x"}]},
-            headers=started.headers,
-        )
+    first = asyncio.create_task(
+        api.post(f"{SDK}/llm/chat", json=chat("local.general.small"), headers=started.headers)
     )
     await asyncio.sleep(0.05)
     assert await run_state(api, started.run_id) == "LOADING_MODEL"
-    await chat
+    await first
     assert await run_state(api, started.run_id) == "RUNNING"
     await api.post(
-        f"{SDK}/llm/chat",
-        json={"profile": "local.general.small", "messages": [{"role": "user", "content": "y"}]},
-        headers=started.headers,
+        f"{SDK}/llm/chat", json=chat("local.general.small", "y"), headers=started.headers
     )
-    statuses = [e["payload"]["to"] for e in await events(api, started.run_id) if e["type"] == "status"]
-    assert statuses.count("LOADING_MODEL") == 1
+    states = [
+        e["payload"]["to"]
+        for e in await events(api, started.run_id)
+        if e["type"] == "run.state_changed"
+    ]
+    assert states.count("LOADING_MODEL") == 1
 
 
 async def test_llm_stream_yields_deltas_then_done(api: httpx.AsyncClient, tmp_path: Path) -> None:
     await load(api, tmp_path)
     started = await start(api, full_manifest())
     r = await api.post(
-        f"{SDK}/llm/chat:stream",
-        json={"profile": "local.general.small", "messages": [{"role": "user", "content": "hello"}]},
-        headers=started.headers,
+        f"{SDK}/llm/chat:stream", json=chat("local.general.small", "hello"), headers=started.headers
     )
     assert r.headers["content-type"].startswith("text/event-stream")
-    events_seen = [line.removeprefix("event: ") for line in r.text.splitlines() if line.startswith("event: ")]
+    events_seen = [
+        line.removeprefix("event: ") for line in r.text.splitlines() if line.startswith("event: ")
+    ]
     assert events_seen[-1] == "done"
     assert set(events_seen[:-1]) == {"delta"}
 
 
-async def test_knowledge_search_is_scoped_to_granted_bases(api: httpx.AsyncClient, tmp_path: Path) -> None:
+async def test_knowledge_search_is_scoped_to_the_configured_base(
+    api: httpx.AsyncClient, tmp_path: Path
+) -> None:
     await load(api, tmp_path)
     started = await start(api, full_manifest())
     ok = await api.post(
@@ -297,3 +325,5 @@ async def test_knowledge_search_is_scoped_to_granted_bases(api: httpx.AsyncClien
         headers=started.headers,
     )
     assert other.status_code == 403
+    [denied] = [a for a in await audit(api) if a["action"] == "capability.denied"]
+    assert denied["capability"] == "knowledge.search:config"

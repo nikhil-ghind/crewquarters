@@ -30,7 +30,9 @@ class SearchResult:
         for passage in self.passages:
             section = passage.locator.get("section")
             source = f"{passage.document_name} § {section}" if section else passage.document_name
-            blocks.append(evidence(passage.text, ref=passage.citation_id, source=source, boundary=boundary))
+            blocks.append(
+                evidence(passage.text, ref=passage.citation_id, source=source, boundary=boundary)
+            )
         return "\n\n".join(blocks)
 
 

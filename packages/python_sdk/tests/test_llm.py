@@ -44,7 +44,7 @@ def capture(broker: FakeBroker, body: dict[str, Any]) -> list[dict[str, Any]]:
 async def test_family_resolves_to_the_single_granted_variant() -> None:
     broker = FakeBroker()
     seen = capture(broker, response())
-    result = await client(broker, ("local.general.small", "cloud.openai.gpt-small")).chat(
+    result = await client(broker, ("local.general.small", "openai.gpt-small")).chat(
         "local.general", [{"role": "user", "content": "hi"}], temperature=0, max_output_tokens=50
     )
     assert seen[0] == {
@@ -73,12 +73,12 @@ def test_resolution_errors() -> None:
 
 
 def test_local_family_never_resolves_to_cloud() -> None:
-    llm = client(FakeBroker(), ("cloud.openai.gpt-small",))
+    llm = client(FakeBroker(), ("openai.gpt-small",))
     with pytest.raises(PermissionDenied):
         llm.resolve_profile("local.general")
     with pytest.raises(PermissionDenied):
-        llm.resolve_profile("cloud.anthropic.claude-small")
-    assert llm.resolve_profile("cloud.openai.gpt-small") == "cloud.openai.gpt-small"
+        llm.resolve_profile("anthropic.claude-small")
+    assert llm.resolve_profile("openai.gpt-small") == "openai.gpt-small"
 
 
 class Answer(BaseModel):
@@ -89,7 +89,10 @@ async def test_response_model_sets_schema_and_parses() -> None:
     broker = FakeBroker()
     seen = capture(broker, response(text='{"city": "Paris"}', structured={"city": "Paris"}))
     result = await client(broker, ("local.general.small",)).chat(
-        "local.general.small", [{"role": "user", "content": "q"}], response_model=Answer, idempotency_key="k1"
+        "local.general.small",
+        [{"role": "user", "content": "q"}],
+        response_model=Answer,
+        idempotency_key="k1",
     )
     assert result.parsed == Answer(city="Paris")
     assert seen[0]["responseSchema"]["title"] == "Answer"
@@ -123,7 +126,9 @@ async def test_chat_is_retried_only_with_an_idempotency_key() -> None:
         nonlocal attempts
         attempts += 1
         if attempts == 1:
-            return httpx.Response(503, json={"error": {"code": "PROVIDER_UNAVAILABLE", "message": "x"}})
+            return httpx.Response(
+                503, json={"error": {"code": "PROVIDER_UNAVAILABLE", "message": "x"}}
+            )
         return httpx.Response(200, json=response())
 
     broker = FakeBroker()

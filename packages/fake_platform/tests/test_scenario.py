@@ -25,13 +25,22 @@ def write_scenario(root: Path) -> None:
                     "coldStartSeconds": 0.5,
                 },
                 "knowledge": {"kb-demo": "knowledge"},
-                "inputs": {"autoAnswers": [{"keyPattern": "confirm-*", "data": {"choice": "approve"}}]},
+                "inputs": {
+                    "autoAnswers": [{"keyPattern": "confirm-*", "value": {"choice": "approve"}}]
+                },
             }
         )
     )
     (root / "mailbox.yaml").write_text(
         yaml.safe_dump(
-            [{"id": "m1", "subject": "hi", "relative": {"days": -1, "time": "08:00"}, "body": {"text": "x"}}]
+            [
+                {
+                    "id": "m1",
+                    "subject": "hi",
+                    "relative": {"days": -1, "time": "08:00"},
+                    "body": {"text": "x"},
+                }
+            ]
         )
     )
 
@@ -81,7 +90,11 @@ def test_generate_entries_expand_into_many_messages(tmp_path: Path) -> None:
                                 "category": "updates",
                             }
                         },
-                        {"id": "single", "date": "2026-09-23T12:00:00+05:30", "body": {"text": "x"}},
+                        {
+                            "id": "single",
+                            "date": "2026-09-23T12:00:00+05:30",
+                            "body": {"text": "x"},
+                        },
                     ]
                 },
             }

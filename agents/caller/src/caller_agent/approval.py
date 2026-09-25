@@ -13,7 +13,7 @@ from crewquarters.redact import mask_phone
 
 
 def approval_key(plan: Plan, script: str, disclosure: str) -> str:
-    """Stable per (script, disclosure, recipients): a changed sheet or script needs a fresh approval."""
+    """Stable per (script, disclosure, recipients): a changed sheet or script needs new approval."""
     payload = json.dumps(
         {
             "script": script,
@@ -45,7 +45,9 @@ def build_request(plan: Plan, config: CallerConfig) -> dict[str, Any]:
     ]
     if plan.skipped:
         preview.append(
-            table_block(["Row", "Name", "Reason"], [[s.row, s.name, s.reason] for s in plan.skipped])
+            table_block(
+                ["Row", "Name", "Reason"], [[s.row, s.name, s.reason] for s in plan.skipped]
+            )
         )
     preview.append(
         key_value_block(
@@ -60,7 +62,8 @@ def build_request(plan: Plan, config: CallerConfig) -> dict[str, Any]:
         "key": approval_key(plan, config.script, config.disclosure),
         "title": f"Approve {_plural(count, 'automated call')}",
         "prompt": (
-            f"The caller agent is ready to call {_plural(count, 'consenting recipient')} from your sheet. "
+            f"The caller agent is ready to call {_plural(count, 'consenting recipient')} "
+            "from your sheet. "
             "Review the recipients, disclosure, and script before approving."
         ),
         "choices": [

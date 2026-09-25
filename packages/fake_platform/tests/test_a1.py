@@ -1,6 +1,12 @@
 import pytest
 
-from crewquarters_fake.providers.a1 import A1Range, col_index, col_letters, format_range, parse_range
+from crewquarters_fake.providers.a1 import (
+    A1Range,
+    col_index,
+    col_letters,
+    format_range,
+    parse_range,
+)
 
 
 def test_column_letters_round_trip() -> None:
