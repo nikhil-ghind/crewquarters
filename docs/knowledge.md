@@ -6,12 +6,12 @@ The service indexes uploaded documents on the device and answers retrieval queri
 
 ## Pipeline (PLAN.md section 9.1)
 
-1. **Validate** each upload. Request bodies are refused with `413` before they are spooled: uploads may be `CQ_MAX_UPLOAD_BYTES` plus 64 KiB of multipart framing, and other routes `CQ_MAX_BODY_BYTES`. Checks:
+1. **Validate** each upload:
    - **Type:** `.txt`, `.md`, `.csv` (UTF-8), text-based `.pdf`, or `.docx`. The content must match the extension: `%PDF-`, a Word zip, and no NUL bytes in text.
    - **File name:** only the base name is kept, with control characters and traversal removed.
    - **Size:** `CQ_MAX_UPLOAD_BYTES`.
    - **Duplicates:** the same bytes twice in one knowledge base return `409 DUPLICATE_DOCUMENT`.
-2. **Store:** stream to `.staging` (files `0600`, directories `0700`), hash with SHA-256, then `os.replace` into `CQ_DOCUMENTS_DIR/<kb>/<document>.<ext>`. The upload returns `202` with the document in state `PENDING`, and a `knowledge.ingest` job is queued on the shared job queue.
+2. **Store:** stream to `.staging`, hash with SHA-256, then `os.replace` into `CQ_DOCUMENTS_DIR/<kb>/<document>.<ext>`. The upload returns `202` with the document in state `PENDING`, and a `knowledge.ingest` job is queued on the shared job queue.
 3. **Extract**, keeping locators:
 
    | Format | Locator |
@@ -93,7 +93,6 @@ These are in addition to the shared `CQ_*` settings.
 | `CQ_EMBEDDING_MODE` | `fake` \| `local` | `fake` | no | dev: fake; demo-cpu, dgx: local | Embedding profile |
 | `CQ_EMBEDDING_CACHE_DIR` | path | fastembed default | no | demo-cpu, dgx | Model download cache (pre-populate for offline devices) |
 | `CQ_CHUNK_TOKENS` / `CQ_CHUNK_OVERLAP_TOKENS` | int | 800 / 120 | no | all | Chunking |
-| `CQ_EXTRACT_TIMEOUT_SECONDS` | float | 300 | no | all | Longest time to read one document before it fails with `EXTRACTION_TIMEOUT` |
 | `CQ_INGEST_LEASE_SECONDS` / `CQ_INGEST_POLL_SECONDS` | int / float | 60 / 1.0 | no | all | Ingestion job lease and idle poll |
 | `CQ_KNOWLEDGE_HOST` / `CQ_KNOWLEDGE_PORT` | string / int | `0.0.0.0` / `8000` | no | all | Listen address (container network) |
 

@@ -114,12 +114,11 @@ async def upload(
     except ExtractionError as exc:
         raise PlatformError(exc.code, exc.message, 422) from None
     staging = settings.documents_dir / ".staging"
-    staging.mkdir(mode=0o700, parents=True, exist_ok=True)
+    staging.mkdir(parents=True, exist_ok=True)
     tmp = staging / uuid.uuid4().hex
     digest, size, head = hashlib.sha256(), 0, b""
     try:
-        # Documents hold personal data: readable only by the service user.
-        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as out:
+        with tmp.open("wb") as out:
             while block := await file.read(READ_BLOCK):
                 size += len(block)
                 if size > settings.max_upload_bytes:
@@ -150,7 +149,7 @@ async def upload(
         doc_id = uuid7()
         relative = f"{kb_id}/{doc_id}{PurePosixPath(name).suffix.lower()}"
         final = settings.documents_dir / relative
-        final.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        final.parent.mkdir(parents=True, exist_ok=True)
         os.replace(tmp, final)  # atomic within one filesystem
     finally:
         with contextlib.suppress(FileNotFoundError):
@@ -274,15 +273,7 @@ async def ingest(
                 "EMBEDDING_PROFILE_MISMATCH",
                 f"This knowledge base uses {profile}; the service runs {embedder.profile}.",
             )
-        try:
-            segments = await asyncio.wait_for(
-                asyncio.to_thread(extract, path, mime), settings.extract_timeout_seconds
-            )
-        except TimeoutError:
-            # The worker thread cannot be killed; it finishes in the background.
-            raise ExtractionError(
-                "EXTRACTION_TIMEOUT", "The document took too long to read."
-            ) from None
+        segments = await asyncio.to_thread(extract, path, mime)
         pieces = chunk(segments, settings.chunk_tokens, settings.chunk_overlap_tokens)
         if not pieces:
             raise ExtractionError("EMPTY_DOCUMENT", "No text was found in this document.")

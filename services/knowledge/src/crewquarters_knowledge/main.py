@@ -14,19 +14,15 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from starlette.types import Scope
 
 from crewquarters_knowledge import api, embeddings
 from crewquarters_knowledge.config import KnowledgeSettings, get_settings
 from crewquarters_knowledge.embeddings import Embedder
-from crewquarters_knowledge.limits import BodySizeLimit
 from crewquarters_knowledge.metrics import KnowledgeMetrics
 from crewquarters_knowledge.worker import KnowledgeWorker
 from crewquarters_shared.db import create_engine, session_factory
 from crewquarters_shared.errors import PlatformError
 from crewquarters_shared.logs import configure_logging
-
-UPLOAD_OVERHEAD_BYTES = 64 * 1024
 
 
 def _error(request: Request, code: str, message: str, details: dict[str, Any]) -> dict[str, Any]:
@@ -68,19 +64,10 @@ def create_app(
         title="Crewquarters Knowledge",
         version="0.1.0",
         lifespan=lifespan,
-        openapi_url=None,  # no unauthenticated API map for agents
         docs_url=None,
         redoc_url=None,
     )
     app.state.knowledge = api.KnowledgeState(settings, sessions, embedder, metrics)
-
-    def body_limit(scope: Scope) -> int:
-        """Uploads may carry a whole document plus multipart framing; nothing else may."""
-        if scope.get("method") == "POST" and str(scope.get("path", "")).endswith("/documents"):
-            return settings.max_upload_bytes + UPLOAD_OVERHEAD_BYTES
-        return settings.max_body_bytes
-
-    app.add_middleware(BodySizeLimit, limit_for=body_limit)
     app.state.worker = worker
 
     @app.exception_handler(PlatformError)
