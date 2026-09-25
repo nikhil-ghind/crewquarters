@@ -103,8 +103,16 @@ after `ringTimeoutSeconds + maxDurationSeconds + 60`.
 | Profile | Default variant | Engine (laptop CPU and GB10) | Why |
 | --- | --- | --- | --- |
 | `local.stt.small` | NVIDIA Parakeet TDT 0.6B v2, int8 (482 MB) | sherpa-onnx offline transducer | Best English accuracy in its class; fast offline decode per utterance; arm64 wheels. NVIDIA Nemotron streaming 0.6B is the next step for true streaming STT (§11). |
-| `local.tts.small` | Kokoro 82M v0.19, int8 (103 MB), voice `af_sarah` | sherpa-onnx | Natural English at a fraction of real time on CPU; same engine as STT |
+| `local.tts.small` | Kokoro 82M v0.19, fp32 (320 MB), voice `af_sarah` | sherpa-onnx | Natural English; same engine as STT. fp32, not int8: int8 is 2.4× slower on ARM CPUs (measured) |
 | `local.general.small` | Chosen by Person 2's model catalog (vLLM). For voice, prefer a small or mixture-of-experts model with a fast first token. | vLLM | The LLM dominated latency (~750 ms of ~1.2 s) in NVIDIA's measured all-local voice agent on DGX Spark |
+
+Measured on an Apple M3 Pro CPU (4 threads, sherpa-onnx 1.13.8) on 2026-09-25:
+- Parakeet transcribed 6.0 s of speech in 0.15 s (RTF 0.025), exact apart from one name.
+- Kokoro fp32 synthesizes at RTF 0.24 (int8: 0.58). A short clause takes about 0.5 s.
+
+So the speech server synthesizes **clause by clause** (splitting at commas and sentence ends,
+at least three words per clause) and streams each clause as soon as it is ready. The first audio
+comes out in about 0.5 s, and later clauses stay ahead of playback.
 
 The **speech server** (`packages/speech_server`, `crewquarters-speech`) serves the OpenAI-compatible
 `POST /v1/audio/transcriptions` and `POST /v1/audio/speech` endpoints (streamed 24 kHz s16le PCM).
