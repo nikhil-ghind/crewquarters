@@ -4,6 +4,9 @@
  * time rather than silently drifting.
  */
 import type {
+  BackupOut,
+  BackupPage,
+  BootstrapStatusOut,
   ConnectionOut,
   SettingsOut,
   AttentionOut,
@@ -213,3 +216,56 @@ export const approvalRequest: InputRequestOut = {
 export function event(sequence: number, type: string, payload: Record<string, unknown>): RunEventOut {
   return { runId: run.id, sequence, attempt: 1, type, payload, createdAt: NOW };
 }
+
+export const bootstrapStatus: BootstrapStatusOut = { ownerExists: true };
+
+export const backupDevice: BackupOut = {
+  id: 'crewquarters-backup-20260924T020000Z-nightly',
+  status: 'succeeded',
+  source: 'device',
+  createdAt: '2026-09-24T02:00:00Z',
+  finishedAt: '2026-09-24T02:01:35Z',
+  sizeBytes: 40 * 2 ** 20,
+  includesMasterKey: false,
+  platformVersion: '0.1.0',
+  migrationHead: '0004',
+  documentCount: 2,
+  sha256: 'a'.repeat(64),
+  downloadable: true,
+  error: null,
+};
+
+export const backupWithKey: BackupOut = {
+  ...backupDevice,
+  id: 'crewquarters-backup-20260920T020000Z-pre-upgrade',
+  createdAt: '2026-09-20T02:00:00Z',
+  finishedAt: '2026-09-20T02:01:35Z',
+  includesMasterKey: true,
+  downloadable: false,
+};
+
+export const backupFailed: BackupOut = {
+  ...backupDevice,
+  id: 'crewquarters-backup-20260925T010000Z-9f3a1c',
+  status: 'failed',
+  source: 'api',
+  createdAt: '2026-09-25T01:00:00Z',
+  finishedAt: '2026-09-25T01:00:04Z',
+  sizeBytes: null,
+  documentCount: null,
+  platformVersion: null,
+  migrationHead: null,
+  sha256: null,
+  downloadable: false,
+  error: { code: 'BACKUP_FAILED', message: 'pg_dump exited with status 1 (disk full).' },
+};
+
+export const backupPage: BackupPage = {
+  items: [backupFailed, backupDevice, backupWithKey],
+  nextCursor: null,
+  enabled: true,
+  location: '/var/lib/crewquarters/backups',
+  retention: 7,
+  includes: ['The database: settings, agents, schedules, runs, requests, chat history, audit history', 'Uploaded knowledge documents'],
+  excludes: ['The device master key (only `crewquarters backup create --include-master-key` on the device adds it)', 'Model files (download them again from Models)'],
+};

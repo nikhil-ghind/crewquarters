@@ -425,3 +425,18 @@ export const KB_PASSAGES = [
     locator: { page: 2 },
   },
 ];
+
+/** What a backup contains / never contains (same text as the control API). */
+export const BACKUP_INCLUDES = [
+  'The database: settings, agents, schedules, runs, requests, chat history, audit history',
+  'Uploaded knowledge documents',
+  'Connection records, with their secrets still encrypted',
+];
+export const BACKUP_EXCLUDES = [
+  'The device master key (only `crewquarters backup create --include-master-key` on the device adds it)',
+  'Model files (download them again from Models)',
+];
+export const BACKUP_LOCATION = '/var/lib/crewquarters/backups';
+export const BACKUP_RETENTION = 7;
+export const PLATFORM_VERSION = '0.1.0';
+export const MIGRATION_HEAD = '0004';

@@ -60,6 +60,10 @@ export type KnowledgeQueryIn = Schemas['KnowledgeQueryIn'];
 export type KnowledgeQueryOut = Schemas['KnowledgeQueryOut'];
 export type PassageOut = Schemas['PassageOut'];
 export type CitationOut = Schemas['CitationOut'];
+export type BackupOut = Schemas['BackupOut'];
+export type BackupStatus = BackupOut['status'];
+export type BackupPage = Schemas['BackupPage'];
+export type BootstrapStatusOut = Schemas['BootstrapStatusOut'];
 
 export const RUN_STATES = [
   'QUEUED',

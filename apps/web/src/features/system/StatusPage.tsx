@@ -1,14 +1,14 @@
 import { Download, RotateCw } from 'lucide-react';
-import { useConnections, useMemory, useModels, useSettings, useSystemStatus } from '../../api/queries';
+import { DIAGNOSTICS_URL } from '../../api/endpoints';
+import { useConnections, useMemory, useModels, useSystemStatus } from '../../api/queries';
 import type { StatusCheck } from '../../api/schema';
-import { Button } from '../../components/Button';
+import { Button, DownloadLink } from '../../components/Button';
 import { SkeletonBlock } from '../../components/Feedback';
 import { Card, KeyValue, Page, PageHeader } from '../../components/Layout';
 import { ResourceMeter } from '../../components/Meters';
 import { QueryView } from '../../components/QueryView';
 import { StatusBadge } from '../../components/StatusBadge';
 import { formatBytes, formatRelative } from '../../lib/format';
-import { redact } from '../../lib/redact';
 import { CONNECTION_STATUS, DEVICE_STATUS, MODEL_MEMORY_STATUS } from '../../lib/status';
 import { CheckList, fromStatusCheck, type CheckRow } from '../common/CheckList';
 import { CallbackUrls } from '../connections/CallbackUrls';
@@ -29,28 +29,6 @@ export default function StatusPage() {
   const memory = useMemory();
   const models = useModels();
   const connections = useConnections();
-  const settings = useSettings();
-
-  const downloadDiagnostics = () => {
-    // A redacted snapshot of what this page shows: status checks, memory and model
-    // residency, connection states. No secrets are ever returned by these APIs; the
-    // text is redacted again before it leaves the browser.
-    const bundle = {
-      generatedAt: new Date().toISOString(),
-      status: status.data ?? null,
-      memory: memory.data ?? null,
-      models: (models.data ?? []).map((m) => ({ id: m.id, downloadState: m.downloadState, memoryState: m.memoryState, error: m.error ?? null })),
-      connections: (connections.data ?? []).map((c) => ({ provider: c.provider, status: c.status, lastCheckedAt: c.lastCheckedAt })),
-      settings: settings.data ? { timezone: settings.data.timezone, idleUnloadSeconds: settings.data.idleUnloadSeconds, setupCompleted: settings.data.setupCompleted } : null,
-    };
-    const blob = new Blob([redact(JSON.stringify(bundle, null, 2))], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `crewquarters-diagnostics-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
 
   const used = memory.data ? memoryUsed(memory.data) : null;
   const google = connections.data?.find((c) => c.provider === 'google');
@@ -62,9 +40,14 @@ export default function StatusPage() {
         title="System status"
         purpose="Device, runtime, storage, database, callbacks and model serving checks."
         actions={
-          <Button variant="primary" icon={<Download size={16} aria-hidden="true" />} onClick={downloadDiagnostics}>
+          <DownloadLink
+            variant="primary"
+            href={DIAGNOSTICS_URL}
+            icon={<Download size={16} aria-hidden="true" />}
+            title="A redacted zip built on the device: checks, versions, recent logs. No secrets."
+          >
             Download diagnostics
-          </Button>
+          </DownloadLink>
         }
       />
       <SystemTabs />

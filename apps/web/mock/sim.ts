@@ -1,11 +1,12 @@
 /// <reference types="node" />
 /** Timer-driven simulation: agent runs, model downloads/loads, document ingestion. */
 import type { InputRequestOut, ModelLeaseOut } from '../src/api/schema.ts';
-import { callerPreview, callerResult, digestResult, DISCLOSURE, LOAD_STAGES, SCRIPT, CALL_RECIPIENTS } from './fixtures.ts';
+import { MIGRATION_HEAD, PLATFORM_VERSION, callerPreview, callerResult, digestResult, DISCLOSURE, LOAD_STAGES, SCRIPT, CALL_RECIPIENTS } from './fixtures.ts';
 import { ApiErr, sleep, type Obj } from './http.ts';
 import {
   appendEvent,
   audit,
+  backupRec,
   isTerminalState,
   newId,
   notifyModel,
@@ -419,4 +420,34 @@ export async function ingest(docId: string): Promise<void> {
     doc.extracted = { segments: chunks * 3, chunks, tokens: chunks * 780 };
   }
   doc.updatedAt = nowIso();
+}
+
+// --- Backups ---------------------------------------------------------------------------------
+
+/** A queued API backup: queued, then running, then succeeded, a few simulation steps apart. */
+export async function runBackup(id: string): Promise<void> {
+  const gen = st().gen;
+  const find = () => st().backups.find((b) => b.id === id);
+  await wait(3);
+  const queued = find();
+  if (!alive(gen) || !queued) return;
+  queued.status = 'running';
+  await wait(6);
+  const running = find();
+  if (!alive(gen) || !running) return;
+  Object.assign(
+    running,
+    backupRec({
+      ...running,
+      status: 'succeeded',
+      finishedAt: nowIso(),
+      sizeBytes: 42_318_848 + st().docs.size * 150_000,
+      platformVersion: PLATFORM_VERSION,
+      migrationHead: MIGRATION_HEAD,
+      documentCount: st().docs.size,
+      sha256: Array.from(id).reduce((h, c) => (h * 33 + c.charCodeAt(0)) >>> 0, 5381).toString(16).padStart(8, '0').repeat(8),
+      downloadable: true,
+    }),
+  );
+  audit('system.backup_created', { type: 'backup', id });
 }

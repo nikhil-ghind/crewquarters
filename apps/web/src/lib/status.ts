@@ -5,6 +5,7 @@
  * Do not add labels outside this file.
  */
 import type {
+  BackupStatus,
   ConnectionStatus,
   DocumentState,
   InputRequestOut,
@@ -160,6 +161,13 @@ export const DOCUMENT_STATUS: Record<DocumentState, StatusSpec> = {
   PROCESSING: { label: 'Indexing', tone: 'info', icon: 'spinner' },
   READY: { label: 'Indexed', tone: 'success', icon: 'check' },
   FAILED: { label: 'Failed', tone: 'danger', icon: 'x' },
+};
+
+export const BACKUP_STATUS: Record<BackupStatus, StatusSpec> = {
+  queued: { label: 'Waiting to start', tone: 'neutral', icon: 'clock' },
+  running: { label: 'Backing up', tone: 'info', icon: 'spinner' },
+  succeeded: { label: 'Completed', tone: 'success', icon: 'check' },
+  failed: { label: 'Failed', tone: 'danger', icon: 'x' },
 };
 
 export const SCHEDULE_STATUS = {

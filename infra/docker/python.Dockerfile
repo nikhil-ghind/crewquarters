@@ -41,13 +41,29 @@ COPY services/knowledge services/knowledge
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.12-slim-bookworm
-# The knowledge service's data directories exist in the image, owned by the service user,
-# so a fresh named volume mounted there (laptop Compose) starts out writable. The
-# appliance bind-mounts host directories instead (group crewquarters, setgid).
+# PostgreSQL 16 client tools (pg_dump/pg_restore must match the server's major version)
+# for backups and restore (cq-admin backup; docs/runbooks/backup-restore.md). Debian
+# bookworm ships 15, so they come from the PostgreSQL project's apt repository.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+        https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && apt-get purge -y curl && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+# The knowledge service's data directories and the backup directory exist in the image,
+# owned by the service user, so a fresh named volume mounted there (laptop Compose) starts
+# out writable. The appliance bind-mounts host directories instead (group crewquarters,
+# setgid).
 RUN groupadd --system --gid 10001 crewquarters \
     && useradd --system --uid 10001 --gid crewquarters --no-create-home crewquarters \
     && install -d -o 10001 -g 10001 -m 0750 /var/lib/crewquarters/documents \
-        /var/lib/crewquarters/embedding-models
+        /var/lib/crewquarters/embedding-models \
+    && install -d -o 10001 -g 10001 -m 0700 /var/lib/crewquarters/backups
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY packages/contracts packages/contracts

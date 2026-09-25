@@ -61,6 +61,12 @@ class LoginIn(ApiModel):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class BootstrapStatusOut(ApiModel):
+    owner_exists: bool = Field(
+        description="True once the owner account exists; the setup code can no longer be used."
+    )
+
+
 class SessionOut(ApiModel):
     user: UserOut
     csrf_token: str = Field(
@@ -758,3 +764,43 @@ class ChatSessionOut(ApiModel):
 
 class ChatSessionDetailOut(ChatSessionOut):
     messages: list[ChatMessageOut]
+
+
+# --- Backups ----------------------------------------------------------------------
+
+
+class BackupErrorOut(ApiModel):
+    code: str
+    message: str
+
+
+class BackupOut(ApiModel):
+    id: str = Field(
+        description="Backup name, e.g. crewquarters-backup-20260925T100000Z-1a2b3c",
+        examples=["crewquarters-backup-20260925T100000Z-1a2b3c"],
+    )
+    status: Literal["queued", "running", "succeeded", "failed"]
+    source: Literal["api", "device"] = Field(
+        description="api: created from the UI/API; device: `crewquarters backup create`."
+    )
+    created_at: datetime | None
+    finished_at: datetime | None
+    size_bytes: int | None
+    includes_master_key: bool = Field(
+        description="Never true for API backups. Backups with the master key are not "
+        "downloadable through the API."
+    )
+    platform_version: str | None
+    migration_head: str | None
+    document_count: int | None
+    sha256: str | None = Field(None, description="SHA-256 of the archive file.")
+    downloadable: bool
+    error: BackupErrorOut | None
+
+
+class BackupPage(Page[BackupOut]):
+    enabled: bool = Field(description="False when CQ_BACKUP_DIR is not set on the device.")
+    location: str | None = Field(description="Backup directory inside the platform.")
+    retention: int = Field(description="Newest backups kept; older ones are deleted.")
+    includes: list[str] = Field(description="What a backup contains.")
+    excludes: list[str] = Field(description="What a backup never contains.")

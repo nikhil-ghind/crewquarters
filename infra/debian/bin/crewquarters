@@ -2,13 +2,198 @@
 # Crewquarters administration CLI (installed by the .deb).
 set -eu
 SHARE=/usr/share/crewquarters
-ETC=/etc/crewquarters
-COMPOSE_FILE="$SHARE/compose/compose.appliance.yaml"
+ETC=${CQ_ETC_DIR:-/etc/crewquarters}
+DATA=${CQ_DATA_DIR:-/var/lib/crewquarters}
+COMPOSE_FILE=${CQ_COMPOSE_FILE:-$SHARE/compose/compose.appliance.yaml}
+PROJECT=${CQ_COMPOSE_PROJECT:-crewquarters}
 export PYTHONPATH=/usr/lib/crewquarters/python
+# Backup/restore/diagnostics sources. The CQ_* overrides exist so the same script can be
+# exercised against the laptop Compose stack (tests/stack/test_backup_restore_stack.py);
+# the appliance uses the defaults.
+BACKUP_DIR=${CQ_BACKUP_HOST_DIR:-$DATA/backups}
+DOCUMENTS_SOURCE=${CQ_DOCUMENTS_SOURCE:-$DATA/documents}
+# src:dst of the master key mount (dst is the file, or a directory holding master.key).
+MASTER_KEY_MOUNT=${CQ_MASTER_KEY_MOUNT:-$ETC/master.key:/run/cq-keys/master.key}
+MASTER_KEY_IN=${CQ_MASTER_KEY_IN:-/run/cq-keys/master.key}
+PLATFORM_UID=10001
 
 compose() {
-    docker compose -p crewquarters -f "$COMPOSE_FILE" \
-        --env-file "$ETC/crewquarters.env" --env-file "$ETC/secrets.env" "$@"
+    if [ -n "${CQ_COMPOSE_NO_ENV_FILES:-}" ]; then
+        docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
+    else
+        docker compose -p "$PROJECT" -f "$COMPOSE_FILE" \
+            --env-file "$ETC/crewquarters.env" --env-file "$ETC/secrets.env" "$@"
+    fi
+}
+
+# One-shot platform container (as root: it reads the master key and writes restored
+# files) on the stack's network; the rest of the platform does not need to be running.
+admin_run() {
+    compose run --rm --no-deps -T --user 0:0 "$@"
+}
+
+# Backups made in the default directory are handed to the control API's user (and the
+# crewquarters group) so the UI can list and download them; archives holding the master
+# key stay root-only.
+backup_owner() {
+    if [ -n "${CQ_BACKUP_OWNER:-}" ]; then
+        echo "$CQ_BACKUP_OWNER"
+    elif [ "$1" = "$BACKUP_DIR" ] && gid=$(getent group crewquarters | cut -d: -f3) \
+            && [ -n "$gid" ]; then
+        echo "$PLATFORM_UID:$gid"
+    fi
+}
+
+backup_create() {
+    out="$BACKUP_DIR"; with_key=""; extra=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --out) out="${2:?--out needs a directory}"; shift 2 ;;
+            --include-master-key) with_key=1; shift ;;
+            --retention) extra="$extra --retention ${2:?}"; shift 2 ;;
+            --label) extra="$extra --label ${2:?}"; shift 2 ;;
+            *) echo "unknown option: $1" >&2; exit 2 ;;
+        esac
+    done
+    mkdir -p "$out"
+    out=$(cd "$out" && pwd)
+    compose up -d --wait postgres >/dev/null
+    owner=$(backup_owner "$out")
+    set -- -v "$out:/backup-out"
+    if [ -n "$with_key" ]; then
+        cat >&2 <<WARN
+############################################################################
+# WARNING: --include-master-key puts the device master key in the backup. #
+# Anyone with the file can decrypt every stored Google, Twilio, OpenAI and #
+# Anthropic credential. Keep it offline and encrypted; delete it when done.#
+############################################################################
+WARN
+        set -- "$@" -v "$MASTER_KEY_MOUNT:ro"
+    fi
+    set -- "$@" control-api cq-admin backup create --out /backup-out
+    if [ -n "$with_key" ]; then
+        set -- "$@" --include-master-key --master-key-file "$MASTER_KEY_IN"
+    fi
+    if [ -n "$owner" ]; then
+        set -- "$@" --owner "$owner"
+    fi
+    # shellcheck disable=SC2086 # $extra is a list of simple flags
+    admin_run "$@" $extra
+}
+
+backup_restore() {
+    # sh has no local variables: r_* names keep backup_create (called below) from
+    # overwriting them.
+    r_file=""; r_stop=""; r_with_key=""; r_pre=1; r_yes=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --stop) r_stop=1; shift ;;
+            --with-master-key) r_with_key=1; shift ;;
+            --no-pre-backup) r_pre=""; shift ;;
+            --yes|-y) r_yes=1; shift ;;
+            -*) echo "unknown option: $1" >&2; exit 2 ;;
+            *) r_file="$1"; shift ;;
+        esac
+    done
+    [ -n "$r_file" ] || { echo "usage: crewquarters backup restore FILE [--stop]" >&2; exit 2; }
+    [ -f "$r_file" ] || { echo "No such file: $r_file" >&2; exit 2; }
+    r_file=$(cd "$(dirname "$r_file")" && pwd)/$(basename "$r_file")
+    r_running=$(compose ps --status running --services 2>/dev/null | grep -vx postgres || true)
+    if [ -n "$r_running" ] && [ -z "$r_stop" ]; then
+        echo "The platform is running ($(echo "$r_running" | tr '\n' ' ')). Restore replaces" >&2
+        echo "all data; re-run with --stop to stop it first." >&2
+        exit 3
+    fi
+    if [ -z "$r_yes" ]; then
+        printf 'Replace ALL Crewquarters data with %s? [y/N] ' "$r_file"
+        read -r answer
+        case "$answer" in y|Y|yes|YES) ;; *) echo "Cancelled."; exit 1 ;; esac
+    fi
+    if [ -n "$r_running" ]; then
+        compose stop
+    fi
+    compose up -d --wait postgres >/dev/null
+    if [ -n "$r_pre" ]; then
+        echo "Taking a pre-restore backup of the current data..."
+        backup_create --label pre-restore
+    fi
+    r_key_mode=ro
+    if [ -n "$r_with_key" ]; then
+        r_key_mode=rw
+    fi
+    set -- -v "$r_file:/restore/backup.tar.gz:ro" -v "$DOCUMENTS_SOURCE:/restore/documents" \
+        -v "$MASTER_KEY_MOUNT:$r_key_mode" \
+        control-api cq-admin backup restore /restore/backup.tar.gz \
+        --documents-dir /restore/documents --master-key-file "$MASTER_KEY_IN" --yes
+    if [ -n "$r_with_key" ]; then
+        set -- "$@" --restore-master-key
+    fi
+    admin_run "$@"
+    echo "Restore finished. Start the platform with: crewquarters up"
+}
+
+diagnostics() {
+    out="."; tail=500
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --out) out="${2:?}"; shift 2 ;;
+            --tail) tail="${2:?}"; shift 2 ;;
+            *) echo "unknown option: $1" >&2; exit 2 ;;
+        esac
+    done
+    tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+    mkdir -p "$tmp/logs" "$out"
+    compose ps -a > "$tmp/compose-ps.txt" 2>&1 || true
+    for svc in $(compose config --services 2>/dev/null); do
+        compose logs --no-color --tail "$tail" "$svc" > "$tmp/logs/$svc.log" 2>&1 || true
+    done
+    if command -v journalctl >/dev/null 2>&1; then
+        journalctl -u crewquarters-runtime -n "$tail" --no-pager \
+            > "$tmp/logs/runtime-daemon.log" 2>&1 || true
+        journalctl -u crewquarters -n "$tail" --no-pager \
+            > "$tmp/logs/crewquarters-service.log" 2>&1 || true
+        systemctl status --no-pager crewquarters-runtime crewquarters crewquarters-netguard \
+            > "$tmp/systemd.txt" 2>&1 || true
+    fi
+    {
+        uname -a
+        cat "$SHARE/VERSION" 2>/dev/null || true
+        docker version --format 'docker {{.Server.Version}}' 2>/dev/null || true
+        docker compose version 2>/dev/null || true
+    } > "$tmp/versions.txt" 2>&1
+    df -h "$DATA" / > "$tmp/disk.txt" 2>&1 || df -h / > "$tmp/disk.txt" 2>&1 || true
+    free -b > "$tmp/memory.txt" 2>&1 || true
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used,temperature.gpu \
+            --format=csv > "$tmp/gpu.txt" 2>&1 || true
+    fi
+    python3 -m crewquarters_runtime.cli preflight --appliance > "$tmp/preflight.txt" 2>&1 || true
+    name="crewquarters-diagnostics-$(date -u +%Y%m%dT%H%M%SZ).zip"
+    umask 077
+    # Everything is redacted by the platform (cq-admin diagnostics), never here.
+    if compose exec -T control-api true >/dev/null 2>&1; then
+        tar -C "$tmp" -cf - . \
+            | compose exec -T control-api cq-admin diagnostics --host-tar - --out - > "$out/$name"
+    else
+        tar -C "$tmp" -cf - . \
+            | compose run --rm --no-deps -T control-api \
+                cq-admin diagnostics --host-tar - --out - > "$out/$name"
+    fi
+    chmod 600 "$out/$name"
+    echo "Diagnostics written: $out/$name (redacted)"
+}
+
+demo_reset() {
+    yes=""
+    for arg in "$@"; do
+        if [ "$arg" = "--yes" ]; then yes=1; fi
+    done
+    if [ -z "$yes" ]; then
+        printf 'Delete rehearsal runs, events, requests, calls and chat sessions? [y/N] '
+        read -r answer
+        case "$answer" in y|Y|yes|YES) ;; *) echo "Cancelled."; exit 1 ;; esac
+    fi
+    compose exec -T control-api cq-admin demo reset --yes "$@"
 }
 
 usage() {
@@ -24,6 +209,17 @@ Usage: crewquarters <command>
   load-bundle FILE         import images from an offline bundle (.tar.zst)
   wait-runtime             wait until the runtime daemon socket exists (systemd)
   open                     open the setup UI in a browser
+  backup create [--out DIR] [--include-master-key] [--retention N] [--label L]
+                           consistent backup (database + documents): a 0600 archive in
+                           /var/lib/crewquarters/backups. The master key is NOT included
+                           unless asked for (sensitive).
+  backup restore FILE [--stop] [--with-master-key] [--no-pre-backup] [--yes]
+                           verify and restore a backup (takes a pre-restore backup first)
+  backup list | backup verify FILE
+  diagnostics [--out DIR] [--tail N]
+                           redacted support bundle (zip)
+  demo reset [--yes] [--since ISO] [--schedules] [--knowledge]
+                           between rehearsals: delete runs/calls/chats, reseed
   version
 USAGE
 }
@@ -78,6 +274,27 @@ case "$cmd" in
         while [ ! -S /run/crewquarters/runtime.sock ] && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done
         [ -S /run/crewquarters/runtime.sock ] ;;
     open) exec /usr/share/crewquarters/launch.sh ;;
+    backup)
+        sub="${1:-}"; [ $# -gt 0 ] && shift
+        case "$sub" in
+            create) backup_create "$@" ;;
+            restore) backup_restore "$@" ;;
+            list)
+                admin_run -v "$BACKUP_DIR:/backup-out:ro" control-api \
+                    cq-admin backup list --dir /backup-out ;;
+            verify)
+                f="${1:?backup file required}"
+                f=$(cd "$(dirname "$f")" && pwd)/$(basename "$f")
+                admin_run -v "$f:/restore/backup.tar.gz:ro" control-api \
+                    cq-admin backup verify /restore/backup.tar.gz ;;
+            *) usage; exit 2 ;;
+        esac ;;
+    diagnostics) diagnostics "$@" ;;
+    demo)
+        case "${1:-}" in
+            reset) shift; demo_reset "$@" ;;
+            *) usage; exit 2 ;;
+        esac ;;
     version) cat "$SHARE/VERSION" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;

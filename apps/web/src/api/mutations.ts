@@ -296,3 +296,13 @@ export function useDeleteChat() {
     onSettled: () => void client.invalidateQueries({ queryKey: keys.chatSessions }),
   });
 }
+
+// --- System --------------------------------------------------------------------------------------
+
+export function useCreateBackup() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ key }: { key: string }) => mutate(api.POST('/api/v1/system/backups', { headers: withKey(key) })),
+    onSettled: () => void client.invalidateQueries({ queryKey: keys.backups }),
+  });
+}

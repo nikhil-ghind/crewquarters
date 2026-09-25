@@ -72,6 +72,22 @@ class Settings(BaseSettings):
     scheduler_metrics_host: str = "127.0.0.1"
     scheduler_metrics_port: int = 9101
 
+    # --- Operations: backup, restore, diagnostics (docs/runbooks/backup-restore.md) ---
+    # Release shown in backups and diagnostics; the appliance sets it from CQ_VERSION.
+    platform_version: str = "0.1.0"
+    # The knowledge service's document store. The control API reads it (read-only) to
+    # include document bytes in backups; the knowledge service reads the same variable.
+    documents_dir: Path = Path("/var/lib/crewquarters/documents")
+    # Where owner-triggered backups are written. Unset: the backup API reports that
+    # backups are not configured and no backup worker runs.
+    backup_dir: Path | None = None
+    backup_retention: int = Field(7, ge=1, description="Backups kept in CQ_BACKUP_DIR")
+    # PostgreSQL client programs (a command line; split like a shell would).
+    pg_dump: str = "pg_dump"
+    pg_restore: str = "pg_restore"
+    scheduler_health_url: str = "http://scheduler:9101/health"
+    diagnostics_log_lines: int = Field(500, ge=10, le=10000)
+
     def allowed_origins(self) -> set[str]:
         """``public_origins`` plus the origin of ``public_base_url``, so the UI works at the
         address the device advertises (another port, a LAN name, or the tunnel host)."""

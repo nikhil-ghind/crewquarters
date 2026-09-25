@@ -20,6 +20,12 @@ export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
  * (`?result=connected` or `?result=error&code=...`). */
 export const GOOGLE_RETURN_ROUTE = '/connections/google';
 
+/** Plain GET downloads: the browser streams them with the session cookie (no CSRF on GET). */
+export const DIAGNOSTICS_URL = '/api/v1/system/diagnostics';
+export function backupDownloadUrl(id: string): string {
+  return `/api/v1/system/backups/${encodeURIComponent(id)}/download`;
+}
+
 const headers = (key?: string) => (key ? withKey(key) : undefined);
 const LIST = { limit: 200 };
 

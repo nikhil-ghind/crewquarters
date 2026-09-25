@@ -46,6 +46,14 @@ Profiles: **dev** = laptop Compose with fakes; **demo-cpu** = laptop end-to-end;
 | `CQ_SCHEDULER_METRICS_PORT` | int | `9101` | no | all | Port of the scheduler's `/metrics` and `/health` endpoint |
 | `CQ_LOG_FORMAT` | string | `json` | no | all | `json` (structured, redacted) or `text` for local reading |
 | `CQ_LOG_LEVEL` | string | `INFO` | no | all | Root log level |
+| `CQ_PLATFORM_VERSION` | string | `0.1.0` | no | dgx (from `CQ_VERSION`) | Release recorded in backup manifests and diagnostics bundles |
+| `CQ_DOCUMENTS_DIR` (control API) | path | `/var/lib/crewquarters/documents` | no | Compose, dgx | The knowledge service's document store, mounted **read-only** into the control API so backups include the document files. Same variable and path as the knowledge service's |
+| `CQ_BACKUP_DIR` | path | unset | no | Compose, dgx: `/var/lib/crewquarters/backups` | Where owner-triggered backups (`POST /api/v1/system/backups`) are written and listed. Unset: the backup API reports `enabled: false` and no backup worker runs ([backup runbook](runbooks/backup-restore.md)) |
+| `CQ_BACKUP_RETENTION` | int ≥ 1 | `7` | no | dgx | Newest backups kept in `CQ_BACKUP_DIR` after an API backup; older archives are deleted |
+| `CQ_PG_DUMP` / `CQ_PG_RESTORE` | command line | `pg_dump` / `pg_restore` | no | tests | PostgreSQL client programs (split like a shell command). The platform image ships the PostgreSQL 16 client; they must match the server's major version |
+| `CQ_SCHEDULER_HEALTH_URL` | URL | `http://scheduler:9101/health` | no | — | Scheduler health endpoint probed by the diagnostics bundle |
+| `CQ_DIAGNOSTICS_LOG_LINES` | int | `500` | no | — | Recent control-API log lines kept in memory for the diagnostics bundle |
+| `CQ_ALEMBIC_INI` | path | image/repo `services/control_api/alembic.ini` | no | — | Migrations used by `cq-admin backup restore` to check and upgrade the restored schema |
 | `CQ_MODEL_GATEWAY_URL` | string | `http://model-gateway:8090` | no | all | Model gateway base URL used by the control API (model status and actions, chat, and provider-key tests `POST /internal/v1/provider-profiles/{id}/test`) |
 | `CQ_GATEWAY_RUNTIME` | string | `daemon` | no | dev: `inprocess` | `daemon` (model servers via the runtime daemon) or `inprocess` (mock, no Docker) |
 | `CQ_GATEWAY_RUNTIME_SOCKET` | path | `/run/crewquarters/runtime.sock` | no | all | Runtime daemon socket |
@@ -93,3 +101,16 @@ Compose interpolation variables, plus the service URLs the stack wires together.
 | `CQ_EMBEDDING_MODEL_DIR` | path | `/var/lib/crewquarters/embedding-models` (Compose) | no | all | Pinned embedding model directory: a named volume (dev) or the host directory (appliance, `2770 root:crewquarters`). `CQ_EMBEDDING_CACHE_DIR` is set to the same path |
 | `CQ_TUNNEL_TOKEN` | secret string | empty | **yes** | demo only | Cloudflare tunnel token for the `callbacks` profile (`crewquarters tunnel up`); keep it in `secrets.env` |
 | `CQ_RUNTIME_*` | | | token: yes | host | Runtime daemon settings; see docs/runtime-daemon.md |
+
+Appliance CLI overrides (`crewquarters backup|diagnostics|demo`). The defaults are the appliance paths; the overrides let the same script drive the laptop Compose stack (`tests/stack/test_backup_restore_stack.py`). See [runbooks/backup-restore.md](runbooks/backup-restore.md).
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CQ_ETC_DIR` / `CQ_DATA_DIR` | `/etc/crewquarters` / `/var/lib/crewquarters` | Configuration and data roots |
+| `CQ_COMPOSE_FILE` / `CQ_COMPOSE_PROJECT` | appliance compose file / `crewquarters` | Stack the CLI manages |
+| `CQ_COMPOSE_NO_ENV_FILES` | unset | Set to skip `--env-file` (laptop stack) |
+| `CQ_BACKUP_HOST_DIR` | `$CQ_DATA_DIR/backups` | Default `--out` of `backup create`; pre-restore backups go here |
+| `CQ_DOCUMENTS_SOURCE` | `$CQ_DATA_DIR/documents` | Host directory or volume restored as the document store |
+| `CQ_MASTER_KEY_MOUNT` / `CQ_MASTER_KEY_IN` | `$CQ_ETC_DIR/master.key:/run/cq-keys/master.key` / `/run/cq-keys/master.key` | Master key mount (`src:dst`) for `--include-master-key`, `--with-master-key`, and the post-restore connection check |
+| `CQ_BACKUP_OWNER` | `10001:<crewquarters gid>` in the default directory | `UID:GID` given to new archives (never to an archive holding the master key) so the UI can list and download them |
+| `CQ_BACKUP_RETENTION` | `7` | Also read by the appliance Compose file for the control API |
