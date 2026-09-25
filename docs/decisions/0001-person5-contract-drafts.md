@@ -1,7 +1,9 @@
 # 0001 — Contract drafts and open questions from the Person 5 build
 
-- Status: partly resolved by Person 1's canonical contracts; D1 (broker API) and the rest below
-  still need owner decisions
+- Status: resolved in the implementation. Person 1's canonical contracts replaced the drafts, and
+  `broker-sdk.openapi.yaml` is stable for `v1alpha1` (`x-status: stable`, owner Person 3) and
+  served by `services/capability_broker` (D1). The "still open" table records the proposals as
+  implemented; see the status update below.
 - Author: Person 5 (Vineet Kumar)
 - Date: 2026-09-24 (updated 2026-09-25 after integrating the control plane)
 - Related: `docs/superpowers/specs/2026-09-24-person5-sdk-agents-qa-design.md`, `packages/contracts/`
@@ -28,6 +30,20 @@ One Person 5 draft remains: `broker-sdk.openapi.yaml`, the API between an agent'
 capability broker (Person 3). Its run, input, and action operations mirror `/internal/v1` so the
 broker can pass them through, adding the attempt from the verified run token.
 `tests/contract/test_broker_contract_files.py` checks the mirrored schemas against `openapi.yaml`.
+
+## Status update (2026-09-25, after integration)
+
+- **D1:** the real broker serves every operation in `broker-sdk.openapi.yaml`
+  (`services/capability_broker/tests/test_broker_sdk.py::test_broker_serves_every_contract_operation`),
+  and the SDK runs against it (`test_broker_with_sdk.py`, `tests/realstack`). The draft marker is
+  gone (`tests/contract/test_broker_contract_files.py::test_broker_contract_is_stable_and_names_its_owner`).
+- **D2, D5, D10, D13:** implemented as proposed by the broker and the model gateway.
+- **D16:** backup/restore, the diagnostics bundle and demo reset exist
+  (`docs/runbooks/backup-restore.md`). Reboot is covered at the Compose level only
+  (`docs/release/checklist.md`, 23.6).
+- **D21:** still applies to the fake platform only. The real platform reads container exits and
+  reports `AGENT_OUT_OF_MEMORY`, `AGENT_EXITED` or `AGENT_EXITED_WITHOUT_RESULT`
+  (`docs/adr/0006-run-lifecycle-and-time-limits.md`, revision 1).
 
 ## Decisions
 

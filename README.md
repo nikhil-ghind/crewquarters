@@ -87,7 +87,7 @@ The services live in one monorepo and may share Python libraries, but they run a
 
 The UI is designed as a local appliance control plane rather than a developer dashboard. It must let an owner complete installation, connect services, install models and agents, approve actions, and diagnose ordinary failures without using a terminal.
 
-The implementation lives in `apps/web`. See [docs/web-ui.md](docs/web-ui.md) for commands, the mock API, tests, and what the reverse proxy must do to serve the static build.
+The implementation lives in `apps/web`. See [docs/web-ui.md](docs/web-ui.md) for commands, the mock API, and tests. The nginx edge proxy (`infra/proxy`, [docs/runbooks/proxy.md](docs/runbooks/proxy.md)) serves the built UI.
 
 The persistent navigation contains:
 
@@ -270,7 +270,7 @@ Initial SDK modules:
 - `ctx.input.ask(...)` — creates a web input request and waits by heartbeat/polling.
 - `ctx.events.*` — structured logs, progress, artifacts, and status.
 - `ctx.google.gmail.*` and `ctx.google.sheets.*` — narrow proxied operations.
-- `ctx.telephony.call(...)` — fixed-script Twilio call request for the demo.
+- `ctx.telephony.create_call(...)` — fixed-script Twilio call request for the demo.
 - `ctx.idempotency.once(...)` — platform idempotency key helper for external actions.
 
 For v1, a waiting agent container remains alive with a low CPU limit while `ctx.input.ask` waits. The active-time clock (`activeTimeoutSeconds`) pauses during the wait; the wait itself is bounded by `maxInputWaitSeconds` (default 24 hours). Its request and answer are durable, but a platform restart marks the attempt interrupted and lets the operator retry. Durable suspend/resume of arbitrary Python is deferred to a workflow-engine phase.
@@ -325,6 +325,8 @@ The agent computes yesterday's boundaries in the configured timezone, converts t
 | `dgx` | GB10 appliance with DGX OS, Docker, NVIDIA Container Toolkit | NVIDIA-tested vLLM container with GPU access |
 | `demo-public-callbacks` | Temporary controlled demo needing OAuth/Twilio callbacks | Adds a fixed HTTPS tunnel endpoint; never exposes internal services |
 
+In the code, `CQ_PROFILE` is `dev`, `demo-cpu`, or `dgx`. The public-callback tunnel is the Compose profile `callbacks` (a named Cloudflare tunnel) or `callbacks-quick` (a temporary one without an account); see [infra/compose/README.md](infra/compose/README.md).
+
 The GB10 host path installs only the runtime daemon and configuration on the host. Application services, PostgreSQL, agents, and vLLM run in containers. Images used on the appliance must have `linux/arm64` variants; an `amd64`-only image cannot be fixed by `.deb` compatibility.
 
 ## Installable HP/GB10 appliance package
@@ -344,53 +346,75 @@ K3s supports `arm64/aarch64`, so Kubernetes is possible. It is not the best firs
 
 Revisit k3s when one of these becomes true: multiple appliances are scheduled as a pool; high availability is required; there are many long-running services; GPU scheduling must span nodes; or the team adopts a stronger Kubernetes sandbox/runtime. Multi-node vLLM remains a separate model-serving project, not an automatic result of installing Kubernetes.
 
-## Target repository layout
+## Repository layout
 
 ```text
 apps/
-  web/
+  web/                  React UI (served by the proxy)
 services/
-  control_api/
-  scheduler/
-  runtime_daemon/
-  model_gateway/
-  knowledge/
-  capability_broker/
+  control_api/          public /api/v1 and internal /internal/v1 API, cq-admin
+  scheduler/            job queue worker, cron, reconciler, container exit watcher
+  runtime_daemon/       host daemon: agent and model containers (Unix socket)
+  model_gateway/        model leases, admission, local/cloud routing
+  knowledge/            document extraction, chunking, embeddings, retrieval
+  capability_broker/    agent SDK API, Google OAuth, Twilio, callbacks
 packages/
-  contracts/
-  python_sdk/
-  shared_python/
+  contracts/            openapi.yaml, broker-sdk.openapi.yaml, schemas, generated clients
+  shared_python/        settings, database models, state machine, redaction
+  secret_store/         envelope encryption with the device master key
+  python_sdk/           crewquarters-sdk for agent authors
+  crewctl/              init, validate, test, build, publish
+  fake_platform/        fake broker and providers for SDK and agent tests
 agents/
-  caller/
-  gmail_digest/
+  caller/  gmail_digest/  contract_probe/
+catalog/                bundled agent manifests and model catalogs (dev, dgx)
 infra/
-  compose/
-  systemd/
-  debian/
-  scripts/
+  compose/  docker/  proxy/  systemd/  debian/  scripts/
 tests/
-  contract/
-  integration/
-  e2e/
-docs/
+  contract/  integration/  e2e/  realstack/  fuzz/  stack/  live/  fixtures/
+docs/                   ADRs, runbooks, service docs, benchmarks, security, release checklist
 ```
 
 ## Development
 
-The control plane ([docs/control-plane.md](./docs/control-plane.md)), the model gateway ([docs/model-gateway.md](./docs/model-gateway.md)), the runtime daemon ([docs/runtime-daemon.md](./docs/runtime-daemon.md)), and the appliance package ([docs/runbooks/dgx.md](./docs/runbooks/dgx.md)) are implemented. With `uv`, Docker, and Node installed:
+Every service is implemented: control plane ([docs/control-plane.md](./docs/control-plane.md)), model gateway ([docs/model-gateway.md](./docs/model-gateway.md)), runtime daemon ([docs/runtime-daemon.md](./docs/runtime-daemon.md)), capability broker ([docs/capability-broker.md](./docs/capability-broker.md)), knowledge service ([docs/knowledge.md](./docs/knowledge.md)), web UI ([docs/web-ui.md](./docs/web-ui.md)), and the appliance package ([docs/runbooks/dgx.md](./docs/runbooks/dgx.md)). Prerequisites: `uv`, Docker with Compose, and Node 22.18+ for the UI and `make contracts`.
+
+To run the whole platform with the demo agents on a laptop, follow [docs/runbooks/local-demo.md](./docs/runbooks/local-demo.md):
 
 ```bash
 make sync            # install the Python workspace
-make dev-up          # PostgreSQL + control API + scheduler + model gateway (mock models) on :8080
-make integration-up  # adds the runtime daemon: real hardened agent and model containers (dev only)
-make dev-bootstrap   # print a one-time owner setup code
-make test-platform   # unit, integration, and contract tests
-make lint            # ruff + mypy (strict)
-make contracts       # regenerate packages/contracts/openapi.yaml and clients
-infra/debian/build-deb.sh 0.1.0 arm64   # appliance package (see docs/runbooks/dgx.md)
+make demo-up         # full platform + runtime daemon + the three demo agents on http://localhost:8080
+make dev-bootstrap   # print a one-time owner setup code, then open http://localhost:8080/setup
+make demo-down       # stop (keeps data); make demo-down V=1 also deletes volumes and run data
 ```
 
-Architecture decisions are recorded in [docs/adr](./docs/adr) and every `CQ_*` setting is listed in [docs/configuration.md](./docs/configuration.md).
+Other stacks:
+
+```bash
+make dev-up          # core stack on :8080 (proxy, UI, API, scheduler, broker, knowledge, gateway); fake runtime, mock models
+make integration-up  # dev-up plus the runtime daemon in a container: real agent and model containers (dev only)
+make dev-logs        # follow control API and scheduler logs
+make dev-down        # stop the core stack (keeps data)
+make db-up           # only PostgreSQL + pgvector on 127.0.0.1:55432
+```
+
+Tests and checks:
+
+```bash
+make test-platform   # all unit, integration, and contract tests (needs PostgreSQL: make db-up)
+make test-sdk        # SDK, fake platform, crewctl, agent tests (no database)
+make lint            # ruff check, ruff format --check, mypy (strict)
+make contracts       # regenerate packages/contracts/openapi.yaml and the TypeScript/Python clients
+make contracts-check # fail if the generated contracts differ from the commit
+make realstack-up && make realstack-test && make realstack-down   # real-stack E2E (docs/testing-realstack.md)
+make perf            # PLAN §22 measurements in a separate stack (docs/benchmarks/laptop.md)
+uv run pytest -q -p no:cacheprovider tests/fuzz   # property/fuzz tests (CI job `fuzz`)
+infra/debian/build-deb.sh 0.1.0 arm64             # appliance package (docs/runbooks/dgx.md)
+```
+
+Web UI (`apps/web`): `npm ci`, `npm run dev` (Vite on :5173, proxies `/api` to :8080), `npm run mock`, `npm test`, `npx playwright test`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run check:bundle`, `npm run gen:api` / `gen:api:check`.
+
+Architecture decisions are in [docs/adr](./docs/adr), every `CQ_*` setting is in [docs/configuration.md](./docs/configuration.md), and the release status is in [docs/release/checklist.md](./docs/release/checklist.md) and [docs/security/release-checklist.md](./docs/security/release-checklist.md).
 
 ## Demo definition of done
 
@@ -411,23 +435,21 @@ The full implementation specification, five-person work split, prompts, API/data
 
 ## Developer quickstart (SDK, agents, fake platform)
 
-Person 5's deliverables build on the control plane above and work on any laptop with Docker and `uv`:
+Agent development works without the full platform, against the fake platform:
 
 ```bash
 make sync                # the whole workspace, including the SDK, crewctl, fake platform, and agents
 make test-sdk            # SDK, fake platform, crewctl, agent, and contract tests (no database)
 make fake-up && make e2e # fake platform (http://127.0.0.1:8090) + local registry, then the agents in hardened containers
-make demo-seed && make demo-run AGENT=gmail_digest
+make demo-seed && make demo-run AGENT=gmail_digest   # the fake platform's demo scenario
 ```
-
-`make test-platform` runs everything, including the control-plane tests that need PostgreSQL.
 
 - `packages/python_sdk`: `crewquarters-sdk` ([quickstart](docs/sdk/quickstart.md), [reference](docs/sdk/reference.md)).
 - `packages/crewctl`: `crewctl init | validate | test | build | publish`. `validate` applies the control plane's manifest rules; `publish` signs in to the control API.
-- `packages/fake_platform`: a fake capability broker, the control-API operations agents need (same paths and shapes as `packages/contracts/openapi.yaml`), and mock Gmail/Sheets/Twilio/LLM/knowledge, used by tests, `crewctl test`, and the laptop demo. It follows the control plane's run semantics and reuses `crewquarters_shared` for manifests, profiles, configuration, and capabilities.
-- `packages/contracts/broker-sdk.openapi.yaml`: the draft SDK-to-broker API (Person 3 owns it). Its run, input, and action operations mirror the control plane's `/internal/v1` API. Open questions are in [docs/decisions/0001](docs/decisions/0001-person5-contract-drafts.md).
-- `agents/`: `daily-gmail-digest`, `caller`, and the `contract-probe` acceptance agent.
-- [Operator script](docs/demo/operator-script.md) and [release checklist](docs/release/checklist.md).
+- `packages/fake_platform`: a fake capability broker, the control-API operations agents need (same paths and shapes as `packages/contracts/openapi.yaml`), and mock Gmail/Sheets/Twilio/LLM/knowledge, used by tests, `crewctl test`, and `make demo-run`.
+- `packages/contracts/broker-sdk.openapi.yaml`: the SDK-to-broker API (stable for `v1alpha1`, owned by Person 3), served by `services/capability_broker`. Its run, input, and action operations mirror the control plane's `/internal/v1` API. Decisions are recorded in [docs/decisions/0001](docs/decisions/0001-person5-contract-drafts.md).
+- `agents/`: `daily-gmail-digest`, `caller`, and the `contract-probe` acceptance agent. On the real platform they run with `make demo-up` ([local-demo.md](docs/runbooks/local-demo.md)) and in the real-stack suite.
+- [Operator script](docs/demo/operator-script.md) (fake platform) and [release checklist](docs/release/checklist.md).
 
 ## Primary references
 

@@ -2,11 +2,12 @@ openapi: 3.1.0
 info:
   title: Crewquarters broker SDK API
   version: v1alpha1
-  x-status: draft
+  x-status: stable
   x-owner: Person 3
   x-drafted-by: Person 5
   description: |
-    DRAFT. The API an agent container's SDK uses to reach the capability broker.
+    Stable for v1alpha1. The API an agent container's SDK uses to reach the capability broker
+    (services/capability_broker serves every operation; the SDK and the fake platform follow it).
     Every request carries `Authorization: Bearer <PLATFORM_RUN_TOKEN>` and an `X-Request-Id` header.
     JSON uses camelCase. Errors use the PLAN.md section 4.3 envelope.
 
