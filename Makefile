@@ -44,9 +44,9 @@ db-down: ## Stop PostgreSQL (keeps the volume)
 migrate: db-up ## Apply database migrations to the dev database
 	uv run alembic -c services/control_api/alembic.ini upgrade head
 
-dev-up: ## Build and start the core stack (proxy/UI on http://127.0.0.1:8080)
+dev-up: ## Build and start the core stack (proxy/UI on http://localhost:8080)
 	$(COMPOSE) up -d --build --wait
-	@echo "UI: http://127.0.0.1:8080/   Control API: http://127.0.0.1:8080/api/v1/docs"
+	@echo "UI: http://localhost:8080/   Control API: http://localhost:8080/api/v1/docs"
 	@echo "Create the owner with: make dev-bootstrap"
 
 integration-up: ## Dev stack plus the runtime daemon in a container (real agent/model containers)
@@ -57,7 +57,7 @@ integration-up: ## Dev stack plus the runtime daemon in a container (real agent/
 	# broker join.
 	$(COMPOSE) -f infra/compose/compose.runtime.yaml up -d --wait runtime-daemon
 	$(COMPOSE) -f infra/compose/compose.runtime.yaml up -d --wait
-	@echo "UI/API: http://127.0.0.1:8080/ (runtime daemon: containerized, dev only)"
+	@echo "UI/API: http://localhost:8080/ (runtime daemon: containerized, dev only)"
 
 # --- Local demo: the full platform on this machine with the three demo agents -------------
 # docs/runbooks/local-demo.md. LIVE_ENV=~/crewquarters-live.env switches the broker to real
@@ -66,7 +66,7 @@ LIVE_ENV ?=
 DEMO_COMPOSE = $(COMPOSE) $(if $(LIVE_ENV),--env-file $(LIVE_ENV)) -f infra/compose/compose.runtime.yaml \
 	-f infra/compose/compose.demo.yaml
 
-demo-up: ## Full local demo on http://127.0.0.1:8080: runtime daemon + Gmail digest, caller, probe agents
+demo-up: ## Full local demo on http://localhost:8080: runtime daemon + Gmail digest, caller, probe agents
 	mkdir -p $${CQ_DATA_DIR:-/tmp/crewquarters-data}
 	docker build -f infra/docker/python.Dockerfile -t crewquarters/platform:dev .
 	docker build -f infra/docker/proxy.Dockerfile -t crewquarters/proxy:dev .
@@ -74,19 +74,23 @@ demo-up: ## Full local demo on http://127.0.0.1:8080: runtime daemon + Gmail dig
 	uv run python tests/realstack/prepare.py --registry $(REGISTRY) --out .demo --no-test-variants
 	$(DEMO_COMPOSE) up -d --wait runtime-daemon
 	$(DEMO_COMPOSE) up -d --wait
-	@echo "UI: http://127.0.0.1:8080/   First time: make dev-bootstrap for the owner setup code"
+	@echo "UI: http://localhost:8080/   First time: make dev-bootstrap for the owner setup code"
 
 demo-down: ## Stop the local demo (keeps data; `make demo-down V=1` also deletes volumes and run data)
-	# Agent and model containers belong to the runtime daemon, not to Compose.
-	-docker ps -aq --filter label=io.crewquarters.kind | xargs -r docker rm -f
+	# Agent and model containers belong to the runtime daemon, not to Compose; only this
+	# stack's (on its agent and model networks) are removed.
+	-docker ps -aq --filter label=io.crewquarters.kind --filter network=$${CQ_RUNTIME_AGENT_NETWORK:-cq-agents} | xargs -r docker rm -f
+	-docker ps -aq --filter label=io.crewquarters.kind --filter network=$${CQ_RUNTIME_MODEL_NETWORK:-cq-models} | xargs -r docker rm -f
 	$(if $(V),-$(DEMO_COMPOSE) run --rm --no-deps --entrypoint sh runtime-daemon \
 		-c 'rm -rf "$$CQ_RUNTIME_DATA_DIR/runs" "$$CQ_RUNTIME_DATA_DIR/models"')
 	$(DEMO_COMPOSE) down $(if $(V),-v)
 	$(COMPOSE) --profile fake rm -sf registry
 
 integration-down: ## Stop the integration stack
-	# Agent and model containers belong to the runtime daemon, not to Compose.
-	-docker ps -aq --filter label=io.crewquarters.kind | xargs -r docker rm -f
+	# Agent and model containers belong to the runtime daemon, not to Compose; only this
+	# stack's (on its agent and model networks) are removed.
+	-docker ps -aq --filter label=io.crewquarters.kind --filter network=$${CQ_RUNTIME_AGENT_NETWORK:-cq-agents} | xargs -r docker rm -f
+	-docker ps -aq --filter label=io.crewquarters.kind --filter network=$${CQ_RUNTIME_MODEL_NETWORK:-cq-models} | xargs -r docker rm -f
 	$(COMPOSE) -f infra/compose/compose.runtime.yaml down
 
 dev-bootstrap: ## Print a one-time owner setup code for the running stack

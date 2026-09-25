@@ -1,6 +1,6 @@
 # SDK reference (`crewquarters`, protocol `v1alpha1`)
 
-The wire contract is `packages/contracts/broker-sdk.openapi.yaml` (a draft owned by Person 3). Its
+The wire contract is `packages/contracts/broker-sdk.openapi.yaml` (owned by Person 3, `x-status: stable` for `v1alpha1`). Its
 run, input, and action operations mirror the control plane's `/internal/v1` API. This page covers
 the Python surface.
 
