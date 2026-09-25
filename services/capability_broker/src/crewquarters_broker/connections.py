@@ -13,12 +13,13 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from crewquarters_broker.deps import ApiModel, BrokerState, broker_state, internal_auth
 from crewquarters_secret_store import db as secret_db
 from crewquarters_secret_store.db import ProviderProfile
 from crewquarters_shared import audit
-from crewquarters_shared.errors import invalid, not_found
+from crewquarters_shared.errors import PlatformError, conflict, invalid, not_found
 
 router = APIRouter(prefix="/internal/v1", dependencies=[Depends(internal_auth)])
 
@@ -99,6 +100,12 @@ async def list_connections(state: BrokerState = Depends(broker_state)) -> list[d
             "status": status,
             "grantedCapabilities": [f"cloud.{provider}"] if usable else [],
             "lastCheckedAt": max(checks) if checks else None,
+            # The gateway also uses an untested key; say so until a test confirms it.
+            "detail": (
+                "Key not tested yet."
+                if usable and all(p.status == "UNTESTED" for p in usable)
+                else None
+            ),
         }
     return [{"provider": p, "displayName": DISPLAY_NAMES[p], **statuses[p]} for p in DISPLAY_NAMES]
 
@@ -172,12 +179,27 @@ async def list_profiles(state: BrokerState = Depends(broker_state)) -> list[dict
     return [_profile_view(p) for p in profiles]
 
 
+def _duplicate_profile(name: str) -> PlatformError:
+    return conflict(
+        "DUPLICATE_PROVIDER_PROFILE", f"A key named {name!r} already exists for this provider."
+    )
+
+
 @router.post("/provider-profiles", status_code=201, summary="Store a cloud API key")
 async def create_profile(
     body: ProviderProfileIn, state: BrokerState = Depends(broker_state)
 ) -> dict[str, Any]:
     """The broker only encrypts the key. The model gateway alone decrypts and tests it."""
     async with state.sessions() as db:
+        duplicate = await db.scalar(
+            select(ProviderProfile.id).where(
+                ProviderProfile.owner_id == body.user_id,
+                ProviderProfile.provider == body.provider,
+                ProviderProfile.display_name == body.display_name,
+            )
+        )
+        if duplicate is not None:
+            raise _duplicate_profile(body.display_name)
         profile = ProviderProfile(
             id=uuid.uuid4(),
             owner_id=body.user_id,
@@ -189,7 +211,10 @@ async def create_profile(
             settings={},
         )
         db.add(profile)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError:  # a concurrent create with the same name
+            raise _duplicate_profile(body.display_name) from None
         secret = await secret_db.store(
             db,
             state.keyring,

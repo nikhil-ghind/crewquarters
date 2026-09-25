@@ -105,3 +105,41 @@ async def test_profiles_reject_other_providers(harness: Any, user_id: uuid.UUID)
         json={"userId": str(user_id), "provider": "google", "displayName": "x", "apiKey": KEY},
     )
     assert resp.status_code == 422
+
+
+async def test_duplicate_profile_name_is_a_conflict(harness: Any, user_id: uuid.UUID) -> None:
+    body = {"userId": str(user_id), "provider": "openai", "displayName": "Team key", "apiKey": KEY}
+    first = await harness.client.post(PROFILES, headers=harness.service_headers, json=body)
+    assert first.status_code == 201, first.text
+    again = await harness.client.post(PROFILES, headers=harness.service_headers, json=body)
+    assert again.status_code == 409, again.text
+    assert again.json()["error"]["code"] == "DUPLICATE_PROVIDER_PROFILE"
+    other = await harness.client.post(
+        PROFILES, headers=harness.service_headers, json={**body, "provider": "anthropic"}
+    )
+    assert other.status_code == 201, other.text
+
+
+async def test_untested_key_is_usable_but_says_so(
+    harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    created = await harness.client.post(
+        PROFILES,
+        headers=harness.service_headers,
+        json={"userId": str(user_id), "provider": "openai", "displayName": "K", "apiKey": KEY},
+    )
+    assert created.json()["status"] == "UNTESTED"
+
+    async def openai_row() -> dict[str, Any]:
+        rows = await harness.client.get("/internal/v1/connections", headers=harness.service_headers)
+        return next(r for r in rows.json() if r["provider"] == "openai")
+
+    row = await openai_row()
+    assert row["status"] == "CONNECTED" and row["grantedCapabilities"] == ["cloud.openai"]
+    assert row["detail"] == "Key not tested yet."
+    async with sessions() as db:
+        profile = await db.get(ProviderProfile, uuid.UUID(created.json()["id"]))
+        assert profile is not None
+        profile.status = "CONNECTED"
+        await db.commit()
+    assert (await openai_row())["detail"] is None
