@@ -1,6 +1,7 @@
-"""The broker SDK draft (Person 3's contract, drafted by Person 5) is a valid OpenAPI document that
-uses the canonical capability vocabulary, and every bundled agent manifest passes the control
-plane's manifest validation."""
+"""The broker SDK contract (Person 3's, drafted by Person 5; stable for v1alpha1) is a valid
+OpenAPI document that uses the canonical capability vocabulary and mirrors the control plane's
+``/internal/v1`` run API, and every bundled agent manifest passes the control plane's manifest
+validation."""
 
 from pathlib import Path
 from typing import Any
@@ -27,13 +28,14 @@ def operations(document: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]
     ]
 
 
-def test_broker_draft_carries_its_draft_markers() -> None:
+def test_broker_contract_is_stable_and_names_its_owner() -> None:
     info = contracts.broker_openapi()["info"]
-    assert (info["x-status"], info["x-owner"], info["x-drafted-by"]) == (
-        "draft",
+    assert (info["version"], info["x-status"], info["x-owner"]) == (
+        "v1alpha1",
+        "stable",
         "Person 3",
-        "Person 5",
     )
+    assert "DRAFT" not in info["description"]
 
 
 def test_broker_draft_is_valid_openapi() -> None:

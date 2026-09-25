@@ -1,121 +1,163 @@
 # Release checklist (PLAN.md §23)
 
-Every §23 item is listed here with its Must/Should tag, owner, evidence, and status. A failed
-**Must** blocks the demonstration (§26). A failed **Should** goes into the known-limitations list
-below.
+Every §23 item is listed here with its Must/Should tag, owner, evidence, and status as of
+2026-09-25 (commit `37be1d6` plus the branch that updated this file). A failed **Must** blocks the
+demonstration (§26). A failed **Should** goes into the known-limitations list below.
 
-Status values: **Done (fake)** has automated evidence against the fake platform in CI. **Partial**
-means Person 5's side is done and another owner's side is pending. **Pending** means it is not
-started or belongs to another owner.
+Status values:
 
-Evidence commands: `make test` (control plane, SDK, agents, contract, and integration tests; needs
-PostgreSQL), `make test-sdk` (no database), `make fake-up && make e2e` (Docker), `make agent-images`
-(amd64 and arm64), `make evidence` (writes a report to `evidence/<UTC>/`).
+- **Done**: automated evidence (a CI job and/or a test) proves it.
+- **Done (laptop)**: proven on a laptop or in CI, but PLAN wants evidence from the GB10 device or
+  live providers as well. The missing part is named.
+- **Needs hardware**: needs the GB10 device (or its desktop) to run.
+- **Needs live accounts**: needs a real Google test account, Twilio trial account, or cloud API key.
+- **Needs a person**: needs a human review, rehearsal, or decision.
+- **Partial**: some of it is missing, and the gap is named.
+
+CI jobs are in `.github/workflows/ci.yml`. `platform-tests` runs `uv run pytest -q` with
+PostgreSQL and the runner's Docker engine, so it includes the Docker-backed suites such as
+`tests/stack/test_stack.py` and `services/runtime_daemon/tests`. The other jobs are named where
+they are cited. Locally: `make test-platform`, `make test-sdk`, `make fake-up && make e2e`,
+`make realstack-up && make realstack-test` ([testing-realstack.md](../testing-realstack.md)),
+`make perf` ([benchmarks/laptop.md](../benchmarks/laptop.md)), `make evidence`.
 
 ## 23.1 Repository and contracts
 
 | Tag | Item | Owner | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| Must | Monorepo layout matches or updates the boundaries through an ADR | Person 1 (all) | `packages/`, `agents/`, `infra/compose`, `tests/` follow the README layout | Partial: Person 5 areas done |
-| Should | README and operator/developer/security runbooks are current | All | `docs/sdk/*`, `docs/demo/operator-script.md`, README developer quickstart | Partial |
-| Must | OpenAPI, event schemas, manifest schema, generated clients, and examples are versioned | Person 1, Person 3 | Canonical `packages/contracts/*` from Person 1 (`tests/contract/test_contracts.py`). Person 5 checks against them: the bundled manifests pass the control plane's validation, the fake's traffic matches `openapi.yaml` and the run-event schema, and the broker draft mirrors `/internal/v1` (`tests/contract/test_broker_contract_files.py`, `test_fake_route_parity.py`, `test_fake_traffic_conformance.py`) | Partial: `broker-sdk.openapi.yaml` awaits Person 3 ([D1](../decisions/0001-person5-contract-drafts.md)) |
-| Should | ADRs cover all fixed decisions in §1 | Person 1 | `docs/decisions/0001-person5-contract-drafts.md` | Partial |
-| Must | License inventory and notices exist for bundled models and code | Person 1 (release) | — | Pending |
+| Must | Monorepo layout matches or updates the boundaries through an ADR | Person 1 (all) | README "Repository layout"; one service per directory under `services/`, shared code under `packages/`; boundaries in [ADR 0002](../adr/0002-compose-and-systemd.md), [0007](../adr/0007-trust-model.md), [0010](../adr/0010-edge-proxy.md), [0016](../adr/0016-agent-catalog-and-packaging.md) | Done |
+| Should | README and operator/developer/security runbooks are current | All | README, [local-demo](../runbooks/local-demo.md), [dgx](../runbooks/dgx.md), [lan-https](../runbooks/lan-https.md), [proxy](../runbooks/proxy.md), [backup-restore](../runbooks/backup-restore.md), [security release checklist](../security/release-checklist.md), `docs/sdk/*`, service docs in `docs/*.md` | Partial: [operator-script.md](../demo/operator-script.md) still drives the fake platform (`make demo-seed`), not the real stack, and [sdk/reference.md](../sdk/reference.md) still calls the broker contract a draft |
+| Must | OpenAPI, event schemas, manifest schema, generated clients, and examples are versioned | Person 1, Person 3 | CI `contracts` (`make contracts-check`: regenerated `openapi.yaml` and Python/TypeScript clients match the commit); CI `web` (`npm run gen:api:check`); `tests/contract/test_contracts.py::test_openapi_matches_committed_contract`, `::test_bundled_manifests_and_schemas_are_valid`, `::test_emitted_run_events_conform_to_event_schema`, `::test_migrations_upgrade_downgrade_from_empty_database`; the broker contract (`broker-sdk.openapi.yaml`, `x-status: stable`) is checked by `tests/contract/test_broker_contract_files.py` and `services/capability_broker/tests/test_broker_sdk.py::test_broker_serves_every_contract_operation` | Done |
+| Should | ADRs cover all fixed decisions in §1 | Person 1 | [docs/adr](../adr) 0002–0016 cover every §1 row: orchestration and multi-node (0002), database and queue (0003), run lifecycle and waiting input (0006), trust model and agent network (0007), residency (0008), Google auth (0011), local models (0012), knowledge and embeddings (0013), voice (0014), cloud models (0015), marketplace and agents (0016), local auth and tenancy (0005) | Done |
+| Must | License inventory and notices exist for bundled models and code | Person 1 (release) | [THIRD_PARTY_LICENSES.md](../../THIRD_PARTY_LICENSES.md) and [NOTICE](../../NOTICE), generated by `infra/scripts/license_inventory.py` (drift check in CI `lint`); both are installed by the `.deb` (CI `package`); model licenses are recorded in `catalog/models/*/*.json` | Partial: no `LICENSE` for Crewquarters' own code, and the "Needs review" items in the inventory are not signed off (needs the project owner) |
 
 ## 23.2 Core product
 
 | Tag | Item | Owner | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| Must | Owner bootstrap, login, logout, session expiry, CSRF | Person 1 | — | Pending |
-| Must | Marketplace list, install, config, permission reapproval on update, uninstall | Person 1, Person 4 | The control plane's own tests (Person 1); the fake mirrors exact-approval installs (`test_control.py`) | Partial (install and list done by Person 1; UI pending) |
-| Must | Manual and scheduled runs, cancel/retry, events, results, audit | Person 1 | SDK and fake lifecycle (`test_agent_lifecycle.py`, `test_broker_core.py`, `test_hello_agent.py`) | Partial |
-| Must | Exact-10:00 test passes for at least three IANA timezones | Person 1 | The digest's previous-day window is exact for Kolkata, New York, Santiago, and Lord Howe (`test_window.py`) | Partial: scheduler belongs to Person 1 |
-| Must | Agent web-input request and answer flow works and handles timeout/restart honestly | Person 1, Person 5 | `test_input.py`, `test_broker_core.py`, a killed agent resumes with the stored answer (`test_hello_agent.py`, `test_caller.py`) | Partial |
-| Must | One PostgreSQL database persists and restores all intended state | Person 1 | — | Pending |
+| Must | Owner bootstrap, login, logout, session expiry, CSRF | Person 1 | `services/control_api/tests/test_auth.py` (`test_bootstrap_creates_owner_once`, `test_login_logout_and_session_hash_only`, `test_expired_session_is_rejected`, `test_state_change_requires_csrf_and_origin`, `test_login_is_rate_limited`); CI `web`: `apps/web/e2e/setup.spec.ts`, `degraded.spec.ts` ("an expired session returns to sign-in") | Done |
+| Must | Marketplace list, install, config, permission reapproval on update, uninstall | Person 1, Person 4 | `services/control_api/tests/test_agents.py` (`test_catalog_lists_compatible_bundled_agent`, `test_install_requires_exact_permission_approval`, `test_install_resolves_profile_family_and_validates_config`, `test_permission_change_blocks_runs_until_reapproved`, `test_uninstall_blocked_by_active_run_and_removes_schedules`); CI `web`: `gmail-digest.spec.ts` (install), `degraded.spec.ts` ("a permission-changing update cannot run until reapproved") | Done |
+| Must | Manual and scheduled runs, cancel/retry, events, results, audit | Person 1 | `services/control_api/tests/test_runs.py` (`test_manual_run_succeeds_and_streams_events`, `test_cancel_running_run`, `test_failed_run_can_be_retried_as_new_attempt`); `services/scheduler/tests/test_scheduler.py`; `test_auth.py::test_audit_events_are_append_only`; CI `realstack-e2e`: `tests/realstack/test_gmail_digest.py::test_scheduled_digest_fires_with_the_schedule_trigger_and_day_window`, `tests/realstack/test_failures.py::test_cancel_mid_run_stops_the_container_and_cannot_be_retried` | Done |
+| Must | Exact-10:00 test passes for at least three IANA timezones | Person 1 | `services/scheduler/tests/test_scheduler.py::test_fires_exactly_at_10_local` (Asia/Kolkata, America/New_York, Europe/London); `packages/shared_python/tests/test_cron.py::test_ten_am_in_three_zones`; `test_spec_coverage.py::test_online_schedule_dispatches_within_five_seconds` | Done |
+| Must | Agent web-input request and answer flow works and handles timeout/restart honestly | Person 1, Person 5 | `test_runs.py::test_input_request_round_trip`; `services/scheduler/tests/test_reconciler.py` (`test_active_clock_pauses_while_waiting_for_input`, `test_input_wait_limit_fails_run`); `test_review_fixes.py::test_retry_after_restart_reopens_the_same_question`; CI `realstack-e2e`: `test_failures.py::test_broker_outage_short_is_absorbed_long_interrupts_and_retry_recovers`, `::test_worker_restart_mid_run_keeps_one_container_and_the_run_completes`; CI `web`: `caller.spec.ts` ("a Crew Request cannot be answered twice from two tabs") | Done |
+| Must | One PostgreSQL database persists and restores all intended state | Person 1 | `services/control_api/tests/test_backup_restore.py` (`test_restore_round_trip_older_head_and_documents`, `test_restore_with_the_master_key_keeps_connections`); `tests/stack/test_backup_restore_stack.py::test_backup_destroy_restore_and_restart` (manual, `CQ_STACK_TESTS=1`: destroys every volume, restores, `docker compose restart`); [backup-restore.md](../runbooks/backup-restore.md) | Done (laptop): a physical reboot of the GB10 with data preserved is not rehearsed |
 
 ## 23.3 Models and chat
 
-| Tag | Item | Owner | Status |
-| --- | --- | --- | --- |
-| Must | At least one non-gated local model is pinned and validated on GB10/vLLM | Person 2 | Pending |
-| Must | Download progress, checksum, disk-space failure, load progress, ready/error states | Person 2 | Pending |
-| Must | Concurrent lease requests start only one instance | Person 2 | Pending |
-| Must | Admission controller rejects unsafe concurrent loads | Person 2 | Pending |
-| Must | Chat is opt-in, RAG citations resolve, disable releases its lease | Person 2, Person 3, Person 4 | Pending |
-| Must | Unused model unloads within the expected memory envelope | Person 2 | Pending |
-| Must | OpenAI and Anthropic only with explicit profiles/permissions, audited | Person 2 | Partial: the SDK never falls back from local to cloud (`test_llm.py::test_local_family_never_resolves_to_cloud`) |
+| Tag | Item | Owner | Evidence | Status |
+| --- | --- | --- | --- | --- |
+| Must | At least one non-gated local model is pinned and validated on GB10/vLLM | Person 2 | `catalog/models/dgx/local.general.small.json` (Qwen2.5-7B-Instruct, pinned commit and per-file SHA-256, `validation.status: candidate`); `tests/contract/test_contracts.py::test_model_catalogs_are_pinned_and_consistent` | Needs hardware: [benchmarks/gb10.md](../benchmarks/gb10.md) is not run and `memory.validated` is `false` |
+| Must | Download progress, checksum, disk-space failure, load progress, ready/error states | Person 2 | `services/runtime_daemon/tests/test_daemon.py` (`test_hf_download_resumes_and_verifies`, `test_hf_checksum_mismatch_is_rejected`, `test_insufficient_disk_is_reported`); `services/model_gateway/tests/test_gateway.py::test_load_failure_then_retry`; CI `web`: `models.spec.ts` | Done (laptop): a real Hugging Face download and vLLM load on the GB10 is not run |
+| Must | Concurrent lease requests start only one instance | Person 2 | `test_gateway.py::test_concurrent_cold_requests_start_one_server`; `test_gateway_regressions.py::test_lease_during_idle_stop_reloads_instead_of_dying` | Done (laptop): mock model containers, not vLLM |
+| Must | Admission controller rejects unsafe concurrent loads without destabilizing the device | Person 2 | `test_gateway.py` (`test_one_generative_model_policy`, `test_serving_limit_and_host_memory`); `test_gateway_regressions.py::test_concurrent_admission_of_two_models_is_serialized`; `make perf` (20 refusals of a second model, [laptop.md](../benchmarks/laptop.md)) | Done (laptop): memory limits are not measured on the GB10 |
+| Must | Chat is opt-in, RAG citations resolve, disable releases its lease | Person 2, Person 3, Person 4 | `services/control_api/tests/test_service_integrations.py` (`test_grounded_chat_cites_passages_as_untrusted_evidence`, `test_only_knowledge_answers_not_found_without_the_model`, `test_grounded_chat_fails_instead_of_answering_without_sources`); `tests/stack/test_stack.py::test_model_lifecycle_and_local_chat_through_real_containers` (disable, then the model unloads); CI `web`: `chat.spec.ts` | Done |
+| Must | Unused model unloads and observed memory returns within the expected envelope | Person 2 | `test_gateway.py::test_chat_loads_on_demand_and_idle_unloads`, `::test_expired_leases_are_released`; `make perf`: unloaded 2.3 s after a 60 s grace | Done (laptop): the memory envelope needs the GB10 |
+| Must | OpenAI and Anthropic only with explicit profiles/permissions, audited | Person 2 | `test_gateway.py` (`test_cloud_requires_explicit_permission_and_credentials`, `test_cloud_call_is_audited_and_counted`, `test_unmocked_provider_calls_cannot_leave_the_machine`); `test_gateway_cloud_profiles.py`; `test_broker_sdk.py::test_cloud_profile_needs_cloud_capability`; `packages/python_sdk/tests/test_llm.py::test_local_family_never_resolves_to_cloud` | Needs live accounts: adapters are tested against mocked providers only; no bundled agent requests a cloud profile |
 
 ## 23.4 Knowledge and connections
 
 | Tag | Item | Owner | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| Must | Supported document formats index; unsupported scans fail clearly | Person 3 | — | Pending |
-| Must | Retrieval is scoped to the selected knowledge base | Person 3 | The fake enforces bound KBs (`test_broker_connectors.py::test_knowledge_search_is_scoped_to_the_configured_base`) | Pending (real) |
-| Must | Prompt-injection fixtures cannot obtain or invoke capabilities | Person 3, Person 5 | `digest-injection` scenario, `test_gmail_digest.py::test_prompt_injection_…` | Done (fake) for agents |
-| Must | Google OAuth state/refresh/reconnect/disconnect; 7-day test expiry documented | Person 3 | The digest and caller map expired Google access to `GOOGLE_RECONNECT_REQUIRED`; operator script notes the 7-day expiry | Partial |
-| Must | OAuth/provider secrets encrypted and absent from API reads, logs, and agent environments | Person 3 | The agent environment carries only the run token (`DockerLauncher.command`); SDK redaction (`test_redact.py`) | Partial |
-| Must | Twilio webhook signatures verified; duplicates harmless | Person 3 | Duplicate call creation is harmless (`test_caller.py::test_dropped_create_call_…`) | Partial |
+| Must | Supported document formats index; unsupported scans fail clearly | Person 3 | `services/knowledge/tests/test_knowledge_extract.py` (`test_pdf_pages`, `test_docx_sections_and_tables`, `test_csv_rows_keep_headers`, `test_markdown_sections`, `test_scanned_pdf_is_rejected_clearly`); `test_knowledge_service.py::test_scanned_pdf_fails_visibly`; CI `fuzz`: `tests/fuzz/test_fuzz_knowledge_extract.py` | Done |
+| Must | Retrieval is scoped to the selected knowledge base | Person 3 | `test_knowledge_service.py::test_retrieval_is_scoped_to_one_kb`; `test_broker_auth.py::test_knowledge_search_uses_configured_base_only`; `test_service_integrations.py::test_knowledge_is_scoped_to_the_owner`; CI `realstack-e2e`: `test_contract_probe.py::test_capability_matrix_and_isolation_from_inside_the_agent_container` (another KB is `PERMISSION_DENIED`) | Done |
+| Must | Prompt-injection fixtures cannot obtain or invoke capabilities | Person 3, Person 5 | `tests/integration/test_gmail_digest.py::test_prompt_injection_cannot_change_the_schema_or_reach_other_capabilities`; `test_knowledge_service.py::test_passage_text_cannot_forge_evidence`; `packages/python_sdk/tests/test_untrusted.py`; `test_mock_model.py::test_snippet_cannot_smuggle_markup`; the capability matrix above | Done |
+| Must | Google OAuth state/refresh/reconnect/disconnect; 7-day test expiry documented | Person 3 | `services/capability_broker/tests/test_broker_google.py` (`test_state_is_single_use`, `test_browser_binding_required`, `test_expired_refresh_needs_reconnect`, `test_access_token_refresh_and_401_retry`, `test_test_and_disconnect_revokes`); CI `realstack-e2e`: `test_gmail_digest.py::test_expired_google_grant_needs_reconnect_then_recovers`; CI `web`: `oauth-reconnect.spec.ts`; expiry documented in [local-demo.md](../runbooks/local-demo.md) and [lan-https.md](../runbooks/lan-https.md) | Needs live accounts: only the broker's fake Google has been used; the real consent, refresh and revoke are not verified |
+| Must | OAuth/provider secrets encrypted and absent from API reads, logs, and agent environments | Person 3 | `packages/secret_store/tests/` (both files); `test_broker_google.py::test_no_secret_reaches_the_logs`; `test_broker_twilio.py::test_configure_validates_and_never_returns_secret`, `::test_full_number_never_stored`; `test_broker_connections.py::test_profile_key_is_encrypted_for_the_gateway`; `test_gateway_cloud_profiles.py::test_undecryptable_key_is_not_used_and_not_logged`; `services/runtime_daemon/tests/test_daemon.py::test_unknown_fields_cannot_reach_docker`; CI `package`: only `capability-broker` and `model-gateway` mount the master key | Done |
+| Must | Twilio webhook signatures verified; duplicates harmless | Person 3 | `test_broker_twilio.py` (`test_signature_matches_twilio_reference_vector`, `test_callback_signature_required`, `test_duplicate_and_late_callbacks_are_harmless`, `test_lost_response_is_in_doubt_and_never_redialed`); CI `fuzz`: `tests/fuzz/test_fuzz_twilio.py`; CI `realstack-e2e`: `tests/realstack/test_caller.py::test_caller_approval_fixed_script_calls_and_signed_callbacks` | Done (laptop): signatures from real Twilio through a tunnel are not verified (needs live accounts) |
 
-## 23.5 Demo agents (Person 5)
+## 23.5 Demo agents
 
-| Tag | Item | Evidence | Status |
-| --- | --- | --- | --- |
-| Must | Gmail digest selects exactly the previous local calendar day and handles pagination and MIME | `test_window.py`, `test_gmail_digest.py` (volume, DST, malformed), `test_mime.py` | Done (fake); live pending |
-| Must | Digest groups items with reasons, actions, and traceable message references | `test_gmail_digest.py::test_basic_…`, `test_reduce.py`, result schema check | Done (fake) |
-| Must | Caller reads Sheets, enforces consent/E.164/cap, and asks for operator approval | `test_rows.py`, `test_approval.py`, `test_caller.py` | Done (fake) |
-| Must | Caller completes a fixed-script speech gather on verified test numbers | `test_caller.py::test_every_call_state_is_visible` (fake Twilio) | Done (fake); live pending Person 3's broker and credentials |
-| Must | Results write to the configured tab and retry without duplicate calls | `test_caller.py` (write retries, dropped creates, interrupted retry) | Done (fake) |
-| Must | Both agent images run on `linux/amd64` and `linux/arm64` | `make images` (multi-arch manifests), amd64 self-check under emulation, CI `arm64-images` job | Done |
+| Tag | Item | Owner | Evidence | Status |
+| --- | --- | --- | --- | --- |
+| Must | Gmail digest selects exactly the previous local calendar day and handles pagination and MIME | Person 5 | `agents/gmail_digest/tests/test_window.py`; `tests/integration/test_gmail_digest.py` (`test_volume_paginates_and_stops_at_the_cap`, `test_dst_fall_back_day_includes_both_repeated_hours`, `test_malformed_messages_do_not_crash_the_run`); `packages/python_sdk/tests/test_mime.py`; CI `fuzz`: `tests/fuzz/test_fuzz_gmail_mime.py`; CI `realstack-e2e`: `tests/realstack/test_gmail_digest.py` | Done (laptop): not run against a real Gmail inbox (`tests/live`, needs live accounts) |
+| Must | Digest groups items with reasons, actions, and traceable message references | Person 5 | `tests/integration/test_gmail_digest.py::test_basic_day_is_grouped_by_the_rubric`; `agents/gmail_digest/tests/test_classify.py`, `test_reduce.py`; CI `realstack-e2e`: `test_gmail_digest.py::test_manual_digest_with_traceable_message_references` | Done (laptop): grouping is proven with the fake platform's rule-based model; on the real stack the mock model classifies nothing (every item is "needs review"), so real classification needs the GB10 model |
+| Must | Caller reads Sheets, enforces consent/E.164/cap, and asks for operator approval | Person 5 | `agents/caller/tests/test_rows.py`, `test_approval.py`; `tests/integration/test_caller.py::test_approval_request_previews_masked_recipients_and_exact_count`, `::test_consent_no_is_never_called`; `test_broker_twilio.py::test_call_cap_holds_under_concurrent_requests`; CI `realstack-e2e`: `tests/realstack/test_caller.py` | Done |
+| Must | Caller completes a fixed-script speech gather on verified test numbers | Person 5 | Fake Twilio: `tests/integration/test_caller.py::test_every_call_state_is_visible`; CI `realstack-e2e`: `test_caller.py::test_caller_approval_fixed_script_calls_and_signed_callbacks`; live harness `tests/live/test_live_platform.py::test_caller_places_approved_calls_without_duplicates` (not run) | Needs live accounts: a Twilio trial account, verified numbers, and the callback tunnel |
+| Must | Results write to the configured tab and retry without duplicate calls | Person 5 | `tests/integration/test_caller.py` (`test_failed_sheet_writes_are_retried_without_redialing`, `test_dropped_create_call_response_places_one_provider_call`, `test_interrupted_run_retries_without_redialing`); `test_broker_twilio.py::test_duplicate_start_places_one_call` | Done |
+| Must | Both agent images run on `linux/amd64` and `linux/arm64` | Person 5 | CI `agent-images-arm64` (build and `--self-check` under QEMU); CI `image-security` (both architectures); CI `agent-e2e` and `realstack-e2e` (amd64); `make agent-images` | Done (laptop): arm64 runs only under emulation; not yet run on the GB10 |
 
 ## 23.6 Deployment and security
 
 | Tag | Item | Owner | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| Must | Laptop Compose profile passes the full fake E2E | Person 5 | `make fake-up && make e2e` (CI `agent-e2e` job) | Done |
-| Must | Fresh GB10 installer and uninstall-with-data-preservation rehearsed | Person 2 | — | Pending |
-| Must | Runtime daemon is Unix-socket only; internal services not externally published | Person 2 | The laptop stack publishes only on 127.0.0.1 | Pending (real) |
-| Must | Agent cannot access Docker, the DB, vLLM directly, host paths/gateway, or the internet | Person 2, Person 5 | contract-probe `isolation` passes in the hardened container on the internal network (`test_e2e_agents.py`) | Partial: the real daemon must apply the same flags |
-| Must | Core/agent images are non-root, pinned by digest, scanned, and have SBOMs | Person 5 (agents), Person 2 (core) | Agents are non-root (`test_images_run_as_non_root_…`) and pinned by digest | Partial: scans and SBOMs are Stage 6 work |
-| Must | Backup/restore and reboot tests pass | Unassigned ([D16](../decisions/0001-person5-contract-drafts.md)) | — | Pending |
-| Must | Fixed callback tunnel exposes only callback routes and can be disabled | Person 3, Person 2 | — | Pending |
-| Must | Diagnostics bundle is secret-redacted | Unassigned ([D16](../decisions/0001-person5-contract-drafts.md)) | — | Pending |
+| Must | Laptop Compose profile passes the full fake E2E | Person 5 | CI `agent-e2e` (`make fake-up && make e2e`); CI `realstack-e2e` (`make realstack-up && make realstack-test`: real images through the real platform with fake Google/Twilio) | Done |
+| Must | Fresh GB10 installer and uninstall-with-data-preservation rehearsed | Person 2 | CI `package`: `infra/debian/test-install.sh` installs, reinstalls, removes and purges the `.deb` in `ubuntu:22.04`; [dgx.md](../runbooks/dgx.md) | Needs hardware: not rehearsed on a GB10 |
+| Must | Runtime daemon is Unix-socket only; internal services not externally published | Person 2 | CI `package`: in `compose.appliance.yaml` only `proxy` publishes a port; `infra/systemd` socket unit; `test_daemon.py::test_requires_service_token`, `::test_refuses_to_start_with_a_short_token`; `infra/proxy/test-proxy.sh` (`/internal/*` is 404) | Done (laptop): not checked on an installed GB10 |
+| Must | Agent cannot access Docker, the DB, vLLM directly, host paths/gateway, or the internet | Person 2, Person 5 | `services/runtime_daemon/tests/test_daemon.py::test_hardened_container_cannot_reach_prohibited_targets` (internet, DNS, database, host gateway, host LAN, Docker socket); CI `realstack-e2e`: `test_contract_probe.py::test_capability_matrix_and_isolation_from_inside_the_agent_container` (PostgreSQL, control API, gateway, knowledge, proxy, host bridge, internet) | Partial: no test targets a vLLM or mock model container on `cq-models` or the metadata address `169.254.169.254`; not run on a GB10 |
+| Must | Core/agent images are non-root, pinned by digest, scanned, and have SBOMs | Person 5 (agents), Person 2 (core) | CI `image-security` (5 images × 2 architectures: `check_image.py` non-root and setuid allowlist, Syft SBOM, Trivy); CI `release-refs`; `tests/e2e/test_e2e_agents.py::test_images_run_as_non_root_and_self_check`; [security release checklist](../security/release-checklist.md) | Partial: platform/proxy images are pinned by digest only when a release sets `CQ_VERSION=<v>@sha256:<digest>`, and no workflow produces that `release.env` yet |
+| Must | Backup/restore and reboot tests pass | Person 1 | `test_backup_restore.py` (CI `platform-tests`); `tests/stack/test_backup_restore_stack.py` (manual, `CQ_STACK_TESTS=1`, Compose restart); CI `web`: `backups.spec.ts`; the `.deb` boot path in `test-install.sh` | Done (laptop): no physical reboot of a GB10 |
+| Must | Fixed callback tunnel exposes only callback routes and can be disabled | Person 3, Person 2 | `infra/proxy/callbacks-site.conf` (two callback groups, 404 for everything else); `infra/proxy/test-proxy.sh` in CI `package`; the tunnel is off unless the `callbacks` or `callbacks-quick` Compose profile is started; [proxy.md](../runbooks/proxy.md) | Done (laptop): a real Cloudflare tunnel (with a token) is not exercised in CI |
+| Must | Diagnostics bundle is secret-redacted | Person 1 | `services/control_api/tests/test_diagnostics.py::test_bundle_redacts_seeded_secrets`, `::test_masked_settings_hides_every_secret_field`; CI `fuzz`: `tests/fuzz/test_fuzz_events_redaction.py::test_log_lines_are_redacted`; CI `web`: `backups.spec.ts` (download) | Done |
 
-## 23.7 UI and operator experience (Person 4)
+## 23.7 UI and operator experience
 
-All items are **Pending** until the UI exists. Person 5 supplies the inputs the UI renders:
+UI tests run in CI `web`: Vitest (`apps/web/src/**/*.test.ts(x)`) and Playwright against the mock
+API (`apps/web/e2e/*.spec.ts`).
 
-- the input-request `preview` object (`blocks`, `choices`, `consequence`);
-- result renderer ids (`x-crewquarters-renderer` in each manifest's `resultSchema`:
-  `crewquarters.gmail-digest/v1`, `crewquarters.caller/v1`, `crewquarters.contract-probe/v1`);
-- the config UI hints `x-crewquarters-widget` and `x-crewquarters-group`.
-
-The fake's control API uses the same paths and shapes as the real one for the operations it serves,
-so Person 4 can develop against either.
+| Tag | Item | Owner | Evidence | Status |
+| --- | --- | --- | --- | --- |
+| Must | The `.deb` desktop launcher opens a resumable first-run setup wizard | Person 4, Person 2 | `test-install.sh` (desktop entry validates; launcher opens `/setup` on first run, then `/`); `setup.spec.ts` ("first-run setup completes without a shell and resumes after refresh and Google OAuth") | Needs hardware: not opened from a GB10 desktop |
+| Must | A first-time operator completes setup without shell access after package installation | Person 4 | `setup.spec.ts` (same test, mock API) | Partial: the owner setup code comes from `sudo crewquarters bootstrap-token`, a shell command the installer prints; no first-time operator has run setup on an installed device (needs a person) |
+| Should | Dashboard prioritizes blocking attention, active work, resources, recent results, and schedules | Person 4 | `apps/web/src/features/overview/OverviewPage.tsx`; `test_spec_coverage.py::test_attention_lists_questions_failures_and_blocked_schedules`; `caller.spec.ts` and `oauth-reconnect.spec.ts` check attention items on Overview | Done |
+| Must | Marketplace installation includes compatibility, permission, configuration, schedule, and review steps | Person 4 | `gmail-digest.spec.ts`; `components.test.tsx` ("requires an approval per capability and highlights cloud and phone"); `lib.test.ts` ("highlights permissions added by a new version") | Done |
+| Must | Model pages separately display disk installation and memory residency | Person 4 | `models.spec.ts` ("disk and memory states are separate; load survives refresh; unload"); `lib.test.ts` ("never uses an ambiguous "Active" label for models") | Done |
+| Must | Model download/cold-start progress survives navigation and refresh | Person 4 | `models.spec.ts` (same test); `chat.spec.ts` (cold start) | Done |
+| Must | Pending input appears on Overview, Activity, and run detail and cannot be double-answered | Person 4 | `caller.spec.ts` (both tests); `features.test.tsx` ("reports a double answer instead of answering again") | Done |
+| Must | Caller approval previews masked recipients, consent state, script, and exact call count | Person 4, Person 5 | `features.test.tsx` ("shows the caller preview, consequence and count…"); `caller.spec.ts`; `agents/caller/tests/test_approval.py::test_request_shows_masked_recipients_script_skips_and_count` | Done |
+| Must | Gmail and caller results use the specified safe structured renderers | Person 4 | `features.test.tsx` ("Gmail digest: ordered sections, truncation warning, safe links, message IDs", "Caller: summary separates outcomes…", "falls back to escaped generic output for unknown renderers"); `gmail-digest.spec.ts` | Done |
+| Must | Knowledge ingestion reports per-file status and chat citations open an authorized source drawer | Person 4, Person 3 | `chat.spec.ts` (source drawer); `components.test.tsx` ("SourceDrawer shows the passage as text"); per-document states server-side in `test_knowledge_service.py::test_upload_ingest_and_cite`, `::test_scanned_pdf_fails_visibly` | Partial: no UI test covers the per-file ingestion status on the knowledge base page |
+| Must | Local/cloud treatment is consistent before, during, and after every model request | Person 4 | `components.test.tsx` ("labels local and cloud processing explicitly"); `test_gateway.py::test_cloud_call_is_audited_and_counted` | Partial: no end-to-end UI test runs a cloud request (no bundled agent uses a cloud profile, and chat is local only) |
+| Should | Every route has initial-loading, empty, ready, degraded, and error states | Person 4 | `degraded.spec.ts` (API outage, runtime unavailable, low disk); `components.test.tsx` (empty state, `ErrorPanel`); `a11y.spec.ts` visits every main route | Done |
+| Should | Keyboard-only and screen-reader checks pass for setup, install, run, approval, chat, and reconnect | Person 4 | `a11y.spec.ts` (axe on every route; keyboard: skip link, reaching the approval, dialog focus) | Needs a person: a screen-reader pass |
+| Should | Responsive reviews pass at 1440, 1024, 768, and 390 CSS pixels | Person 4 | `responsive.spec.ts` (screenshots uploaded as the `web-playwright-report` artifact) | Done |
+| Must | No raw agent HTML, provider secret, OAuth token, or unsanitized log content renders | Person 4 | `components.test.tsx` ("LogViewer escapes markup and filters by level"); `features.test.tsx` (escaped generic output); `api.test.ts` ("never returns secrets…"); `bundle.test.ts`; CI `web` `npm run check:bundle` and the secret scan of `dist` | Done |
 
 ## 23.8 Evidence package
 
 | Tag | Item | Owner | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| Must | Test report with commit/image/model digests | Person 5 (Person 2 for model digests) | `make evidence` → `evidence/<UTC>/report.md` | Partial: model digests pending |
-| Must | GB10 hardware/software inventory and benchmark report | Person 2 | — | Pending |
-| Should | Screenshots or recording of the complete demo flow | Person 4, Person 5 | — | Pending |
-| Must | Failure-injection results and known limitations | Person 5 (agents), all | Fake fault-injection tests (`test_caller.py`, `test_broker_core.py`, `test_faults.py`); limitations below | Partial |
-| Must | Security checklist and unresolved-risk signoff | Person 3 | — | Pending |
-| Must | Step-by-step reset and rehearsal instructions used successfully by a non-author | Person 5 | `docs/demo/operator-script.md`, `make demo-reset` | Partial: needs a non-author rehearsal |
+| Must | Test report with commit/image/model digests | Person 5 (Person 2 for model digests) | `make evidence` writes `evidence/<UTC>/report.md` with the commit and the pinned agent image digests; image SBOMs from CI `image-security` | Partial: the report does not list platform/proxy image digests or model revisions |
+| Must | GB10 hardware/software inventory and benchmark report | Person 2 | [benchmarks/gb10.md](../benchmarks/gb10.md) (template and commands); laptop results in [benchmarks/laptop.md](../benchmarks/laptop.md) | Needs hardware |
+| Should | Screenshots or recording of the complete demo flow | Person 4, Person 5 | `responsive.spec.ts` screenshots (mock API) | Needs a person: a recording of the §24 flow on the real stack |
+| Must | Failure-injection results and known limitations | Person 5 (agents), all | CI `realstack-e2e`: `tests/realstack/test_failures.py` (cancel, OOM, pre-handshake crash, broker outage, gateway down, worker restart; results in [testing-realstack.md](../testing-realstack.md)); `packages/fake_platform/tests/test_faults.py`; `services/scheduler/tests/test_exits.py`; limitations below | Done |
+| Must | Security checklist and unresolved-risk signoff | Person 3 | [security/release-checklist.md](../security/release-checklist.md) | Needs a person: the signoff table is empty |
+| Must | Step-by-step reset and rehearsal instructions used successfully by a non-author | Person 5 | [local-demo.md](../runbooks/local-demo.md), [operator-script.md](../demo/operator-script.md), `cq-admin demo reset` ([backup-restore.md](../runbooks/backup-restore.md)); `test_demo_reset.py` | Needs a person: a non-author rehearsal |
 
-## Known limitations (Person 5 scope)
+## Known limitations
 
-- The SDK-to-broker API (`broker-sdk.openapi.yaml`) is a draft until Person 3 adopts it. Its run,
-  input, and action operations mirror the control plane's `/internal/v1` API (checked by tests), but
-  the SDK has not yet run against a real broker.
-- Verified against the real control plane (2026-09-25, local Compose): `crewctl publish` imports
-  the three digest-pinned agents, they install with exact permission approval, the derived
-  capabilities match the fake's, and runs complete on the scheduler's fake runtime with valid run
-  events. The fake runtime does not execute agent code.
-- Fake-only coverage: Gmail/Sheets/Twilio are simulated. The fake LLM is rule-based unless it is
-  pointed at an OpenAI-compatible server.
-- There is no durable suspend/resume. A waiting agent keeps its container, and a platform restart
-  interrupts the run (by design for v1, `PLAN.md` §11).
-- `sheetWrite: pending_retry` is part of the result contract, but the caller retries writes inline,
-  so today it reports only `written` or `failed`.
-- Image vulnerability scans and SBOMs are not generated yet (Stage 6).
+- **Mock models on laptops.** The dev model catalog (`catalog/models/dev`) serves a deterministic
+  mock. Its structured output is empty, so on the real stack the Gmail digest puts every message
+  under Important with `needsReview`. The bundled agents request only `local.general` and no cloud
+  provider, so a cloud key cannot stand in. Real classification needs the GB10 catalog
+  (`catalog/models/dgx`, vLLM) or the fake platform pointed at an OpenAI-compatible server
+  (`CREWQ_FAKE_LLM_BASE_URL`).
+- **Fake providers in the laptop stack.** The broker's fake Google and Twilio keep their state in
+  memory. Recreating the broker loses the fake Google grant (reconnect), and the fake Sheets start
+  empty, so the caller has no contacts to call under `make demo-up` without live accounts
+  ([local-demo.md](../runbooks/local-demo.md)).
+- **Model gateway idempotency store is in memory.** Completed LLM responses are replayed by key
+  only until the gateway restarts, and the store is not shared between processes
+  ([model-gateway.md](../model-gateway.md)).
+- **The fake platform keeps `HEARTBEAT_LOST` for exits** ([D21](../decisions/0001-person5-contract-drafts.md)).
+  The real platform reports `AGENT_OUT_OF_MEMORY`, `AGENT_EXITED` or
+  `AGENT_EXITED_WITHOUT_RESULT` ([ADR 0006](../adr/0006-run-lifecycle-and-time-limits.md),
+  revision 1), so exit handling in agents is tested for real only in `tests/realstack`.
+- **An exit code of 137 without Docker's OOM flag is reported as a probable out-of-memory kill.**
+  Docker loses `OOMKilled` for about 1 in 12 kills, and the message says the OOM was not confirmed.
+- **Agent images** keep the allowlisted setuid binaries of the Debian base
+  (`infra/scripts/setuid-allowlist.txt`) and install SDK dependencies with `pip` without a lock or
+  hashes (security release checklist, "Open risks").
+- **The diagnostics bundle from the API** (System Status → Download diagnostics) holds only the
+  control API's own logs plus every service's health. The CLI bundle (`crewquarters
+  diagnostics`) has every service's logs.
+- **Google in LAN HTTPS mode** needs a real DNS name under a public top-level domain for the
+  redirect URI; `.local` names are rejected by Google ([lan-https.md](../runbooks/lan-https.md)).
+- **Google test-mode grants expire after seven days**; reconnect from Connections.
+- **No durable suspend/resume.** A waiting agent keeps its container, and a platform restart
+  interrupts the run for an owner retry (PLAN.md §11, ADR 0006).
+- **`sheetWrite: pending_retry`** is in the caller's result contract, but the caller retries
+  writes inline, so it reports only `written` or `failed`.
+- **Isolation coverage** does not include a model container on `cq-models` or the metadata
+  address, and host-bridge isolation depends on Docker 28+ or the `.deb` firewall rule
+  ([testing-realstack.md](../testing-realstack.md)).
+- **No `LICENSE` has been chosen** for Crewquarters' own code; this blocks a public release.
