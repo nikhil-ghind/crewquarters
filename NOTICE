@@ -1,0 +1,45 @@
+Crewquarters
+Copyright 2026 the Crewquarters authors.
+
+The repository does not yet carry a LICENSE file for Crewquarters' own code; the project
+license is an open release item (docs/security/release-checklist.md). Until it is chosen,
+no license to Crewquarters' own code is granted by this notice.
+
+This product includes or downloads third-party software and models. The full inventory,
+with versions, pinned references, and licenses, is THIRD_PARTY_LICENSES.md (installed by
+the .deb as /usr/share/doc/crewquarters/THIRD_PARTY_LICENSES.md). Attributions required by
+those licenses follow.
+
+Models (downloaded on the appliance or included in an offline bundle)
+---------------------------------------------------------------------
+* Qwen2.5-7B-Instruct and Qwen2.5-32B-Instruct-AWQ, Copyright Alibaba Cloud (Qwen team).
+  Licensed under the Apache License, Version 2.0.
+  https://huggingface.co/Qwen/Qwen2.5-7B-Instruct
+  https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-AWQ
+* jina-embeddings-v2-small-en, Copyright Jina AI GmbH. Licensed under the Apache License,
+  Version 2.0. https://huggingface.co/jinaai/jina-embeddings-v2-small-en
+  The ONNX export used (https://huggingface.co/Xenova/jina-embeddings-v2-small-en) is a
+  format conversion of that model by Joshua Lochner (Xenova).
+
+Container images and services (pulled or bundled unmodified)
+-------------------------------------------------------------
+* Python, Copyright Python Software Foundation. PSF License Agreement.
+* nginx, Copyright Igor Sysoev and Nginx, Inc. 2-clause BSD License.
+* PostgreSQL, Copyright The PostgreSQL Global Development Group. PostgreSQL License.
+* pgvector, Copyright Andrew Kane. PostgreSQL License.
+* cloudflared, Copyright Cloudflare, Inc. Apache License, Version 2.0.
+* The NVIDIA vLLM container (nvcr.io/nvidia/vllm) is provided under the NVIDIA Deep
+  Learning Container License; vLLM is licensed under the Apache License, Version 2.0.
+* Debian and Alpine base-image packages are distributed under their own licenses, listed
+  per package in each image's SPDX SBOM and in /usr/share/doc/*/copyright inside the image.
+  Corresponding source for GPL/LGPL packages is available from the Debian and Alpine
+  archives for the pinned package versions.
+
+Libraries
+---------
+* psycopg (Copyright the Psycopg authors) is licensed under the GNU Lesser General Public
+  License v3; it is used as an unmodified, separately installed Python package.
+* certifi and tqdm include code under the Mozilla Public License 2.0; source is available
+  from https://github.com/certifi/python-certifi and https://github.com/tqdm/tqdm.
+* The web UI bundles React, React Router, TanStack Query (MIT) and Lucide icons (ISC).
+All other libraries are listed in THIRD_PARTY_LICENSES.md with their licenses.

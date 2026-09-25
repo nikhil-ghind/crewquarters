@@ -1,0 +1,21 @@
+# Setuid/setgid files allowed in shipped images (infra/scripts/check_image.py).
+#
+# These come from the Debian base (python:3.12-slim / -slim-bookworm: login, passwd,
+# util-linux mount). They are accepted for v1 because every image runs as a non-root user
+# (10001 or nginx's 101), agent and model containers are started with no-new-privileges and
+# all capabilities dropped by the runtime daemon, and the proxy/tunnel set the same in
+# compose.appliance.yaml. Follow-up (owners of the Dockerfiles, docs/security/
+# release-checklist.md): strip them in the final stage with
+#   RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
+# and then empty this list. The proxy image (nginx-unprivileged, Alpine) has none.
+/usr/bin/chage
+/usr/bin/chfn
+/usr/bin/chsh
+/usr/bin/expiry
+/usr/bin/gpasswd
+/usr/bin/mount
+/usr/bin/newgrp
+/usr/bin/passwd
+/usr/bin/su
+/usr/bin/umount
+/usr/sbin/unix_chkpwd
