@@ -47,24 +47,12 @@ export default function KnowledgePage() {
   return (
     <Page>
       <PageHeader title="Knowledge" purpose="Upload documents, index them on this device, and test what chat and agents can find." />
-      <Card title="Create a knowledge base">
-        <form className="row" style={{ alignItems: 'flex-end' }} onSubmit={onSubmit} noValidate>
-          <div style={{ flex: '1 1 280px' }}>
-            <Field label="Name" error={error}>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Team handbook" />
-            </Field>
-          </div>
-          <Button type="submit" variant="primary" busy={create.isPending} busyLabel="Creating…" disabledReason={guard.offline}>
-            Create knowledge base
-          </Button>
-        </form>
-      </Card>
       <QueryView
         query={kbs}
         errorTitle="Could not load knowledge bases"
         loading={<SkeletonBlock />}
         isEmpty={(d) => d.length === 0}
-        empty={<EmptyState icon={BookOpen} title="No knowledge bases yet">Create one above, then upload documents to it.</EmptyState>}
+        empty={<EmptyState icon={BookOpen} title="No knowledge bases yet">Create one below, then upload documents to it.</EmptyState>}
       >
         {(list) => (
           <div className="grid-3">
@@ -83,6 +71,18 @@ export default function KnowledgePage() {
           </div>
         )}
       </QueryView>
+      <Card title="Create a knowledge base">
+        <form className="row" style={{ alignItems: 'flex-end' }} onSubmit={onSubmit} noValidate>
+          <div style={{ flex: '1 1 280px' }}>
+            <Field label="Name" error={error}>
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Team handbook" />
+            </Field>
+          </div>
+          <Button type="submit" variant="primary" busy={create.isPending} busyLabel="Creating…" disabledReason={guard.offline}>
+            Create knowledge base
+          </Button>
+        </form>
+      </Card>
     </Page>
   );
 }

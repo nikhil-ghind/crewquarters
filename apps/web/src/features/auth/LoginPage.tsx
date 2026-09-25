@@ -59,7 +59,14 @@ export default function LoginPage() {
         </span>
         <span className="brand-name">Crewquarters</span>
       </header>
-      <main id="main" className="bare-main">
+      <main id="main" className="bare-main auth-split">
+        <section className="auth-intro stack" aria-label="About Crewquarters">
+          <p className="auth-intro-title">Your AI crew, running on your own device.</p>
+          <p>
+            Agents read your mail, call your contacts, and answer from your documents. You approve anything risky, and
+            nothing leaves the device unless you say so.
+          </p>
+        </section>
         <div className="card auth-card stack">
           <div className="stack-sm">
             <h1>Sign in</h1>

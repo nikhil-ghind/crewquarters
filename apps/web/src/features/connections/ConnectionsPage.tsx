@@ -17,6 +17,9 @@ const DESCRIPTIONS: Record<string, { text: string; icon: ReactNode; cloud?: bool
   anthropic: { text: 'Optional cloud models. Data sent to Anthropic leaves this device.', icon: <Sparkles size={20} aria-hidden="true" />, cloud: true },
 };
 
+/** The demo's own connections first, then the optional cloud providers. */
+const ORDER = ['google', 'twilio', 'openai', 'anthropic'];
+
 export default function ConnectionsPage() {
   const connections = useConnections();
   return (
@@ -25,7 +28,7 @@ export default function ConnectionsPage() {
       <QueryView query={connections} errorTitle="Could not load connections" loading={<div className="grid-2">{[0, 1, 2, 3].map((i) => <SkeletonBlock key={i} lines={2} />)}</div>}>
         {(list) => (
           <div className="grid-2">
-            {list.map((c) => {
+            {[...list].sort((a, b) => ORDER.indexOf(a.provider) - ORDER.indexOf(b.provider)).map((c) => {
               const d = DESCRIPTIONS[c.provider];
               const action = c.status === 'NEEDS_ATTENTION' && c.provider === 'google' ? 'Reconnect Google' : c.status === 'NOT_CONNECTED' ? `Set up ${c.displayName}` : `Manage ${c.displayName}`;
               return (
