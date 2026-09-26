@@ -1,0 +1,151 @@
+apiVersion: crewquarters/v1alpha1
+kind: Agent
+metadata:
+  id: voice-call-center
+  name: Voice Call Center
+  version: 0.1.0
+  summary: Short, honest AI phone conversations with consenting contacts from a Google Sheet, after your approval.
+  description: >-
+    Calls each consenting, ready contact from your sheet and holds a short conversation about your
+    brief, using local speech-to-text, a local LLM, and a local voice. Every call opens by saying it
+    is an automated AI assistant. Outcomes (completed, declined, do-not-call, callback, voicemail,
+    no answer, busy) are written back to the sheet with masked numbers.
+  publisher: Crewquarters (Person 5)
+spec:
+  # `crewctl build --push` pins this to the pushed digest.
+  image: localhost:5001/crewquarters/voice-call-center@sha256:REQUIRED_DIGEST
+  entrypoint: ["python", "-m", "voice_caller"]
+  architectures: ["linux/amd64", "linux/arm64"]
+  triggers: ["manual"]
+  permissions:
+    llmProfiles: ["local.general", "local.stt", "local.tts"]
+    knowledge: []
+    connectors:
+      google: ["spreadsheets"]
+      sip: ["call.conversational"]
+    cloudProviders: []
+    userInput: true
+  resources:
+    cpu: 2
+    memoryMb: 2048
+    activeTimeoutSeconds: 7200
+    maxInputWaitSeconds: 86400
+  configurationSchema:
+    type: object
+    required: [spreadsheetId, organization, purpose]
+    properties:
+      spreadsheetId:
+        type: string
+        minLength: 1
+        x-crewquarters-widget: spreadsheet
+      inputRange:
+        type: string
+        default: Contacts!A2:D
+        description: "Columns name, phone_e164, consent, status, starting at a data row."
+      resultRange:
+        type: string
+        default: Results!A:J
+      organization:
+        type: string
+        minLength: 1
+        maxLength: 80
+        description: Who the calls are made for; said in every greeting.
+      purpose:
+        type: string
+        minLength: 1
+        maxLength: 300
+        description: Why you are calling, in one sentence.
+        x-crewquarters-widget: textarea
+      talkingPoints:
+        type: array
+        maxItems: 10
+        items: {type: string, maxLength: 300}
+        default: []
+      questions:
+        type: array
+        maxItems: 8
+        items: {type: string, maxLength: 300}
+        default: []
+      agentName:
+        type: string
+        minLength: 1
+        maxLength: 40
+        default: Sam
+      disclosure:
+        type: string
+        minLength: 1
+        maxLength: 120
+        default: an automated AI assistant
+        description: How the agent describes itself in the first sentence. It must say it is automated or an AI.
+      maxCalls:
+        type: integer
+        minimum: 1
+        maximum: 25
+        default: 5
+      maxCallSeconds:
+        type: integer
+        minimum: 60
+        maximum: 900
+        default: 240
+      ringTimeoutSeconds:
+        type: integer
+        minimum: 10
+        maximum: 60
+        default: 30
+        x-crewquarters-group: Advanced
+      voice:
+        type: string
+        enum: [af_sarah, af_bella, af_nicole, af_sky, am_adam, am_michael, bf_emma, bm_george]
+        default: af_sarah
+      modelProfile:
+        type: string
+        default: local.general.small
+        x-crewquarters-widget: modelProfile
+      sttProfile:
+        type: string
+        default: local.stt.small
+        x-crewquarters-group: Advanced
+      ttsProfile:
+        type: string
+        default: local.tts.small
+        x-crewquarters-group: Advanced
+  resultSchema:
+    x-crewquarters-renderer: crewquarters.voice-call-center/v1
+    type: object
+    required: [operatorDecision, summary, rows]
+    properties:
+      operatorDecision: {enum: [approved, cancelled, nothing_to_call]}
+      summary:
+        type: object
+        required: [planned, skipped, called, answered, completed, declined, dnc, callback, wrongPerson, voicemail, noAnswer, busy, failed]
+        properties:
+          planned: {type: integer, minimum: 0}
+          skipped: {type: integer, minimum: 0}
+          called: {type: integer, minimum: 0}
+          answered: {type: integer, minimum: 0}
+          completed: {type: integer, minimum: 0}
+          declined: {type: integer, minimum: 0}
+          dnc: {type: integer, minimum: 0}
+          callback: {type: integer, minimum: 0}
+          wrongPerson: {type: integer, minimum: 0}
+          voicemail: {type: integer, minimum: 0}
+          noAnswer: {type: integer, minimum: 0}
+          busy: {type: integer, minimum: 0}
+          failed: {type: integer, minimum: 0}
+      rows:
+        type: array
+        items:
+          type: object
+          required: [row, name, phoneMasked, callId, disposition, interest, callbackRequested, followUp, notes, durationSeconds, sheetWrite]
+          properties:
+            row: {type: integer}
+            name: {type: string}
+            phoneMasked: {type: string}
+            callId: {type: [string, "null"]}
+            disposition: {enum: [completed, declined, dnc, callback, wrong_person, voicemail, no_answer, busy, failed]}
+            interest: {enum: [high, medium, low, none, unknown]}
+            callbackRequested: {type: boolean}
+            followUp: {type: string}
+            notes: {type: string}
+            durationSeconds: {type: [integer, "null"]}
+            sheetWrite: {enum: [written, failed]}

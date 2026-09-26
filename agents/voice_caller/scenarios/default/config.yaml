@@ -1,0 +1,10 @@
+spreadsheetId: voice-sheet
+organization: Acme Dental
+purpose: confirm next week's cleaning appointments
+talkingPoints:
+  - Appointments can be moved online or by phone.
+questions:
+  - Does your appointment time still work?
+  - Any questions for the dentist?
+maxCallSeconds: 120
+ringTimeoutSeconds: 15
