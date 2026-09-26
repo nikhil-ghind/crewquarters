@@ -2,6 +2,7 @@
 name = "crewquarters-agent-contract-probe"
 version = "0.1.0"
 description = "Contract-test agent that exercises every broker capability the SDK exposes"
+license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = ["crewquarters-sdk"]
 

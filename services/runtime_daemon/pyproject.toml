@@ -2,6 +2,7 @@
 name = "crewquarters-runtime"
 version = "0.1.0"
 description = "Crewquarters host runtime daemon: the only component with Docker access"
+license = "Apache-2.0"
 # Runs directly on DGX OS (Ubuntu 22.04, Python 3.10). Standard library only, so the
 # arm64 .deb needs no native wheels.
 requires-python = ">=3.10"
