@@ -7,6 +7,7 @@ import { usePref } from '../lib/storage';
 import { GlobalBanners } from './GlobalBanners';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
+import { useInputRequestAlerts } from './useInputRequestAlerts';
 
 /**
  * Persistent left sidebar, compact device-status top bar and content canvas
@@ -21,6 +22,8 @@ export function AppShell() {
   const drawerRef = useRef<HTMLDialogElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const location = useLocation();
+  // "(N) " tab-title prefix and optional browser notifications for Crew Requests.
+  useInputRequestAlerts();
 
   useEffect(() => {
     const dialog = drawerRef.current;

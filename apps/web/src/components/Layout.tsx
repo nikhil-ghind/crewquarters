@@ -1,6 +1,7 @@
 import { ChevronRight } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router';
+import { setBaseTitle } from '../lib/documentTitle';
 
 export interface Crumb {
   label: string;
@@ -20,7 +21,7 @@ interface PageHeaderProps {
 
 export function useDocumentTitle(title: string | undefined): void {
   useEffect(() => {
-    if (title) document.title = `${title} · Crewquarters`;
+    if (title) setBaseTitle(`${title} · Crewquarters`);
   }, [title]);
 }
 

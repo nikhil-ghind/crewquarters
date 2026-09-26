@@ -501,6 +501,15 @@
 .banner-title {
   font-weight: 650;
 }
+/* Notification opt-in on Crew Requests: actions wrap under the text on narrow screens. */
+.notify-prompt {
+  flex-wrap: wrap;
+}
+@media (max-width: 767.98px) {
+  .notify-prompt > .row {
+    flex-basis: 100%;
+  }
+}
 .global-banner {
   border-radius: 0;
   border-left-width: 0;
