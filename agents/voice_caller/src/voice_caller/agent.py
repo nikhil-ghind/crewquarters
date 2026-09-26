@@ -19,7 +19,7 @@ from voice_caller.outcome import (
     outcome_for_unanswered,
     reconcile,
 )
-from voice_caller.results import HEADER, STATUS_AFTER, result_range, row_values, status_range
+from voice_caller.results import HEADER, result_range, row_values
 from voice_caller.session import CallReport, CallRunner, LiveKitCallRunner
 
 Cell = str | int | float | bool | None
@@ -84,21 +84,21 @@ async def _write_row(
     call_id: str,
     outcome: CallOutcome,
     duration: int | None,
-    answered: bool,
 ) -> str:
+    """Write the result row. Agents may write only within the configured resultRange, so the
+    contact's status cell is the owner's: a do-not-call request is surfaced for them to mark."""
     config = ctx.config
     values: list[Cell] = list(row_values(contact, call_id, outcome, duration, _now()))
+    if outcome.disposition == "dnc":
+        await ctx.events.log(
+            "warning",
+            "Asked not to be called again: set this contact's status to dnc",
+            row=contact.row,
+        )
     try:
         await ctx.google.sheets.update_values(
             config.spreadsheet_id, result_range(config, contact.row), [values]
         )
-        status = STATUS_AFTER.get(outcome.disposition)
-        if status is None and answered and outcome.disposition != "voicemail":
-            status = "called"  # a person picked up: never dial them again automatically
-        if status is not None:
-            await ctx.google.sheets.update_values(
-                config.spreadsheet_id, status_range(config, contact.row), [[status]]
-            )
     except PlatformError as exc:
         await ctx.events.log("warning", "Sheet write failed", row=contact.row, code=exc.code)
         return "failed"
@@ -168,7 +168,7 @@ async def run_campaign(ctx: RunContext[VoiceCallerConfig], runner: CallRunner) -
         outcome, call_id, report = await _call_one(ctx, runner, contact)
         answered = bool(report and report.answered)
         duration = report.duration_seconds if report else None
-        sheet = await _write_row(ctx, contact, call_id, outcome, duration, answered)
+        sheet = await _write_row(ctx, contact, call_id, outcome, duration)
         summary["called"] += 1
         summary["answered"] += int(answered)
         summary[outcome.disposition] += 1

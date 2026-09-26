@@ -58,7 +58,14 @@ def control_openapi() -> dict[str, Any]:
 
 
 def broker_openapi() -> dict[str, Any]:
-    return _load("broker-sdk.openapi.yaml")
+    """The broker contract the fake serves: the stable file plus the voice draft (D24), whose
+    paths and schemas are additions only."""
+    document = _load("broker-sdk.openapi.yaml")
+    draft = _load("broker-sdk.voice.openapi.yaml")
+    document["paths"] = {**document["paths"], **draft["paths"]}
+    schemas = document.setdefault("components", {}).setdefault("schemas", {})
+    schemas.update(draft["components"]["schemas"])
+    return document
 
 
 def load_manifest(path: Path) -> dict[str, Any]:

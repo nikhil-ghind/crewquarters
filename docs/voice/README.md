@@ -23,7 +23,8 @@ These rules are enforced in code, not left to configuration:
 - Only rows with recorded consent are called (the caller agent's rules). The owner approves the
   exact recipients, brief, disclosure, and limits before anything is dialed. The approval key is
   a hash over all of them, so a changed plan asks again.
-- "Stop calling" ends the call politely and marks the row `dnc`. The agent never leaves a
+- "Stop calling" ends the call politely, records `dnc`, and warns the owner to mark the contact
+  `dnc` (agents cannot edit the Contacts tab). The agent never leaves a
   voicemail, never asks for payment or identity numbers, and never pressures.
 - A per-call time cap (`maxCallSeconds`), a per-run cap (`maxCalls`, at most 25), and ring
   timeouts bound what one run can do. A retried run never redials a row it already dialed.
@@ -58,7 +59,8 @@ consent, and do-not-call rules that apply to them.
   job and no LiveKit secret in the container. The VAD and turn-detector weights are baked into the
   image (`HF_HUB_OFFLINE=1`).
 - Until the real broker and model gateway exist, the fake platform stands in for both. Its
-  behaviour is the contract draft in `packages/contracts/broker-sdk.openapi.yaml`.
+  behaviour is the draft `packages/contracts/broker-sdk.voice.openapi.yaml`, which adds voice
+  calls and the model facade to the stable `broker-sdk.openapi.yaml`.
 
 ## Models
 
@@ -128,9 +130,10 @@ Each call writes `Results!A<row>:J<row>` (the source row, so a retried write nev
 duration_seconds, completed_at`.
 
 The disposition is one of `completed`, `declined`, `dnc`, `callback`, `voicemail`, `no_answer`,
-`busy`, `failed`, or `wrong_person`. After a conversation the contact's `status` becomes `called`,
-or `dnc` for a do-not-call request. Voicemail, no answer, busy, and failed calls leave the contact
-eligible for a later run.
+`busy`, `failed`, or `wrong_person`. Agents may write only within the configured `resultRange`,
+so the agent never edits the Contacts tab. When someone asks not to be called again, the run logs
+a warning naming the row: set that contact's `status` to `dnc` (and reached contacts to `called`)
+before the next run, which then skips them.
 
 ## Deploying on the GB10
 

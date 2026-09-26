@@ -20,16 +20,6 @@ HEADER = [
     "completed_at",
 ]
 
-# What the contact's status cell becomes, so a later run does not call them again. Unanswered
-# calls leave the status alone: the contact stays eligible for another attempt.
-STATUS_AFTER: dict[str, str] = {
-    "dnc": "dnc",
-    "completed": "called",
-    "declined": "called",
-    "callback": "called",
-    "wrong_person": "called",
-}
-
 
 def row_values(
     contact: ContactRow,
@@ -55,7 +45,3 @@ def row_values(
 def result_range(config: VoiceCallerConfig, row: int) -> str:
     """The result row sits at the contact's own row number, so a rewrite is idempotent."""
     return f"{config.result_tab}!A{row}:J{row}"
-
-
-def status_range(config: VoiceCallerConfig, row: int) -> str:
-    return f"{config.input_tab}!D{row}"

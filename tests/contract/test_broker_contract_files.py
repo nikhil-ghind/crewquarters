@@ -161,3 +161,19 @@ def test_the_model_facade_lists_models() -> None:
     operation = contracts.broker_openapi()["paths"]["/openai/v1/models"]["get"]
     assert operation["operationId"] == "openaiListModels"
     assert operation["x-capability"] is None
+
+
+def test_voice_operations_are_a_separate_draft_on_top_of_the_stable_contract() -> None:
+    """The real broker serves the stable file exactly; the voice and model-facade operations
+    are a draft (D24) that the fake platform serves on top of it."""
+    stable = yaml.safe_load((contracts.contracts_dir() / "broker-sdk.openapi.yaml").read_text())
+    draft = yaml.safe_load(
+        (contracts.contracts_dir() / "broker-sdk.voice.openapi.yaml").read_text()
+    )
+    assert stable["info"]["x-status"] == "stable" and draft["info"]["x-status"] == "draft"
+    voice_paths = {path for _, path in VOICE_OPERATIONS} | {"/openai/v1/models"}
+    assert not voice_paths & set(stable["paths"])
+    assert set(draft["paths"]) == voice_paths
+    assert not set(draft["components"]["schemas"]) & set(stable["components"]["schemas"])
+    merged = contracts.broker_openapi()
+    assert set(merged["paths"]) == set(stable["paths"]) | voice_paths

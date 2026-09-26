@@ -172,8 +172,17 @@ async def test_answered_unanswered_and_dnc_calls_are_recorded(
     assert results[1][:5][:3] == ["2", "Asha Rao", "••••0101"] and results[1][4] == "completed"
     assert results[3][4] == "dnc"
     assert "+15555550101" not in str(results)
+    # Agents write only within the configured resultRange, so the Contacts tab is untouched; the
+    # owner is asked to mark the do-not-call row instead.
     contacts = sheet(client, "Contacts")
-    assert [contacts[i][3] for i in (1, 2, 3)] == ["called", "", "dnc"]
+    assert [contacts[i][3] for i in (1, 2, 3)] == ["", "", ""]
+    warnings = [
+        e["payload"]
+        for events in client.state("events").values()
+        for e in events
+        if e["type"] == "run.log" and e["payload"]["level"] == "warning"
+    ]
+    assert [w["fields"]["row"] for w in warnings if "dnc" in w["message"]] == [4]
     assert runner.prepared and runner.calls == [2, 3, 4]
 
 
@@ -200,14 +209,16 @@ async def test_model_failure_fails_only_that_call(
     assert rows[4]["disposition"] == "completed"
 
 
-async def test_dnc_row_is_marked_and_skipped_next_run(
+async def test_rows_the_owner_marks_dnc_or_called_are_skipped_next_run(
     platform: BackgroundServer, tmp_path: Path
 ) -> None:
     client = FakePlatformClient(platform.url)
     seed(client, tmp_path)
     await execute(platform, ScriptedRunner({2: ["Yes."], 4: ["Stop calling me."]}))
-    contacts = sheet(client, "Contacts")
-    # A second run over the updated sheet only reaches the contact who never answered.
+    # The owner acts on the run's warning and results: row 4 asked not to be called, row 2 was
+    # reached. A second run only reaches the contact who never answered.
+    contacts = [list(r) for r in sheet(client, "Contacts")]
+    contacts[1][3], contacts[3][3] = "called", "dnc"
     seed(client, tmp_path, rows=contacts)
     runner = ScriptedRunner({})
     result, _ = await execute(platform, runner)
