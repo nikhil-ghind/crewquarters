@@ -58,6 +58,7 @@ def _normalize_permissions(perms: dict[str, Any]) -> dict[str, Any]:
             "google": sorted(connectors.get("google") or []),
             "twilio": sorted(connectors.get("twilio") or []),
         },
+        "camera": sorted(perms.get("camera") or []),
         "cloudProviders": sorted(perms.get("cloudProviders") or []),
         "userInput": bool(perms.get("userInput")),
     }

@@ -60,10 +60,13 @@ The run and attempt always come from the token. JSON is camelCase. Errors use th
   - The caller agent reads `inputRange` and writes `resultRange!A1:H1` and `resultRange!A<row>:H<row>`, which fit its defaults. Google appends below the table it finds in the range, so `resultRange` should be open-ended downwards.
   - The Gmail digest agent does not use Sheets.
 - **Gmail.** `GET /google/gmail/messages` passes `labelIds` and returns `resultSizeEstimate`. `GET /google/gmail/messages/{id}` returns Gmail's `format=full` message unmodified. It's untrusted content, and the SDK parses MIME and reduces HTML to text.
+- **Owner alerts (`google.gmail.send`).** `POST /google/gmail/notify-owner` takes `{subject, text, image?}` and emails the connected Google account's own address; the agent cannot name a recipient. The subject becomes `[Crewquarters] <subject>` and may not contain line breaks. The address is the one Gmail reported at connect time, so the owner must also grant Read Gmail; without it the call returns `NEEDS_CONNECTION`. It is not retried, since a lost response could otherwise send twice.
+- **Camera (`camera.snapshot:config`).** `GET /camera/frame` fetches one image from the installation config's `cameraUrl` (http or https only, 10 s timeout, at most 3 MB, JPEG or PNG by content) and returns it base64-encoded. The URL may hold camera credentials, so it is never logged or echoed in errors. A camera that fails or returns something else gives `503 PROVIDER_UNAVAILABLE`.
 - **LLM.** `/llm/chat` and `/llm/chat:stream` are forwarded to the model gateway's `POST /internal/v1/llm/chat` with the service token and the agent's token in `X-Capability-Token`. The gateway re-verifies the token and the profile.
   - The broker first requires an `llm.profile:*` capability, plus `cloud.<provider>` for cloud profiles.
   - Stream events are translated to the contract's `delta` / `done` / `error` SSE.
   - Tools are rejected.
+  - User messages may carry up to 4 `images` (`{mediaType: image/jpeg|image/png, data: base64}`). The broker checks that the bytes match the media type; the gateway accepts them only for models whose catalog entry lists `vision` (`local.vision.small`, Qwen2.5-VL 7B) and sends them to vLLM as `image_url` data URLs.
 - **Telephony.** The contract's `CallCreate` carries the script and disclosure, but the broker speaks only what the owner approved:
   - `script.text` must equal `config.script` with every `{name}` replaced by the same plain name, so a spreadsheet cell cannot add sentences to the script. A plain name:
     - is 1-40 characters and starts with a letter;
@@ -179,6 +182,8 @@ The fakes support fake end-to-end runs and tests. Fixtures contain no real perso
   | 6 | R2-D2 | +15555550108 | yes | | skipped: `invalid_name` |
 
   A write before any read (or a seeded tab written by a test) is kept as is.
+- **Gmail send:** messages are kept in the broker's memory (`FakeGoogle.sent`) and never delivered. A bare `fake-code` grants Gmail read and Sheets only; ask for `fake-code:gmail.readonly,gmail.send` to test alerts.
+- **Camera:** `http://camera.example.com/<anything>` returns a synthetic grey PNG with a dark block that moves every 10 seconds. Other camera hosts are not reachable in fake mode.
 - **Twilio:** any account SID of the right shape and auth token are accepted (a token starting with `invalid` is refused). Calls to any number are placed; the fake plays Twilio's status, voice and gather callbacks inside the broker. The destination's last digit selects the outcome.
 
 | Last digit | Final `state` | `answered` / `speechCaptured` |

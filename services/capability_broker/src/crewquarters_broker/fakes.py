@@ -4,7 +4,7 @@ They speak the same HTTP shapes as Google and Twilio at the schema level, throug
 ``httpx.MockTransport``. Fixtures contain no real personal data: addresses use
 ``example.com`` and phone numbers use the reserved ``+1555555xxxx`` range.
 
-Fake OAuth: send ``code=fake-code`` (both scopes) or ``code=fake-code:gmail.readonly``
+Fake OAuth: send ``code=fake-code`` (Gmail read and Sheets) or ``code=fake-code:gmail.readonly``
 (comma-separated scope names). In fake mode the broker's authorization URL is its own
 callback with such a code, so one click completes consent. Refresh tokens carry their
 grant (``fake-refresh.<base64url JSON>``), so a restarted broker can still refresh them;
@@ -19,6 +19,11 @@ Fake Sheets: the first read of an unknown spreadsheet seeds it with a demo conta
 
 Fake calls: the destination's last digit picks the outcome — 2 busy, 3 no-answer,
 4 failed, 5 answered without speech, anything else answered with speech.
+
+Fake Gmail send: messages are kept in memory (``FakeGoogle.sent``), never delivered.
+
+Fake camera: ``http://camera.example.com/<anything>`` returns a synthetic grey PNG with a
+dark block that walks across the frame, so consecutive 10-second snapshots differ.
 """
 
 from __future__ import annotations
@@ -28,8 +33,10 @@ import base64
 import json
 import re
 import secrets
+import struct
 import time
 import uuid
+import zlib
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qsl
@@ -153,6 +160,8 @@ DEMO_CONTACTS: list[list[str]] = [
 ]
 
 DAY_MS = 86_400_000
+# What a bare ``fake-code`` grants; sending mail is opt-in (``fake-code:gmail.send,...``).
+DEFAULT_GRANT = ("gmail.readonly", "spreadsheets")
 
 
 def refresh_token(scopes: list[str], subject: str = "owner@example.com") -> str:
@@ -194,6 +203,7 @@ class FakeGoogle:
         # asks for include_granted_scopes=true, so, as with Google, a new consent's token
         # carries these too: consenting to Sheets after Gmail keeps Gmail.
         self.consented: set[str] = set()
+        self.sent: list[dict[str, Any]] = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         host, path = request.url.host, request.url.path
@@ -217,7 +227,7 @@ class FakeGoogle:
             code = form.get("code", "")
             if not code.startswith("fake-code"):
                 return httpx.Response(400, json={"error": "invalid_grant"})
-            names = code.partition(":")[2].split(",") if ":" in code else list(SCOPES)
+            names = code.partition(":")[2].split(",") if ":" in code else list(DEFAULT_GRANT)
             self.consented.update(names)
             names = [n for n in SCOPES if n in self.consented]
             refresh = refresh_token(names)
@@ -240,6 +250,9 @@ class FakeGoogle:
         return httpx.Response(200, json=body)
 
     def _gmail(self, request: httpx.Request, path: str) -> httpx.Response:
+        if path == "/messages/send" and request.method == "POST":
+            self.sent.append(json.loads(request.content))
+            return httpx.Response(200, json={"id": f"sent-{len(self.sent)}", "threadId": "t-sent"})
         if path == "/profile":
             return httpx.Response(200, json={"emailAddress": "owner@example.com"})
         if path == "/messages":
@@ -337,10 +350,52 @@ class FakeTwilio:
         return httpx.Response(201, json={"sid": call["sid"], "status": "queued"})
 
 
-def transport(google: FakeGoogle, twilio: FakeTwilio) -> httpx.MockTransport:
+CAMERA_HOST = "camera.example.com"
+
+
+def png(width: int, height: int, pixel: Callable[[int, int], int]) -> bytes:
+    """A greyscale PNG; ``pixel(x, y)`` gives each 0-255 value."""
+    raw = b"".join(b"\x00" + bytes(pixel(x, y) for x in range(width)) for y in range(height))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
+class FakeCamera:
+    def __init__(self, clock: Callable[[], float] = time.time) -> None:
+        self.clock = clock
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        step = int(self.clock() // 10) % 8  # the block moves one place every 10 seconds
+        left = 20 + step * 35
+
+        def pixel(x: int, y: int) -> int:
+            return 40 if left <= x < left + 30 and 90 <= y < 200 else 170
+
+        return httpx.Response(
+            200, content=png(320, 240, pixel), headers={"content-type": "image/png"}
+        )
+
+
+def transport(
+    google: FakeGoogle, twilio: FakeTwilio, camera: FakeCamera | None = None
+) -> httpx.MockTransport:
+    cam = camera or FakeCamera()
+
     def route(request: httpx.Request) -> httpx.Response:
         if request.url.host == "api.twilio.com":
             return twilio.handle(request)
+        if request.url.host == CAMERA_HOST:
+            return cam.handle(request)
         return google.handle(request)
 
     return httpx.MockTransport(route)

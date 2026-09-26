@@ -67,6 +67,7 @@ async def test_handshake_returns_run_context(harness: Any) -> None:
         "knowledgeBaseIds": ["kb-1"],
         "google": ["gmail.readonly"],
         "twilio": [],
+        "camera": [],
         "cloudProviders": [],
     }
     assert 0 < body["limits"]["activeTimeoutSeconds"] <= 600

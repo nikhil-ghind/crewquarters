@@ -1,4 +1,4 @@
-"""Google connectors (Gmail read-only, Sheets) proxied by the broker."""
+"""Google connectors (Gmail read and owner alerts, Sheets) proxied by the broker."""
 
 from crewquarters._transport import BrokerClient
 from crewquarters.google.gmail import GmailClient

@@ -1,9 +1,10 @@
-import { Play } from 'lucide-react';
+import { Play, Square } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { isApiError, remediation } from '../../api/errors';
 import { useActionGuard } from '../../api/guards';
-import { useCreateRun, useIntentKey } from '../../api/mutations';
-import type { InstallationOut } from '../../api/schema';
+import { useCancelRun, useCreateRun, useIntentKey } from '../../api/mutations';
+import { useRuns } from '../../api/queries';
+import { isTerminal, type InstallationOut } from '../../api/schema';
 import { Button, type ButtonVariant } from '../../components/Button';
 import { useFeedback } from '../../components/Toast';
 import { READINESS_NAMES } from '../../lib/status';
@@ -58,5 +59,26 @@ export function RunNowButton({ installation, variant = 'primary' }: { installati
         </p>
       ) : null}
     </>
+  );
+}
+
+/** Stops this agent's newest run while it is still going: Run now's off switch. */
+export function StopButton({ installation }: { installation: InstallationOut }) {
+  const runs = useRuns({ installationId: installation.id, limit: 1 });
+  const cancel = useCancelRun();
+  const [key, resetKey] = useIntentKey();
+  const run = runs.data?.items[0];
+  if (!run || isTerminal(run.state)) return null;
+  const stopping = cancel.isPending || run.state === 'CANCELLING';
+  return (
+    <Button
+      variant="secondary"
+      icon={<Square size={16} aria-hidden="true" />}
+      busy={stopping}
+      busyLabel="Stopping…"
+      onClick={() => cancel.mutate({ runId: run.id, key }, { onSuccess: resetKey })}
+    >
+      Stop<span className="sr-only"> {installation.agentName}</span>
+    </Button>
   );
 }

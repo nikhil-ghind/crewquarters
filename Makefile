@@ -10,13 +10,14 @@ MYPY_PATHS := packages/shared_python/src services/control_api/src services/sched
 	services/model_gateway/src services/runtime_daemon/src \
 	packages/secret_store/src services/capability_broker/src services/knowledge/src \
 	packages/python_sdk/src packages/fake_platform/src packages/crewctl/src \
-	agents/contract_probe/src agents/gmail_digest/src agents/caller/src
+	agents/contract_probe/src agents/gmail_digest/src agents/caller/src \
+	agents/intruder_watch/src
 # Suites that need no PostgreSQL (SDK, fake platform, crewctl, agents, fake-platform integration).
 SDK_TESTS := packages/python_sdk packages/fake_platform packages/crewctl agents tests/integration \
 	tests/contract/test_broker_contract_files.py tests/contract/test_fake_route_parity.py \
 	tests/contract/test_fake_traffic_conformance.py
 
-AGENTS := contract_probe gmail_digest caller
+AGENTS := contract_probe gmail_digest caller intruder_watch
 REGISTRY ?= localhost:5001
 FAKE_URL ?= http://127.0.0.1:8090
 DEMO := tests/fixtures/scenarios/demo

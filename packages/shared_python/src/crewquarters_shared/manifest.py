@@ -23,10 +23,11 @@ from crewquarters_shared.schema_guard import check_schema
 DEFAULT_VARIANTS: dict[str, str] = {
     "local.general": "local.general.small",
     "local.embedding": "local.embedding.small",
+    "local.vision": "local.vision.small",
 }
 # Variants known to the v1 catalog. The model gateway owner extends this list.
 KNOWN_VARIANTS: frozenset[str] = frozenset(
-    {"local.general.small", "local.general.quality", "local.embedding.small"}
+    {"local.general.small", "local.general.quality", "local.embedding.small", "local.vision.small"}
 )
 
 MAX_INPUT_WAIT_SECONDS = 86_400

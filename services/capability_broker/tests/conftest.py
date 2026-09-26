@@ -199,10 +199,15 @@ class Harness:
         }
         return {"authorization": f"Bearer {token}"}
 
-    async def connect_google(self, user_id: uuid.UUID, code: str = "fake-code") -> None:
+    async def connect_google(
+        self,
+        user_id: uuid.UUID,
+        code: str = "fake-code",
+        capabilities: tuple[str, ...] = ("gmail.readonly", "spreadsheets"),
+    ) -> None:
         start = await self.client.post(
             "/internal/v1/connections/google/start",
-            json={"userId": str(user_id), "capabilities": ["gmail.readonly", "spreadsheets"]},
+            json={"userId": str(user_id), "capabilities": list(capabilities)},
             headers=self.service_headers,
         )
         assert start.status_code == 200, start.text
@@ -227,6 +232,7 @@ def permissions_for(caps: list[str]) -> dict[str, Any]:
             "google": [c.removeprefix("google.") for c in caps if c.startswith("google.")],
             "twilio": [c.removeprefix("twilio.") for c in caps if c.startswith("twilio.")],
         },
+        "camera": ["config"] if "camera.snapshot:config" in caps else [],
         "cloudProviders": [c.removeprefix("cloud.") for c in caps if c.startswith("cloud.")],
         "userInput": "user_input" in caps,
     }

@@ -1,0 +1,8 @@
+name: intruder-watch-default
+timezone: UTC
+llm:
+  rules:
+    - name: intruder-verdict
+      match: {schemaTitle: IntruderVerdict}
+      respond:
+        json: {person_visible: true, description: "A person in a dark jacket at the front door."}

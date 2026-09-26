@@ -16,6 +16,7 @@ import LoginPage, { safeNext } from './auth/LoginPage';
 import { InputRequestCard } from './common/InputRequestCard';
 import { cronFor, draftFromCron, formatLocal, newDraft } from './schedules/ScheduleEditor';
 import { profileStatus } from './connections/forms';
+import { StopButton } from './agents/RunNowButton';
 
 describe('Crew Request card', () => {
   it('shows the caller preview, consequence and count, and submits the saved version once', async () => {
@@ -208,5 +209,34 @@ describe('cloud key status', () => {
     expect(profileStatus({ ...base, status: 'CONNECTED' }).label).toBe('Connected');
     expect(profileStatus({ ...base, status: 'UNTESTED' }).label).toBe('Not tested yet');
     expect(profileStatus({ ...base, status: 'CONNECTED', enabled: false }).label).toBe('Disabled');
+  });
+});
+
+describe('Stop button', () => {
+  it('cancels the newest run while it is active', async () => {
+    let cancelled = '';
+    server.use(
+      http.get('/api/v1/runs', () => HttpResponse.json({ items: [{ ...f.run, state: 'RUNNING' }], nextCursor: null })),
+      http.post('/api/v1/runs/:id/cancel', ({ params }) => {
+        cancelled = String(params.id);
+        return HttpResponse.json({ ...f.run, state: 'CANCELLING' });
+      }),
+    );
+    renderWithProviders(<StopButton installation={f.installation} />);
+    await userEvent.click(await screen.findByRole('button', { name: /Stop/ }));
+    await waitFor(() => expect(cancelled).toBe(f.run.id));
+  });
+
+  it('is hidden when the newest run has finished', async () => {
+    let asked = false;
+    server.use(
+      http.get('/api/v1/runs', () => {
+        asked = true;
+        return HttpResponse.json({ items: [{ ...f.run, state: 'SUCCEEDED' }], nextCursor: null });
+      }),
+    );
+    renderWithProviders(<StopButton installation={f.installation} />);
+    await waitFor(() => expect(asked).toBe(true));
+    expect(screen.queryByRole('button', { name: /Stop/ })).not.toBeInTheDocument();
   });
 });

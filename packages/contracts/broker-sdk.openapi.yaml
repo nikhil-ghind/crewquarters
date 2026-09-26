@@ -34,7 +34,9 @@ info:
       - A capability must be in the token AND in the run's current approval; the token must be the
         current attempt's (jti, attempt, installation) and the run active.
       - Resource ids the agent sends (knowledgeBaseId, spreadsheetId) must equal the installation
-        config's; otherwise 403 PERMISSION_DENIED.
+        config's; otherwise 403 PERMISSION_DENIED. Camera frames come only from config.cameraUrl.
+      - Owner notifications go only to the connected Google account's own address; the agent
+        never names a recipient.
       - Calls speak only the owner-approved words: script.text must be config.script with every
         {name} replaced by the same name (at most 100 characters, no markup), and script.disclosure
         must equal config.disclosure when one is set; otherwise 403 PERMISSION_DENIED.
@@ -262,6 +264,39 @@ paths:
               schema: {$ref: "#/components/schemas/GmailMessage"}
         default: {$ref: "#/components/responses/Error"}
 
+  /google/gmail/notify-owner:
+    post:
+      operationId: gmailNotifyOwner
+      x-capability: google.gmail.send
+      x-idempotent: false
+      x-fault-target: broker.gmail.notify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/OwnerNotification"}
+      responses:
+        "200":
+          description: The email was sent to the connected account's own address.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OwnerNotificationSent"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /camera/frame:
+    get:
+      operationId: cameraFrame
+      x-capability: "camera.snapshot:config"
+      x-idempotent: true
+      x-fault-target: broker.camera.frame
+      responses:
+        "200":
+          description: One snapshot from the camera in the installation config (cameraUrl).
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CameraFrame"}
+        default: {$ref: "#/components/responses/Error"}
+
   /google/sheets/values:get:
     post:
       operationId: sheetsGetValues
@@ -473,6 +508,7 @@ components:
         knowledgeBaseIds: {type: array, items: {type: string}}
         google: {type: array, items: {type: string}}
         twilio: {type: array, items: {type: string}}
+        camera: {type: array, items: {type: string}}
         cloudProviders: {type: array, items: {type: string}}
 
     Limits:
@@ -638,6 +674,18 @@ components:
       properties:
         role: {enum: [system, user, assistant]}
         content: {type: string}
+        images:
+          type: array
+          maxItems: 4
+          description: Images for a vision model (user messages only).
+          items: {$ref: "#/components/schemas/Image"}
+
+    Image:
+      type: object
+      required: [mediaType, data]
+      properties:
+        mediaType: {enum: [image/jpeg, image/png]}
+        data: {type: string, maxLength: 4000000, description: Base64 (standard alphabet) image bytes, at most about 3 MB.}
 
     ChatRequest:
       type: object
@@ -742,6 +790,30 @@ components:
         snippet: {type: string}
         internalDate: {type: string}
         payload: {type: object}
+
+    OwnerNotification:
+      type: object
+      required: [subject, text]
+      properties:
+        subject: {type: string, minLength: 1, maxLength: 120, description: 'Sent as "[Crewquarters] <subject>".'}
+        text: {type: string, minLength: 1, maxLength: 5000}
+        image: {$ref: "#/components/schemas/Image"}
+
+    OwnerNotificationSent:
+      type: object
+      required: [id, sentAt]
+      properties:
+        id: {type: string, description: Gmail message id.}
+        sentAt: {type: string, format: date-time}
+
+    CameraFrame:
+      type: object
+      required: [mediaType, data, bytes, capturedAt]
+      properties:
+        mediaType: {enum: [image/jpeg, image/png]}
+        data: {type: string, description: Base64 image bytes.}
+        bytes: {type: integer, minimum: 1}
+        capturedAt: {type: string, format: date-time}
 
     SheetsRangeRequest:
       type: object

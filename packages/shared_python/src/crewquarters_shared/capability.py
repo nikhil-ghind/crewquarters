@@ -50,6 +50,8 @@ def capabilities_from_permissions(
         caps.add(f"google.{scope}")
     for op in connectors.get("twilio", []):
         caps.add(f"twilio.{op}")
+    for camera in permissions.get("camera", []):
+        caps.add(f"camera.snapshot:{camera}")
     for provider in permissions.get("cloudProviders", []):
         caps.add(f"cloud.{provider}")
     if permissions.get("userInput"):

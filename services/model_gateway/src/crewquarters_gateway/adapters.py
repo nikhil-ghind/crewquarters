@@ -45,7 +45,8 @@ NO_SAMPLING_PREFIXES = (
 
 @dataclass
 class ChatRequest:
-    messages: list[dict[str, str]]
+    # {role, content}, plus ``images`` ([{mediaType, data}]) on user messages for vision models.
+    messages: list[dict[str, Any]]
     max_output_tokens: int
     temperature: float | None = None
     response_schema: dict[str, Any] | None = None
@@ -110,6 +111,21 @@ class Adapter(Protocol):
     async def chat(self, request: ChatRequest) -> ChatResult: ...
 
     def stream(self, request: ChatRequest) -> AsyncIterator[dict[str, Any]]: ...
+
+
+def _openai_message(message: dict[str, Any]) -> dict[str, Any]:
+    """OpenAI-compatible message: images become ``image_url`` data-URL content parts."""
+    if not message.get("images"):
+        return {"role": message["role"], "content": message["content"]}
+    parts: list[dict[str, Any]] = [{"type": "text", "text": message["content"]}]
+    parts += [
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:{image['mediaType']};base64,{image['data']}"},
+        }
+        for image in message["images"]
+    ]
+    return {"role": message["role"], "content": parts}
 
 
 def _reject_tools(request: ChatRequest) -> None:
@@ -189,7 +205,7 @@ class LocalAdapter:
         _reject_tools(request)
         body: dict[str, Any] = {
             "model": self.served_model,
-            "messages": request.messages,
+            "messages": [_openai_message(m) for m in request.messages],
             "max_tokens": request.max_output_tokens,
             "stream": stream,
         }

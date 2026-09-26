@@ -1,0 +1,70 @@
+apiVersion: crewquarters/v1alpha1
+kind: Agent
+metadata:
+  id: intruder-watch
+  name: Intruder Watch
+  version: 0.1.0
+  summary: Watches a camera every few seconds and emails you when a person appears.
+  description: >-
+    Takes a snapshot from your camera every 10 seconds (by default), asks a local vision model
+    whether a person is in view, and emails the snapshot to your own Gmail address. Runs on a
+    schedule or when you start it; stop it any time.
+  publisher: Crewquarters (Person 3)
+spec:
+  # `crewctl build --push` pins this to the pushed digest.
+  image: localhost:5001/crewquarters/intruder-watch@sha256:REQUIRED_DIGEST
+  entrypoint: ["python", "-m", "intruder_watch"]
+  architectures: ["linux/amd64", "linux/arm64"]
+  triggers: ["manual", "schedule"]
+  permissions:
+    llmProfiles: ["local.vision"]
+    knowledge: []
+    connectors:
+      google: ["gmail.send"]
+    camera: ["config"]
+    cloudProviders: []
+    userInput: false
+  resources:
+    cpu: 0.5
+    memoryMb: 256
+    activeTimeoutSeconds: 43500
+    maxInputWaitSeconds: 0
+  configurationSchema:
+    type: object
+    required: [cameraUrl]
+    properties:
+      cameraUrl:
+        type: string
+        pattern: "^https?://"
+        description: Camera snapshot URL returning a JPEG or PNG, for example http://192.168.1.20/snapshot.jpg.
+      intervalSeconds:
+        type: integer
+        minimum: 5
+        maximum: 300
+        default: 10
+        description: Seconds between snapshots.
+      durationMinutes:
+        type: integer
+        minimum: 0
+        maximum: 720
+        default: 60
+        description: How long one run watches. 0 checks once.
+      cooldownMinutes:
+        type: integer
+        minimum: 0
+        maximum: 120
+        default: 5
+        description: Minimum minutes between alert emails.
+  resultSchema:
+    type: object
+    required: [checks, alerts]
+    properties:
+      checks: {type: integer, minimum: 0}
+      alerts:
+        type: array
+        items:
+          type: object
+          required: [at, description]
+          properties:
+            at: {type: string, format: date-time}
+            description: {type: string}

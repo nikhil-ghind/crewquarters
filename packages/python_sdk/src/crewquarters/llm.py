@@ -135,19 +135,24 @@ class LLMClient:
     def _body(
         self,
         profile: str,
-        messages: Sequence[Mapping[str, str]],
+        messages: Sequence[Mapping[str, Any]],
         temperature: float | None,
         max_output_tokens: int | None,
         response_schema: dict[str, Any] | None,
         response_model: type[BaseModel] | None,
         idempotency_key: str | None,
     ) -> dict[str, Any]:
-        normalised = []
+        normalised: list[dict[str, Any]] = []
         for message in messages:
             role, content = message.get("role"), message.get("content")
             if role not in ROLES or not isinstance(content, str):
                 raise InvalidInput(f"messages need a role in {sorted(ROLES)} and string content")
-            normalised.append({"role": role, "content": content})
+            item: dict[str, Any] = {"role": role, "content": content}
+            if message.get("images"):  # [{mediaType, data}], e.g. from ctx.camera.frame()
+                item["images"] = [
+                    {"mediaType": i["mediaType"], "data": i["data"]} for i in message["images"]
+                ]
+            normalised.append(item)
         if not normalised:
             raise InvalidInput("messages must not be empty")
         body: dict[str, Any] = {"profile": self.resolve_profile(profile), "messages": normalised}
@@ -168,7 +173,7 @@ class LLMClient:
     async def chat(
         self,
         profile: str,
-        messages: Sequence[Mapping[str, str]],
+        messages: Sequence[Mapping[str, Any]],
         *,
         temperature: float | None = None,
         max_output_tokens: int | None = None,
@@ -198,7 +203,7 @@ class LLMClient:
     def stream(
         self,
         profile: str,
-        messages: Sequence[Mapping[str, str]],
+        messages: Sequence[Mapping[str, Any]],
         *,
         temperature: float | None = None,
         max_output_tokens: int | None = None,

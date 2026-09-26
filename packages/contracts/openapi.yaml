@@ -5022,6 +5022,7 @@ components:
             type: string
             enum:
             - gmail.readonly
+            - gmail.send
             - spreadsheets
           type: array
           minItems: 1

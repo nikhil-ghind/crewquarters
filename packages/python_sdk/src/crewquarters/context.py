@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from crewquarters._transport import BrokerClient
+from crewquarters.camera import CameraClient
 from crewquarters.events import EventsClient
 from crewquarters.google import GoogleClients
 from crewquarters.idempotency import IdempotencyClient
@@ -56,6 +57,7 @@ class Grants:
     knowledge_base_ids: tuple[str, ...] = ()
     google: tuple[str, ...] = ()
     twilio: tuple[str, ...] = ()
+    camera: tuple[str, ...] = ()
     cloud_providers: tuple[str, ...] = ()
     # Requested profile (family or exact) -> the variant the owner approved.
     model_bindings: dict[str, str] = field(default_factory=dict)
@@ -70,6 +72,7 @@ class Grants:
             knowledge_base_ids=items("knowledgeBaseIds"),
             google=items("google"),
             twilio=items("twilio"),
+            camera=items("camera"),
             cloud_providers=items("cloudProviders"),
             model_bindings={str(k): str(v) for k, v in (data.get("modelBindings") or {}).items()},
         )
@@ -114,3 +117,4 @@ class RunContext[ConfigT]:
         self.knowledge = KnowledgeClient(transport)
         self.google = GoogleClients(transport)
         self.telephony = TelephonyClient(transport)
+        self.camera = CameraClient(transport)

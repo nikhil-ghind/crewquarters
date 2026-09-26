@@ -23,6 +23,7 @@ router = APIRouter()
 class MessageIn(BaseModel):
     role: str = Field(pattern="^(system|user|assistant)$")
     content: str
+    images: list[dict[str, str]] | None = Field(None, max_length=4)  # accepted, not "seen"
 
 
 class ChatIn(BaseModel):

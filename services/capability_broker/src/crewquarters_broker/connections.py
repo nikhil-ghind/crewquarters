@@ -33,7 +33,9 @@ DISPLAY_NAMES = {
 
 class GoogleStartIn(ApiModel):
     user_id: uuid.UUID
-    capabilities: list[Literal["gmail.readonly", "spreadsheets"]] = Field(min_length=1)
+    capabilities: list[Literal["gmail.readonly", "gmail.send", "spreadsheets"]] = Field(
+        min_length=1
+    )
 
 
 class TwilioIn(ApiModel):

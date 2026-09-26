@@ -29,6 +29,7 @@ interface Permissions {
   llmProfiles?: unknown;
   knowledge?: unknown;
   connectors?: unknown;
+  camera?: unknown;
   cloudProviders?: unknown;
   userInput?: unknown;
 }
@@ -41,6 +42,10 @@ const CONNECTOR_COPY: Record<string, { capability: string; impact: string; resou
   'google.gmail.readonly': {
     capability: 'Read your Gmail messages',
     impact: 'The agent can read message headers and bodies from your connected Google account. It cannot send, change or delete mail.',
+  },
+  'google.gmail.send': {
+    capability: 'Email alerts to your own Gmail address',
+    impact: 'The agent can email you, and only you, from your connected Google account. It cannot choose the recipient.',
   },
   'google.spreadsheets': {
     capability: 'Read and write Google Sheets you configure',
@@ -67,6 +72,16 @@ export function permissionItems(raw: Record<string, unknown> | null | undefined)
       capability: 'Search the knowledge base you select',
       impact: 'Passages from the selected knowledge base are read on this device.',
       resource: 'Knowledge base in configuration',
+    });
+  }
+
+  if (strings(p.camera).length > 0) {
+    items.push({
+      id: 'camera.snapshot:config',
+      group: 'Local data',
+      capability: 'Take snapshots from the camera you configure',
+      impact: 'Still images from the camera URL in this agent’s configuration, read on this device.',
+      resource: 'Camera URL in configuration',
     });
   }
 

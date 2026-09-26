@@ -1,7 +1,8 @@
 """Google OAuth (web-server flow) and the narrow Gmail and Sheets operations.
 
-PLAN.md section 10.3. Only ``gmail.readonly`` and ``spreadsheets`` are ever requested.
-Security properties:
+PLAN.md section 10.3. Only ``gmail.readonly``, ``gmail.send`` and ``spreadsheets`` are ever
+requested. ``gmail.send`` is used for one operation, :meth:`GoogleConnector.notify_owner`,
+which can only email the connected account's own address. Security properties:
 
 * ``state`` is 256 random bits, single use, and expires after ten minutes; only its
   hash is kept. PKCE (S256) binds the code to this broker.
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import email.message
 import hashlib
 import hmac
 import logging
@@ -50,6 +52,7 @@ GMAIL_URL = "https://gmail.googleapis.com/gmail/v1/users/me"
 SHEETS_URL = "https://sheets.googleapis.com/v4/spreadsheets"
 SCOPES = {
     "gmail.readonly": "https://www.googleapis.com/auth/gmail.readonly",
+    "gmail.send": "https://www.googleapis.com/auth/gmail.send",
     "spreadsheets": "https://www.googleapis.com/auth/spreadsheets",
 }
 STATE_TTL_SECONDS = 600
@@ -92,7 +95,7 @@ class GoogleConnector:
     def start(self, user_id: uuid.UUID, capabilities: list[str]) -> dict[str, str]:
         """Begin consent for the given capabilities (incremental: earlier grants are kept)."""
         if not capabilities or not set(capabilities) <= SCOPES.keys():
-            raise invalid("INVALID_SCOPE", "Choose gmail.readonly and/or spreadsheets.")
+            raise invalid("INVALID_SCOPE", "Choose gmail.readonly, gmail.send and/or spreadsheets.")
         if not self.settings.google_client_id:
             raise PlatformError("NOT_CONFIGURED", "Google OAuth client is not configured.", 409)
         now = time.monotonic()
@@ -301,6 +304,37 @@ class GoogleConnector:
             f"{GMAIL_URL}/messages/{quote(message_id, safe='')}",
             params={"format": "full"},
         )
+
+    async def notify_owner(
+        self, subject: str, text: str, image: tuple[str, bytes] | None
+    ) -> dict[str, Any]:
+        """Email the connected account's own address. The agent never names a recipient;
+        the address is the one Gmail reported when the owner connected (``gmail.readonly``)."""
+        async with self.sessions() as db:
+            conn = await self._connection(db)
+        owner = conn.provider_subject if conn is not None else None
+        if not owner:
+            raise needs_connection(
+                "google", "Grant Read Gmail too, so alerts know your address. Reconnect Google."
+            )
+        message = email.message.EmailMessage()
+        message["To"] = owner
+        message["From"] = owner
+        message["Subject"] = f"[Crewquarters] {subject}"
+        message.set_content(text)
+        if image is not None:
+            kind, body = image
+            message.add_attachment(
+                body,
+                maintype="image",
+                subtype=kind.split("/")[1],
+                filename="snapshot." + ("jpg" if kind == "image/jpeg" else "png"),
+            )
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        data = await self._call(
+            "gmail.send", "POST", f"{GMAIL_URL}/messages/send", json={"raw": raw}
+        )
+        return {"id": str(data.get("id", "")), "sentAt": utcnow()}
 
     async def sheets_read(self, spreadsheet_id: str, cell_range: str) -> dict[str, Any]:
         data = await self._call("spreadsheets", "GET", self._values_url(spreadsheet_id, cell_range))

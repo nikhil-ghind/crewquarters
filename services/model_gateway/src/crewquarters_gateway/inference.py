@@ -49,6 +49,9 @@ from crewquarters_shared.errors import PlatformError, invalid
 from crewquarters_shared.manifest import DEFAULT_VARIANTS
 
 CLOUD_PROVIDERS = ("openai", "anthropic")
+MAX_IMAGES = 4
+# Budget reservation per image (Qwen2.5-VL uses up to about 1,300 tokens for a 1 MP frame).
+IMAGE_TOKENS = 1500
 
 
 @dataclass
@@ -290,6 +293,14 @@ class InferenceService:
 
     # --- adapters -----------------------------------------------------------------------
 
+    async def _require_vision(self, provider: str, model_id: str) -> None:
+        if provider == "local":
+            async with self.sessions() as db:
+                entry = await db.get(ModelCatalogEntry, model_id)
+            if entry is None or "vision" in (entry.capabilities or []):
+                return  # an unknown model fails with UNKNOWN_MODEL_PROFILE when loaded
+        raise invalid("UNSUPPORTED_FEATURE", f"{model_id} cannot read images; use local.vision.")
+
     async def _local_adapter(self, caller: Caller, model_id: str) -> Adapter:
         async with self.sessions() as db:
             if await db.get(ModelCatalogEntry, model_id) is None:
@@ -365,8 +376,31 @@ class InferenceService:
             raise invalid(
                 "MAX_OUTPUT_TOKENS", f"maxOutputTokens must be 1-{self.settings.max_output_tokens}."
             )
+        for m in messages:
+            images = m.get("images")
+            if images is None:
+                continue
+            if (
+                m["role"] != "user"
+                or not isinstance(images, list)
+                or not 1 <= len(images) <= MAX_IMAGES
+                or not all(
+                    isinstance(i, dict)
+                    and i.get("mediaType") in ("image/jpeg", "image/png")
+                    and isinstance(i.get("data"), str)
+                    for i in images
+                )
+            ):
+                raise invalid(
+                    "INVALID_MESSAGES",
+                    f"images go on user messages: 1-{MAX_IMAGES} of {{mediaType, data}}.",
+                )
         return ChatRequest(
-            messages=[{"role": m["role"], "content": m["content"]} for m in messages],
+            messages=[
+                {"role": m["role"], "content": m["content"]}
+                | ({"images": m["images"]} if m.get("images") else {})
+                for m in messages
+            ],
             max_output_tokens=max_tokens,
             temperature=body.get("temperature"),
             response_schema=body.get("responseSchema"),
@@ -375,7 +409,12 @@ class InferenceService:
 
     def _estimate(self, request: ChatRequest) -> int:
         """Worst-case tokens for budget reservation: prompt (~4 chars/token) + output cap."""
-        return sum(len(m["content"]) for m in request.messages) // 4 + request.max_output_tokens
+        images = sum(len(m.get("images") or []) for m in request.messages)
+        return (
+            sum(len(m["content"]) for m in request.messages) // 4
+            + images * IMAGE_TOKENS
+            + request.max_output_tokens
+        )
 
     def _reserve(self, caller: Caller, provider: str, tokens: int) -> None:
         self._reserved[(caller.holder_type, caller.holder_id)] += tokens
@@ -396,6 +435,8 @@ class InferenceService:
         if caller.holder_type == "run" and profile.split(".", 1)[0] in CLOUD_PROVIDERS:
             cloud = await self.credentials.profile(profile.split(".", 1)[0])
         provider, target = self._resolve(caller, profile, cloud)
+        if any(m.get("images") for m in request.messages):
+            await self._require_vision(provider, target)
         estimate = self._estimate(request)
         # Reserve before the (awaiting) budget check so parallel requests see each other.
         self._reserve(caller, provider, estimate)

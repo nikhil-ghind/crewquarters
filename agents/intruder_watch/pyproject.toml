@@ -1,0 +1,17 @@
+[project]
+name = "crewquarters-agent-intruder-watch"
+version = "0.1.0"
+description = "Intruder Watch agent: camera snapshots through the broker, a local vision model, owner email alerts"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = ["crewquarters-sdk"]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/intruder_watch"]
+
+[tool.uv.sources]
+crewquarters-sdk = { workspace = true }

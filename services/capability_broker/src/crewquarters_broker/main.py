@@ -98,6 +98,7 @@ def create_app(
         control=control,
         knowledge=knowledge,
         gateway=gateway,
+        http=http,
         google=GoogleConnector(settings, keyring, sessions, http, metrics),
         telephony=telephony,
         metrics=metrics,
