@@ -239,20 +239,25 @@ jobs:
       - if: always()
         run: make realstack-down
 
-  # The voice agent holding real WebRTC calls through a local LiveKit server (fake speech).
+  # The voice agent holding real WebRTC calls through a local LiveKit server (fake speech): as a
+  # local process, then in its hardened container with LiveKit in containers mode.
   voice-e2e:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
           version: "0.5.11"
       - run: uv sync --frozen --python 3.12 --all-packages
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
       - run: make livekit-up
       - run: make voice-e2e
+      - run: make voice-e2e-containers
       - if: failure()
-        run: docker compose -f infra/compose/compose.yaml --profile voice logs livekit
+        run: docker compose -f infra/compose/compose.yaml --profile voice --profile fake logs livekit fake-platform
 
   agent-images-arm64:
     runs-on: ubuntu-24.04

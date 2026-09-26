@@ -33,7 +33,8 @@ HOST_PLATFORM = $(shell uv run python -c "from crewctl.build import host_platfor
         fake-up fake-down agent-images e2e-images e2e \
         demo-seed demo-reset demo-run demo-pending demo-approve evidence \
         integration-up integration-down demo-up demo-down realstack-images realstack-up realstack-test realstack-down \
-        speech-models voice-up voice-down livekit-up voice-e2e voice-e2e-models
+        speech-models voice-up voice-down livekit-up voice-e2e voice-e2e-models \
+        voice-e2e-containers
 
 help:
 	@grep -E '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -249,8 +250,16 @@ voice-down: ## Stop LiveKit and the speech server
 	$(VOICE_COMPOSE) stop livekit speech
 
 voice-e2e: ## The voice agent through local LiveKit with fake speech (needs make livekit-up)
-	CREWQ_VOICE_LIVEKIT_URL=$(VOICE_LIVEKIT_URL) uv run pytest -q -m voice tests/voice
+	CREWQ_VOICE_LIVEKIT_URL=$(VOICE_LIVEKIT_URL) uv run pytest -q -m "voice and not e2e" tests/voice
 
 voice-e2e-models: ## The same with the real speech models (needs make voice-up)
 	CREWQ_VOICE_LIVEKIT_URL=$(VOICE_LIVEKIT_URL) CREWQ_VOICE_SPEECH_URL=http://127.0.0.1:8200 \
-		uv run pytest -q -m voice tests/voice/test_voice_e2e.py
+		uv run pytest -q -m "voice and not e2e" tests/voice/test_voice_e2e.py
+
+voice-e2e-containers: ## The voice agent in its hardened container, LiveKit in containers mode (Docker)
+	CREWQ_LIVEKIT_MODE=containers $(VOICE_COMPOSE) up -d --wait livekit
+	CREWQ_FAKE_LIVEKIT_URL=ws://livekit:7880 $(FAKE_COMPOSE) up -d --build --wait fake-platform registry
+	uv run crewctl build agents/voice_caller --push --registry $(REGISTRY) \
+		--platform $(HOST_PLATFORM) --output-manifest .e2e/manifests/voice_caller.yaml
+	CREWQ_VOICE_LIVEKIT_URL=$(VOICE_LIVEKIT_URL) CREWQ_VOICE_LIVEKIT_MODE=containers \
+		CREWQ_E2E_PLATFORM_URL=$(FAKE_URL) uv run pytest -q -m "voice and e2e" tests/voice/test_voice_e2e.py

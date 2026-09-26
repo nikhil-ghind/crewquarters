@@ -85,10 +85,30 @@ class SimulatedCallee:
         self.store, self.call, self.scenario = store, call, scenario
         self.url, self.token = url, token
         self.spoken: list[str] = []
+        self._audio: dict[str, bytes] = {}
+
+    def _lines(self) -> tuple[str, ...]:
+        if self.scenario.outcome == "voicemail":
+            return (VOICEMAIL_GREETING,)
+        return self.scenario.script if self.scenario.outcome == "answer" else ()
+
+    async def prepare(self) -> None:
+        """Synthesize every line up front, so each reply starts as soon as it is the callee's
+        turn, as a person's would, however slow synthesis is."""
+        for text in self._lines():
+            await self._synthesize(text)
+
+    async def _synthesize(self, text: str) -> bytes:
+        if text not in self._audio:
+            speech = self.store.speech
+            chunks = speech.synthesize(TTS_PROFILE, text, self.scenario.voice, "pcm", 1.0)
+            self._audio[text] = b"".join([c async for c in chunks])
+        return self._audio[text]
 
     async def run(self) -> None:
         call, scenario, store = self.call, self.scenario, self.store
-        await asyncio.sleep(scenario.ring_seconds)
+        # The phone rings while the callee gets its lines ready (it answers once both are done).
+        await asyncio.gather(asyncio.sleep(scenario.ring_seconds), self.prepare())
         if call.state not in {"dialing", "ringing"}:
             return
         if scenario.outcome in {"busy", "no-answer", "failed"}:
@@ -145,9 +165,7 @@ class SimulatedCallee:
         speech = self.store.speech
         self.spoken.append(text)
         log.info("call %s: simulated callee says %r", self.call.id, text)
-        audio = b"".join(
-            [c async for c in speech.synthesize(TTS_PROFILE, text, self.scenario.voice, "pcm", 1.0)]
-        )
+        audio = await self._synthesize(text)
         if isinstance(speech, LocalSpeech):
             # The fake speech-to-text "hears" this line once it has finished playing.
             finished = time.monotonic() + len(audio) / (2 * SAMPLE_RATE)

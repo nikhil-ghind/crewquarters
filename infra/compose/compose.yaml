@@ -287,9 +287,12 @@ services:
       CREWQ_FAKE_HEARTBEAT_SECONDS: "2"
       CREWQ_FAKE_LLM_BASE_URL: ${CREWQ_FAKE_LLM_BASE_URL:-}
       CREWQ_FAKE_LLM_MODEL: ${CREWQ_FAKE_LLM_MODEL:-}
-      # Voice calls (set by `make voice-fake-up`): LiveKit on the agent network, real speech.
+      # Voice calls (`make voice-e2e-containers` sets the LiveKit URL): LiveKit on the agent
+      # network (ws://livekit:7880), and optionally the real speech server (http://speech:8200).
       CREWQ_FAKE_LIVEKIT_URL: ${CREWQ_FAKE_LIVEKIT_URL:-}
       CREWQ_FAKE_LIVEKIT_API_URL: ${CREWQ_FAKE_LIVEKIT_API_URL:-}
+      CREWQ_FAKE_LIVEKIT_API_KEY: ${CREWQ_FAKE_LIVEKIT_API_KEY:-}
+      CREWQ_FAKE_LIVEKIT_API_SECRET: ${CREWQ_FAKE_LIVEKIT_API_SECRET:-}
       CREWQ_FAKE_SPEECH_URL: ${CREWQ_FAKE_SPEECH_URL:-}
       CREWQ_FAKE_SIP_TRUNK_ID: ${CREWQ_FAKE_SIP_TRUNK_ID:-}
     volumes:

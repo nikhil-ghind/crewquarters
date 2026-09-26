@@ -4,8 +4,10 @@ FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b
 WORKDIR /src
 COPY packages/shared_python packages/shared_python
 COPY packages/python_sdk packages/python_sdk
+COPY packages/speech_server packages/speech_server
 COPY packages/fake_platform packages/fake_platform
-RUN pip install --no-cache-dir --target /opt/app ./packages/shared_python ./packages/python_sdk ./packages/fake_platform
+RUN pip install --no-cache-dir --target /opt/app ./packages/shared_python ./packages/python_sdk \
+    ./packages/speech_server ./packages/fake_platform
 
 FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9
 ENV PYTHONPATH=/opt/app PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 CQ_CONTRACTS_DIR=/opt/contracts

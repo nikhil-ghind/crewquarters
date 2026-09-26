@@ -1,10 +1,12 @@
-"""The voice agent end to end (marker `voice`): the agent process holds real WebRTC calls through a
-local LiveKit server with a simulated callee on the other end.
+"""The voice agent end to end (marker `voice`): real WebRTC calls through a local LiveKit server,
+with a simulated callee on the other end.
 
-Speech is the fake engine by default: the callee's lines are "heard" exactly, and the agent's
-voice is a real speech clip, so voice-activity and end-of-turn detection run on real audio.
-Set CREWQ_VOICE_SPEECH_URL to a running speech server (make voice-up) to use the real models
-(marker `models`).
+- As a local process against an in-process fake platform (`make voice-e2e`). Speech is the fake
+  engine by default: the callee's lines are "heard" exactly, and the agent's voice is a real speech
+  clip, so voice-activity and end-of-turn detection run on real audio. Set CREWQ_VOICE_SPEECH_URL
+  to a running speech server (`make voice-up`) to use the real models.
+- In its hardened container against the Compose fake platform, with LiveKit in containers mode
+  (marker `e2e`, `make voice-e2e-containers`): the deployment shape on the appliance.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 import yaml
 
@@ -23,21 +26,21 @@ from crewquarters_fake.app import create_app
 from crewquarters_fake.client import FakePlatformClient
 from crewquarters_fake.contracts import load_manifest
 from crewquarters_fake.harness import RunOutcome, run_agent
-from crewquarters_fake.launcher import ProcessLauncher
+from crewquarters_fake.launcher import DockerLauncher, ProcessLauncher
 from crewquarters_fake.server import BackgroundServer
 from crewquarters_fake.settings import FakeSettings
 
 pytestmark = pytest.mark.voice
 REPO = Path(__file__).resolve().parents[2]
 AGENT = REPO / "agents" / "voice_caller"
+SCENARIO = "tests/fixtures/scenarios/voice-e2e"
+PINNED = REPO / ".e2e" / "manifests" / "voice_caller.yaml"
+PLATFORM_URL = os.environ.get("CREWQ_E2E_PLATFORM_URL", "http://127.0.0.1:8090")
 SPEECH_URL = os.environ.get("CREWQ_VOICE_SPEECH_URL") or None
 FULL_NUMBER = re.compile(r"\+1555555010\d")
-SCRIPT = [
-    "Hello?",
-    "Yes, I have a minute.",
-    "Tuesday at three still works for me.",
-    "No questions, thanks. Bye.",
-]
+SCRIPT: list[str] = yaml.safe_load((REPO / SCENARIO / "scenario.yaml").read_text())["voice"][
+    "callees"
+]["+15555550101"]["script"]
 CONFIG = {
     "spreadsheetId": "voice-sheet",
     "organization": "Acme Dental",
@@ -46,44 +49,6 @@ CONFIG = {
     "maxCallSeconds": 120,
     "ringTimeoutSeconds": 15,
 }
-RULES = [
-    {
-        "name": "outcome",
-        "match": {"schemaTitle": "CallOutcome"},
-        "respond": {
-            "json": {
-                "disposition": "completed",
-                "interest": "high",
-                "callback_requested": False,
-                "follow_up": "",
-                "notes": "Confirmed Tuesday at three.",
-            }
-        },
-    },
-    {
-        "name": "agreed",
-        "match": {"lastUser": True, "contains": ["minute"]},
-        "respond": {"text": "Great. Does your cleaning next Tuesday at three still work for you?"},
-    },
-    {
-        "name": "confirmed",
-        "match": {"lastUser": True, "contains": ["works"]},
-        "respond": {"text": "Perfect, you're all set. Any questions for the dentist?"},
-    },
-    {
-        "name": "goodbye",
-        "match": {"lastUser": True, "contains": ["bye"]},
-        "respond": {
-            "text": "Thanks, have a great day.",
-            "toolCall": {"name": "end_call", "arguments": {}},
-        },
-    },
-    {
-        "name": "fallback",
-        "match": {"lastUser": True},
-        "respond": {"text": "Sorry, could you say that again?"},
-    },
-]
 
 
 @pytest.fixture
@@ -99,81 +64,64 @@ def platform(livekit_url: str) -> Iterator[tuple[BackgroundServer, Any]]:
         yield server, app.state.store
 
 
-def scenario_dir(tmp: Path) -> Path:
-    doc = {
-        "name": "voice-e2e",
-        "timezone": "UTC",
-        "inputs": {
-            "autoAnswers": [
-                {"keyPattern": "confirm-voice-calls-v1:*", "value": {"choice": "approve"}}
-            ]
-        },
-        "sheets": {
-            "spreadsheets": {
-                "voice-sheet": {
-                    "Contacts": [
-                        ["name", "phone_e164", "consent", "status"],
-                        ["Asha Rao", "+15555550101", "yes", ""],
-                        ["Ben Ortiz", "+15555550102", "yes", ""],
-                        ["Chen Li", "+15555550103", "yes", ""],
-                    ],
-                    "Results": [],
-                }
-            }
-        },
-        "voice": {
-            "callees": {
-                "+15555550101": {"outcome": "answer", "ringSeconds": 1, "script": SCRIPT},
-                "+15555550102": {"outcome": "voicemail", "ringSeconds": 1},
-                "+15555550103": {"outcome": "busy", "ringSeconds": 1},
-            }
-        },
-        "llm": {"rules": RULES},
-    }
-    (tmp / "scenario.yaml").write_text(yaml.safe_dump(doc))
-    return tmp
-
-
-def run_voice_agent(server: BackgroundServer, tmp: Path) -> RunOutcome:
-    client = FakePlatformClient(server.url)
-    client.load_scenario(str(scenario_dir(tmp)))
-    manifest = load_manifest(AGENT / "manifest.yaml")
-    client.register_manifest(manifest)
+def run_voice_agent(
+    client: FakePlatformClient,
+    manifest: dict[str, Any],
+    launcher: ProcessLauncher | DockerLauncher,
+    scenario: str,
+) -> RunOutcome:
+    client.load_scenario(scenario)
+    if isinstance(launcher, DockerLauncher):
+        client.import_manifest(manifest)  # pinned by digest, as the control plane requires
+    else:
+        client.register_manifest(manifest)  # a local checkout: no image yet
     installation = client.install(
-        "voice-call-center", "0.1.0", CONFIG, manifest["spec"]["permissions"]
+        "voice-call-center",
+        manifest["metadata"]["version"],
+        CONFIG,
+        manifest["spec"]["permissions"],
     )
-    launcher = ProcessLauncher(manifest["spec"]["entrypoint"], agent_dir=AGENT, log_dir=tmp)
     return run_agent(client, launcher, installation["id"], timeout=300)
 
 
-def test_a_real_call_loop_through_local_livekit(platform: Any, tmp_path: Path) -> None:
-    server, store = platform
-    outcome = run_voice_agent(server, tmp_path)
+def check_calls(outcome: RunOutcome, sheets: dict[str, Any]) -> None:
+    """Dispositions, the sheet, masking, and metrics: the same wherever the agent runs."""
     assert outcome.state == "SUCCEEDED", outcome.log[-4000:]
     rows = {r["row"]: r for r in outcome.result["rows"]}
     assert rows[2]["disposition"] == "completed", outcome.log[-4000:]
     assert rows[3]["disposition"] == "voicemail", outcome.log[-4000:]
     assert rows[4]["disposition"] == "busy"
     assert rows[2]["durationSeconds"] and rows[2]["durationSeconds"] > 0
-
-    if SPEECH_URL is None:
-        # Every line the callee said after the greeting was heard, in order, from real audio
-        # segmented by the agent's VAD. (The pickup "Hello?" can come before the agent is
-        # listening; the agent then says "Hello?" itself.)
-        heard = [t for t in store.fake_speech.transcribed if t in SCRIPT[1:]]
-        assert heard == SCRIPT[1:], store.fake_speech.transcribed
-        spoken = store.fake_speech.synthesized
-        greeting = next(s for s in spoken if "Acme Dental" in s)
-        assert "automated AI assistant" in greeting.split(".")[0]
-        assert spoken[0] == "Hello?" or spoken[0] == greeting
-
     everything = json.dumps(outcome.events) + outcome.log + json.dumps(outcome.result)
     assert not FULL_NUMBER.search(everything), "a full phone number leaked"
-    results = store.sheets.snapshot()["voice-sheet"]
-    assert results["Contacts"][1][3] == "called"
-    assert results["Contacts"][2][3] == "" and results["Contacts"][3][3] == ""
+    contacts = sheets["voice-sheet"]["Contacts"]
+    assert contacts[1][3] == "called"
+    assert contacts[2][3] == "" and contacts[3][3] == ""
     metrics = [e for e in outcome.events if e["type"] == "run.metric"]
     assert any(m["payload"]["name"] == "turn_latency_p50_ms" for m in metrics)
+
+
+def check_fake_speech(transcribed: list[str], synthesized: list[str]) -> None:
+    """Every line the callee said after the greeting was heard, in order, from real audio segmented
+    by the agent's VAD. (The pickup "Hello?" can come before the agent is listening; the agent then
+    says "Hello?" itself.) The greeting discloses the automated call in its first sentence."""
+    heard = [t for t in transcribed if t in SCRIPT[1:]]
+    assert heard == SCRIPT[1:], transcribed
+    greeting = next(s for s in synthesized if "Acme Dental" in s)
+    assert "automated AI assistant" in greeting.split(".")[0]
+    assert synthesized[0] == "Hello?" or synthesized[0] == greeting
+
+
+def test_a_real_call_loop_through_local_livekit(platform: Any, tmp_path: Path) -> None:
+    server, store = platform
+    manifest = load_manifest(AGENT / "manifest.yaml")
+    launcher = ProcessLauncher(manifest["spec"]["entrypoint"], agent_dir=AGENT, log_dir=tmp_path)
+    outcome = run_voice_agent(
+        FakePlatformClient(server.url), manifest, launcher, str(REPO / SCENARIO)
+    )
+    check_calls(outcome, store.sheets.snapshot())
+    if SPEECH_URL is None:
+        check_fake_speech(store.fake_speech.transcribed, store.fake_speech.synthesized)
 
     # Every JSON request and response the agent exchanged matches the broker draft, including
     # voice calls and the OpenAI-compatible model facade.
@@ -212,3 +160,26 @@ def test_a_real_call_loop_through_local_livekit(platform: Any, tmp_path: Path) -
         contracts.run_event_schema(), format_checker=Draft202012Validator.FORMAT_CHECKER
     )
     assert [e.message for ev in outcome.events for e in event_validator.iter_errors(ev)] == []
+
+
+@pytest.mark.e2e
+def test_the_hardened_agent_container_holds_the_calls(livekit_url: str, tmp_path: Path) -> None:
+    if os.environ.get("CREWQ_VOICE_LIVEKIT_MODE") != "containers":
+        pytest.skip("needs LiveKit in containers mode; use `make voice-e2e-containers`")
+    try:
+        httpx.get(f"{PLATFORM_URL}/health/ready", timeout=3).raise_for_status()
+    except httpx.HTTPError:
+        pytest.skip("the fake platform is not running; use `make voice-e2e-containers`")
+    if not PINNED.is_file():
+        pytest.skip("the voice agent image is not pinned; use `make voice-e2e-containers`")
+    client = FakePlatformClient(PLATFORM_URL)
+    client.reset()
+    try:
+        outcome = run_voice_agent(
+            client, load_manifest(PINNED), DockerLauncher(log_dir=tmp_path), SCENARIO
+        )
+        check_calls(outcome, client.state("sheets"))
+        speech = client.state("speech")
+        check_fake_speech(speech["transcribed"], speech["synthesized"])
+    finally:
+        client.close()

@@ -40,9 +40,9 @@ class FakeSettings:
             livekit_url=os.environ.get("CREWQ_FAKE_LIVEKIT_URL") or None,
             livekit_callee_url=os.environ.get("CREWQ_FAKE_LIVEKIT_CALLEE_URL") or None,
             livekit_api_url=os.environ.get("CREWQ_FAKE_LIVEKIT_API_URL") or None,
-            livekit_api_key=os.environ.get("CREWQ_FAKE_LIVEKIT_API_KEY", cls.livekit_api_key),
-            livekit_api_secret=os.environ.get(
-                "CREWQ_FAKE_LIVEKIT_API_SECRET", cls.livekit_api_secret
+            livekit_api_key=os.environ.get("CREWQ_FAKE_LIVEKIT_API_KEY") or cls.livekit_api_key,
+            livekit_api_secret=(
+                os.environ.get("CREWQ_FAKE_LIVEKIT_API_SECRET") or cls.livekit_api_secret
             ),
             sip_trunk_id=os.environ.get("CREWQ_FAKE_SIP_TRUNK_ID") or None,
         )

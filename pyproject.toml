@@ -146,7 +146,7 @@ markers = [
     "e2e: requires the fake Docker stack (make fake-up) and pushed agent images",
     "live: requires a real Crewquarters platform and CREWQ_LIVE_* settings",
     "realstack: real agent images through the real stack (make realstack-up; tests/realstack)",
-    "voice: requires a local LiveKit server (make voice-up)",
+    "voice: opt-in; needs a local LiveKit server and CREWQ_VOICE_LIVEKIT_URL (make voice-e2e)",
     "models: downloads or loads real speech models (make speech-models)",
 ]
 testpaths = [

@@ -1,0 +1,55 @@
+# The voice E2E (tests/voice/test_voice_e2e.py): three consenting contacts. The first answers and
+# has a short conversation, the second reaches voicemail, and the third is busy. Mock LLM rules
+# script the agent's side; the outcome rule answers the post-call classification.
+name: voice-e2e
+timezone: UTC
+inputs:
+  autoAnswers:
+    - keyPattern: "confirm-voice-calls-v1:*"
+      value: {choice: approve}
+sheets:
+  spreadsheets:
+    voice-sheet:
+      Contacts:
+        - [name, phone_e164, consent, status]
+        - [Asha Rao, "+15555550101", "yes", ""]
+        - [Ben Ortiz, "+15555550102", "yes", ""]
+        - [Chen Li, "+15555550103", "yes", ""]
+      Results: []
+voice:
+  callees:
+    "+15555550101":
+      outcome: answer
+      ringSeconds: 1
+      script:
+        - "Hello?"
+        - "Yes, I have a minute."
+        - "Tuesday at three still works for me."
+        - "No questions, thanks. Bye."
+    "+15555550102": {outcome: voicemail, ringSeconds: 1}
+    "+15555550103": {outcome: busy, ringSeconds: 1}
+llm:
+  rules:
+    - name: outcome
+      match: {schemaTitle: CallOutcome}
+      respond:
+        json:
+          disposition: completed
+          interest: high
+          callback_requested: false
+          follow_up: ""
+          notes: "Confirmed Tuesday at three."
+    - name: agreed
+      match: {lastUser: true, contains: [minute]}
+      respond: {text: "Great. Does your cleaning next Tuesday at three still work for you?"}
+    - name: confirmed
+      match: {lastUser: true, contains: [works]}
+      respond: {text: "Perfect, you're all set. Any questions for the dentist?"}
+    - name: goodbye
+      match: {lastUser: true, contains: [bye]}
+      respond:
+        text: "Thanks, have a great day."
+        toolCall: {name: end_call, arguments: {}}
+    - name: fallback
+      match: {lastUser: true}
+      respond: {text: "Sorry, could you say that again?"}
