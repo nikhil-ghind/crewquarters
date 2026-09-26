@@ -1,15 +1,18 @@
 /*
  * Crewquarters semantic design tokens (PLAN.md section 13.14).
  *
- * "Fresh Teal": a light palette for daytime projector demos. Text is near-black and
- * muted text is dark slate (projectors wash out pale grays), borders are visible, and one
- * strong color (teal) carries every action. Do not add colors elsewhere: every component
- * uses these variables. Pale semantic backgrounds are computed with color-mix; each
+ * "Sky": a light palette for daytime projector demos. Text is near-black and muted text
+ * is dark slate (projectors wash out pale grays), borders are visible, and one brand color
+ * (sky blue #56CBF9) carries every action. The sky blue is too light for text on white
+ * (1.86:1), so it is only a fill with dark text on it (on-primary 9.45:1); links, focus
+ * rings and blue text use primary-strong (5.93 on white). Do not add colors elsewhere:
+ * every component uses these variables. Pale semantic backgrounds are computed with color-mix; each
  * semantic text color keeps WCAG 2.2 AA contrast (>= 4.5:1) on the page, cards, subtle
  * panels, and its own pale background:
- *   6% tint: primary 5.05, cloud 5.21, success 6.52, warning 6.48, danger 5.84, info 6.09
+ *   14% tint: primary-strong 5.44
+ *   6% tint: cloud 5.21, success 6.52, warning 6.48, danger 5.84, info 6.09
  *   3% tint: local 5.15
- *   white on primary 5.47; text 17.5 and muted text 7.8 on cards
+ *   text 17.5 and muted text 7.8 on cards
  * The amber accent is decorative only (2.15:1): never use it for text or as the sole cue.
  *
  * v1 ships the light theme only (section 13.14). A dark theme is added by redefining
@@ -20,14 +23,17 @@
  */
 :root {
   /* Core tokens */
-  --color-bg: #f6faf9;
+  --color-bg: #f5fafd;
   --color-surface: #ffffff;
-  --color-surface-subtle: #eaf3f1;
+  --color-surface-subtle: #e8f4fb;
   --color-text: #0b1b24;
   --color-text-muted: #3f5563;
-  --color-border: #b9ccc8;
-  --color-primary: #0f766e;
-  --color-primary-hover: #115e59;
+  --color-border: #b7cfdc;
+  --color-primary: #56cbf9;
+  --color-primary-hover: #2fb9ee;
+  --color-on-primary: var(--color-text);
+  --color-primary-strong: #0369a1;
+  --color-primary-strong-hover: #075985;
   --color-accent: #f59e0b;
   --color-local: #0e7490;
   --color-cloud: #7c3aed;
@@ -37,7 +43,7 @@
   --color-info: #1d4ed8;
 
   /* Pale companions (computed, contrast-validated; see header) */
-  --color-primary-bg: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+  --color-primary-bg: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
   --color-local-bg: color-mix(in srgb, var(--color-local) 3%, var(--color-surface));
   --color-cloud-bg: color-mix(in srgb, var(--color-cloud) 6%, var(--color-surface));
   --color-success-bg: color-mix(in srgb, var(--color-success) 6%, var(--color-surface));
@@ -96,7 +102,7 @@
   --motion-slow: 200ms;
 
   /* Focus */
-  --focus-ring: 2px solid var(--color-primary);
+  --focus-ring: 2px solid var(--color-primary-strong);
   --focus-offset: 2px;
 
   /* Layout */
