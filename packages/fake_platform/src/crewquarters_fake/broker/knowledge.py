@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from crewquarters_fake.broker.audit import audited
@@ -57,3 +57,24 @@ async def search(
         return {"passages": passages}
 
     return await audited(auth, request, "knowledge", "broker.knowledge.search", call)
+
+
+@router.get("/knowledge/documents")
+async def documents(
+    request: Request,
+    knowledgeBaseId: str = Query(max_length=64),
+    pattern: str = Query("*", min_length=1, max_length=200),
+    limit: int = Query(50, ge=1, le=200),
+    auth: RunAuth = Depends(run_auth),
+) -> dict[str, Any]:
+    require(auth, CAPABILITY, "broker.knowledge.documents")
+    if knowledgeBaseId not in auth.installation.knowledge_base_ids:
+        deny(auth, CAPABILITY, "broker.knowledge.documents")
+    if not auth.store.knowledge.has(knowledgeBaseId):
+        raise ApiError(404, "NOT_FOUND", f"knowledge base {knowledgeBaseId} not found")
+
+    async def call() -> dict[str, Any]:
+        found = auth.store.knowledge.documents(knowledgeBaseId, pattern)
+        return {"documents": found[:limit], "total": len(found), "truncated": len(found) > limit}
+
+    return await audited(auth, request, "knowledge", "broker.knowledge.documents", call)

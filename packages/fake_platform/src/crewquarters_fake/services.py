@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import json
 import secrets
 from datetime import timedelta
 from typing import Any
@@ -96,8 +97,10 @@ def _normalize_permissions(permissions: dict[str, Any]) -> dict[str, Any]:
         "connectors": {
             "google": sorted(connectors.get("google", [])),
             "twilio": sorted(connectors.get("twilio", [])),
+            "github": sorted(connectors.get("github", [])),
         },
         "cloudProviders": sorted(permissions.get("cloudProviders", [])),
+        "startsAgents": sorted(permissions.get("startsAgents", [])),
         "userInput": bool(permissions.get("userInput", False)),
     }
 
@@ -177,6 +180,10 @@ def create_run(
     trigger: str,
     scheduled_for: str | None,
     idempotency_key: str | None,
+    *,
+    parent_run_id: str | None = None,
+    start_key: str | None = None,
+    trigger_input: dict[str, Any] | None = None,
 ) -> Run:
     if idempotency_key and idempotency_key in store.run_keys:
         return store.runs[store.run_keys[idempotency_key]]
@@ -200,6 +207,9 @@ def create_run(
         scheduled_for=scheduled_for if trigger == "schedule" else None,
         created_at=now,
         updated_at=now,
+        parent_run_id=parent_run_id,
+        start_key=start_key,
+        trigger_input=trigger_input,
     )
     store.runs[run.id] = run
     store.append_event(run, "run.state_changed", {"from": None, "to": "QUEUED"})
@@ -492,3 +502,85 @@ async def _auto_answer(store: Store, request_id: str, rule: AutoAnswer) -> None:
     except ApiError:
         return
     await store.notify()
+
+
+MAX_START_INPUT_BYTES = 16 * 1024
+
+
+def _chain(store: Store, run: Run) -> list[str]:
+    """Agent ids of the run and every run that started it, nearest first."""
+    chain = [run.agent_id]
+    seen = {run.id}
+    parent = store.runs.get(run.parent_run_id) if run.parent_run_id else None
+    while parent is not None and parent.id not in seen:
+        seen.add(parent.id)
+        chain.append(parent.agent_id)
+        parent = store.runs.get(parent.parent_run_id) if parent.parent_run_id else None
+    return chain
+
+
+def start_agent_run(
+    store: Store,
+    parent: Run,
+    *,
+    agent_id: str,
+    start_key: str,
+    trigger_input: dict[str, Any] | None,
+) -> tuple[Run, bool]:
+    """Start ``agent_id`` from ``parent`` with the real platform's rules (the control API's
+    ``chaining.py``): approval, kill switch, size, cycle, depth, per-run count, target
+    resolution, and the ``agent`` trigger. The child stays QUEUED until something dispatches it."""
+    settings = store.settings
+    for child in store.runs.values():
+        if child.parent_run_id == parent.id and child.start_key == start_key:
+            if child.agent_id != agent_id:
+                raise ApiError(409, "START_KEY_REUSED", "This startKey started a different agent.")
+            return child, False
+    installation = store.installations[parent.installation_id]
+    if not settings.agent_starts_enabled:
+        raise ApiError(403, "AGENT_STARTS_DISABLED", "Agents starting agents is turned off.")
+    if agent_id not in installation.approved_permissions.get("startsAgents", []):
+        raise ApiError(
+            403, "PERMISSION_DENIED", f"This agent was not approved to start {agent_id}."
+        )
+    if trigger_input is not None and len(json.dumps(trigger_input)) > MAX_START_INPUT_BYTES:
+        raise ApiError(422, "INPUT_TOO_LARGE", "The input may be at most 16384 bytes.")
+    chain = _chain(store, parent)
+    if agent_id in chain:
+        raise ApiError(409, "CHAIN_CYCLE", f"{agent_id} is already part of this chain of runs.")
+    if len(chain) > settings.agent_chain_max_depth:
+        raise ApiError(409, "CHAIN_TOO_DEEP", "The chain of agents is too deep.")
+    if sum(1 for r in store.runs.values() if r.parent_run_id == parent.id) >= (
+        settings.agent_starts_per_run
+    ):
+        raise ApiError(409, "START_LIMIT_REACHED", "This run has started too many runs.")
+    candidates = [i for i in store.installations.values() if i.agent_id == agent_id and i.enabled]
+    if not candidates:
+        raise ApiError(409, "TARGET_NOT_INSTALLED", f"{agent_id} is not installed and enabled.")
+    if len(candidates) > 1:
+        targets = installation.config.get("agentTargets")
+        chosen = targets.get(agent_id) if isinstance(targets, dict) else None
+        candidates = [c for c in candidates if c.id == chosen]
+        if not candidates:
+            raise ApiError(
+                409,
+                "NEEDS_CONFIGURATION",
+                f"{agent_id} is installed more than once; set agentTargets.{agent_id}.",
+                {"key": f"agentTargets.{agent_id}"},
+            )
+    target = candidates[0]
+    if "agent" not in target.manifest["spec"]["triggers"]:
+        raise ApiError(
+            409, "TRIGGER_NOT_SUPPORTED", f"{agent_id} does not accept being started by an agent."
+        )
+    run = create_run(
+        store,
+        target.id,
+        "agent",
+        None,
+        None,
+        parent_run_id=parent.id,
+        start_key=start_key,
+        trigger_input=trigger_input,
+    )
+    return run, True

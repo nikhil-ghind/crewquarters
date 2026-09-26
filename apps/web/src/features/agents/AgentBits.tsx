@@ -80,5 +80,5 @@ export function ReadinessList({ installation }: { installation: InstallationOut 
 }
 
 export function triggerText(triggers: string[]): string {
-  return triggers.map((t) => (t === 'manual' ? 'Run on demand' : t === 'schedule' ? 'Scheduled' : t)).join(' · ');
+  return triggers.map((t) => (t === 'manual' ? 'Run on demand' : t === 'schedule' ? 'Scheduled' : t === 'agent' ? 'Started by another agent' : t)).join(' · ');
 }

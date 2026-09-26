@@ -1,1 +1,1 @@
-"""In-memory stand-ins for Google Gmail, Google Sheets, and Twilio."""
+"""In-memory stand-ins for Google Gmail, Google Sheets, GitHub, and Twilio."""

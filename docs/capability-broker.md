@@ -159,7 +159,24 @@ These are in addition to the shared `CQ_*` settings the broker also reads: `CQ_D
 | `CQ_GOOGLE_CLIENT_ID` | string | empty | no | demo-cpu, dgx | OAuth web client ID |
 | `CQ_GOOGLE_CLIENT_SECRET` | secret string | empty | **yes** | demo-cpu, dgx | OAuth web client secret |
 | `CQ_TWILIO_ALLOWED_NUMBERS` | JSON list of E.164 | `[]` | no (personal data) | demo-cpu, dgx | In `live` mode, the only numbers that may be called |
+| `CQ_GITHUB_TOKEN` | secret string | empty | **yes** | demo-cpu, dgx | In `live` mode, the GitHub token behind the pull-request connector (`pull_requests.read`/`write`). Use a fine-grained token limited to one repository with Pull requests: read and write. Ignored in `fake` mode |
 | `CQ_BROKER_HOST` / `CQ_BROKER_PORT` | string / int | `0.0.0.0` / `8000` | no | all | Listen address (container network) |
+
+## Starting other agents
+
+`POST /internal/v1/sdk/agents/start` `{agentId, startKey, input?}` needs the `agents.start:<agentId>` capability (from `permissions.startsAgents`). The broker forwards it, with the attempt from the token, to the control API's `POST /internal/v1/runs/{runId}/agent-runs`, which enforces the platform's limits and starts the run. Rules, errors and settings are in [agent-chaining.md](agent-chaining.md). The handshake's `run` carries `parentRunId` and `input` for a run an agent started, and `grants.startsAgents` lists the approved targets.
+
+## Finding documents by name
+
+`GET /internal/v1/sdk/knowledge/documents?knowledgeBaseId=&pattern=&limit=` lists the `READY` documents of the configured knowledge base whose file name matches a case-insensitive glob, newest first (`limit` up to 200; the reply has `total` and `truncated`). It needs `knowledge.search:config` and only the configured base. See [knowledge.md](knowledge.md).
+
+## GitHub pull requests
+
+Four operations under `/internal/v1/sdk/github`: list open pull requests, list a pull request's changed files (with patches), list its reviews, and post one review. Reading needs `github.pull_requests.read`, posting needs `github.pull_requests.write`, and both only work on the repository in the installation's `repo` config (`PERMISSION_DENIED` otherwise, `NEEDS_CONFIGURATION` if none is set).
+
+- **Token:** `CQ_GITHUB_TOKEN` in `live` mode, for example the output of `gh auth token`. It never reaches an agent, and error bodies from GitHub are never echoed back. A fine-grained token limited to one repository (Pull requests: read and write) is the safest choice. Without it the connection shows *Not connected* and calls fail with `NEEDS_CONNECTION`. Unlike Google and Twilio, the token comes from the broker's environment, not the encrypted store.
+- **Reviews are comments only:** the broker always sends `event: COMMENT` with comments on the new side of the diff, so an agent can never approve or request changes. A comment on a line outside the diff is refused with `INVALID_REQUEST` (422).
+- **Never retried:** posting a review is not idempotent, so a lost reply surfaces as `OUTCOME_UNKNOWN`.
 
 ## Fakes (`CQ_PROVIDER_MODE=fake`)
 
@@ -179,6 +196,7 @@ The fakes support fake end-to-end runs and tests. Fixtures contain no real perso
   | 6 | R2-D2 | +15555550108 | yes | | skipped: `invalid_name` |
 
   A write before any read (or a seeded tab written by a test) is kept as is.
+- **GitHub:** connected without a token. Any `owner/name` repository has three open pull requests: #101 (a likely bug and a swallowed exception in `shop/cart.py`), #102 (a naming and spacing problem) and #103 (a draft). Reviews are kept in memory, and a comment on a line the patch does not show is refused with 422, as GitHub does.
 - **Twilio:** any account SID of the right shape and auth token are accepted (a token starting with `invalid` is refused). Calls to any number are placed; the fake plays Twilio's status, voice and gather callbacks inside the broker. The destination's last digit selects the outcome.
 
 | Last digit | Final `state` | `answered` / `speechCaptured` |

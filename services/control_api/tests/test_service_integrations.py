@@ -164,6 +164,7 @@ async def test_connection_status_comes_from_the_broker(
     listing = (await owner.get("/api/v1/connections")).json()
     assert {c["provider"]: c["status"] for c in listing["items"]} == {
         "anthropic": "NOT_CONNECTED",
+        "github": "CONNECTED",  # the fake GitHub needs no token
         "google": "NOT_CONNECTED",
         "openai": "NOT_CONNECTED",
         "twilio": "NOT_CONNECTED",

@@ -187,6 +187,11 @@ class AgentRun(Base):
     )
     trigger: Mapped[str] = mapped_column(Text, nullable=False)
     schedule_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("schedules.id"))
+    # A run another agent's run started (trigger "agent"): the starter, the caller's key that
+    # makes the start idempotent, and the bounded input the caller passed (untrusted).
+    parent_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id"))
+    start_key: Mapped[str | None] = mapped_column(Text)
+    trigger_input: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     state: Mapped[str] = mapped_column(Text, nullable=False, default="QUEUED")
     state_entered_at: Mapped[datetime] = mapped_column(
@@ -212,7 +217,7 @@ class AgentRun(Base):
     updated_at: Mapped[datetime] = _updated()
 
     __table_args__ = (
-        CheckConstraint("trigger IN ('manual', 'schedule')", name="trigger"),
+        CheckConstraint("trigger IN ('manual', 'schedule', 'agent')", name="trigger"),
         CheckConstraint(f"state IN {RUN_STATES!r}", name="state"),
         Index(
             "uq_agent_runs_schedule_occurrence",
@@ -222,6 +227,13 @@ class AgentRun(Base):
             postgresql_where=text("schedule_id IS NOT NULL"),
         ),
         Index("ix_agent_runs_state", "state"),
+        Index(
+            "uq_agent_runs_agent_start",
+            "parent_run_id",
+            "start_key",
+            unique=True,
+            postgresql_where=text("parent_run_id IS NOT NULL"),
+        ),
     )
 
 

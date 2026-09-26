@@ -232,6 +232,7 @@ export const PROVIDER_NAMES: Record<string, string> = {
   cloud: 'approved provider',
   google: 'Google',
   twilio: 'Twilio',
+  github: 'GitHub',
   openai: 'OpenAI',
   anthropic: 'Anthropic',
 };

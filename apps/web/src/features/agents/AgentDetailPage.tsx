@@ -14,6 +14,8 @@ import { RunNowButton } from './RunNowButton';
 const EXAMPLES: Record<string, string> = {
   'crewquarters.gmail-digest/v1':
     'A morning summary of yesterday’s mail in three groups — Urgent, Important and Low priority — with a one-line reason, a suggested next step and a link to each message in Gmail.',
+  'crewquarters.pr-review/v1':
+    'For each recent open pull request: the likely bugs and code-style problems found in the changed lines, each with its file, line and a suggested fix. Nothing is posted to GitHub unless you turn on posting.',
   'crewquarters.caller/v1':
     'A table of the people called from your sheet: consent check, call status, the transcribed reply, and whether the result was written back to the sheet.',
   'crewquarters.personal-space/v1':

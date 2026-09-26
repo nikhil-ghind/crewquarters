@@ -17,6 +17,10 @@ finds them, however long the broker has been running.
 Fake Sheets: the first read of an unknown spreadsheet seeds it with a demo contact table
 (:data:`DEMO_CONTACTS`) in the caller's layout and an empty ``Results`` tab.
 
+Fake GitHub: any ``owner/name`` repository has the same three open pull requests
+(:data:`DEMO_PULLS`); a review is recorded and answered with a fake id, and a comment on a
+line the patch does not show is refused with 422, as GitHub does.
+
 Fake calls: the destination's last digit picks the outcome — 2 busy, 3 no-answer,
 4 failed, 5 answered without speech, anything else answered with speech.
 """
@@ -337,10 +341,139 @@ class FakeTwilio:
         return httpx.Response(201, json={"sid": call["sid"], "status": "queued"})
 
 
-def transport(google: FakeGoogle, twilio: FakeTwilio) -> httpx.MockTransport:
+DEMO_PATCH_BUG = (
+    "@@ -10,7 +10,9 @@ def total(items):\n"
+    "     result = 0\n"
+    "-    for item in items:\n"
+    "+    for i in range(len(items) - 1):\n"
+    "+        item = items[i]\n"
+    "         result += item.price\n"
+    "+    try:\n"
+    "+        save(result)\n"
+    "+    except:\n"
+    "+        pass\n"
+    "     return result\n"
+)
+DEMO_PATCH_STYLE = (
+    "@@ -1,3 +1,5 @@\n import os\n+def GetName( user ):\n+    return user['name']\n \n"
+)
+DEMO_PULLS: dict[int, dict[str, Any]] = {
+    101: {
+        "title": "Speed up cart total",
+        "author": "dev-a",
+        "draft": False,
+        "sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        "files": [{"filename": "shop/cart.py", "patch": DEMO_PATCH_BUG}],
+    },
+    102: {
+        "title": "Add user name helper",
+        "author": "dev-b",
+        "draft": False,
+        "sha": "b2c3d4e5f60718293a4b5c6d7e8f901234567890",
+        "files": [{"filename": "shop/users.py", "patch": DEMO_PATCH_STYLE}],
+    },
+    103: {
+        "title": "WIP: refactor checkout",
+        "author": "dev-c",
+        "draft": True,
+        "sha": "c3d4e5f60718293a4b5c6d7e8f90123456789012",
+        "files": [],
+    },
+}
+
+
+class FakeGitHub:
+    """A GitHub REST stand-in for the pull-request endpoints the broker uses."""
+
+    _PULLS = re.compile(r"^/repos/[^/]+/[^/]+/pulls$")
+    _PULL_PART = re.compile(r"^/repos/[^/]+/[^/]+/pulls/(\d+)/(files|reviews)$")
+
+    def __init__(self) -> None:
+        self.reviews: dict[int, list[dict[str, Any]]] = {}
+        self._next_id = 9000
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        if not request.headers.get("authorization", "").startswith("Bearer "):
+            return httpx.Response(401, json={"message": "Bad credentials"})
+        path = request.url.path
+        if request.method == "GET" and self._PULLS.match(path):
+            return self._list(request)
+        match = self._PULL_PART.match(path)
+        if match is None:
+            return httpx.Response(404, json={"message": "Not Found"})
+        number, part = int(match.group(1)), match.group(2)
+        pull = DEMO_PULLS.get(number)
+        if pull is None:
+            return httpx.Response(404, json={"message": "Not Found"})
+        if part == "files" and request.method == "GET":
+            return self._page(request, [self._file(f) for f in pull["files"]])
+        if part == "reviews" and request.method == "GET":
+            return self._page(request, self.reviews.get(number, []))
+        if part == "reviews" and request.method == "POST":
+            return self._review(number, json.loads(request.content))
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    @staticmethod
+    def _file(file: dict[str, Any]) -> dict[str, Any]:
+        patch = file["patch"]
+        lines = patch.splitlines()
+        return {
+            "filename": file["filename"],
+            "status": "modified",
+            "additions": sum(1 for ln in lines if ln.startswith("+")),
+            "deletions": sum(1 for ln in lines if ln.startswith("-")),
+            "patch": patch,
+        }
+
+    @staticmethod
+    def _page(request: httpx.Request, items: list[dict[str, Any]]) -> httpx.Response:
+        params = request.url.params
+        size = int(params.get("per_page", "30"))
+        start = (int(params.get("page", "1")) - 1) * size
+        return httpx.Response(200, json=items[start : start + size])
+
+    def _list(self, request: httpx.Request) -> httpx.Response:
+        size = int(request.url.params.get("per_page", "30"))
+        pulls = [
+            {
+                "number": number,
+                "title": pull["title"],
+                "user": {"login": pull["author"]},
+                "draft": pull["draft"],
+                "head": {"sha": pull["sha"], "ref": f"feature-{number}"},
+                "base": {"ref": "main"},
+                "html_url": f"https://github.com/example/shop/pull/{number}",
+                "updated_at": f"2024-01-0{9 - i}T09:00:00Z",
+                "body": "",
+            }
+            for i, (number, pull) in enumerate(DEMO_PULLS.items())
+        ]
+        return httpx.Response(200, json=pulls[:size])
+
+    def _review(self, number: int, body: dict[str, Any]) -> httpx.Response:
+        patch = "\n".join(f["patch"] for f in DEMO_PULLS[number]["files"])
+        if not patch or body.get("event") != "COMMENT":
+            return httpx.Response(422, json={"message": "Unprocessable Entity"})
+        self._next_id += 1
+        review = {
+            "id": self._next_id,
+            "commit_id": body["commit_id"],
+            "body": body["body"],
+            "html_url": f"https://github.com/example/shop/pull/{number}#pullrequestreview-{self._next_id}",
+            "comments": body.get("comments", []),
+        }
+        self.reviews.setdefault(number, []).append(review)
+        return httpx.Response(200, json=review)
+
+
+def transport(
+    google: FakeGoogle, twilio: FakeTwilio, github: FakeGitHub | None = None
+) -> httpx.MockTransport:
     def route(request: httpx.Request) -> httpx.Response:
         if request.url.host == "api.twilio.com":
             return twilio.handle(request)
+        if request.url.host == "api.github.com":
+            return (github or FakeGitHub()).handle(request)
         return google.handle(request)
 
     return httpx.MockTransport(route)

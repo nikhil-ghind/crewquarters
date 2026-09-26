@@ -52,7 +52,7 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"type": "string", "enum": ["manual", "schedule"]}
+          "items": {"type": "string", "enum": ["manual", "schedule", "agent"]}
         },
         "permissions": {"$ref": "#/$defs/permissions"},
         "resources": {"$ref": "#/$defs/resources"},
@@ -107,6 +107,11 @@
               "type": "array",
               "uniqueItems": true,
               "items": {"type": "string", "enum": ["call.conversational"]}
+            },
+            "github": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "string", "enum": ["pull_requests.read", "pull_requests.write"]}
             }
           }
         },
@@ -114,6 +119,13 @@
           "type": "array",
           "uniqueItems": true,
           "items": {"type": "string", "enum": ["openai", "anthropic"]}
+        },
+        "startsAgents": {
+          "description": "Agent ids this agent may start (ctx.agents.start). Each needs the target to list the 'agent' trigger, and the owner approves the list per installation. Optional; default none.",
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 10,
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,62}$"}
         },
         "userInput": {"type": "boolean"}
       }

@@ -50,7 +50,7 @@ def test_load_scenario_populates_every_provider(tmp_path: Path) -> None:
     store = Store(FakeSettings())
     summary = load(store, tmp_path, now=datetime(2026, 9, 24, 12, 0, tzinfo=UTC))
     assert summary["name"] == "demo"
-    assert store.connections == {"google": "expired", "twilio": "connected"}
+    assert store.connections == {"google": "expired", "twilio": "connected", "github": "connected"}
     message = store.gmail.get("m1")
     assert message["internalDate"] == str(
         int(datetime.fromisoformat("2026-09-23T08:00:00+05:30").timestamp()) * 1000

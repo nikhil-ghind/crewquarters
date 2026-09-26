@@ -138,6 +138,7 @@ services:
       CQ_VOICE_LLM_PROFILE: ${CQ_VOICE_LLM_PROFILE:-local.general.small}
       CQ_VOICE_TTS_MODEL: ${CQ_VOICE_TTS_MODEL:-local.tts.voxtream}
       CQ_VOICE_MAX_CALL_SECONDS: ${CQ_VOICE_MAX_CALL_SECONDS:-300}
+      CQ_GITHUB_TOKEN: ${CQ_GITHUB_TOKEN:-}
     networks:
       default: {}
       agents:

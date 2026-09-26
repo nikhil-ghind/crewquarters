@@ -9,6 +9,7 @@ send call text, the broker accepts it only if it matches the owner-approved conf
 
 from __future__ import annotations
 
+import fnmatch
 import itertools
 import json
 import re
@@ -114,6 +115,12 @@ class CallScript(ApiModel):
     text: str = Field(min_length=1, max_length=1500)
 
 
+class AgentStartIn(ApiModel):
+    agent_id: str = Field(pattern=r"^[a-z][a-z0-9-]{1,62}$")
+    start_key: str = Field(pattern=KEY_PATTERN)
+    input: dict[str, Any] | None = None
+
+
 class CallGather(ApiModel):
     input: Literal["speech"]
     timeout_seconds: int = Field(ge=1, le=60)
@@ -158,6 +165,8 @@ def _grants(grant: Grant) -> dict[str, Any]:
         "knowledgeBaseIds": [kb] if "knowledge.search:config" in caps and kb else [],
         "google": after("google."),
         "twilio": after("twilio."),
+        "github": after("github."),
+        "startsAgents": after("agents.start:"),
         "cloudProviders": after("cloud."),
     }
 
@@ -192,6 +201,8 @@ async def handshake(
             "agentId": run.get("agentId") or body.agent_id,
             "agentVersion": run.get("agentVersion") or claims.agent_version_id,
             "createdAt": run.get("createdAt") or claims.issued_at.isoformat(),
+            "parentRunId": run.get("parentRunId"),
+            "input": run.get("triggerInput"),
         },
         "config": grant.config,
         "capabilities": sorted(grant.capabilities),
@@ -412,6 +423,59 @@ async def knowledge_search(
     return await state.knowledge.request("POST", f"/knowledge-bases/{kb_id}/query", json=query)
 
 
+DOCUMENT_LIMIT = 200
+
+
+def name_matches(name: str, pattern: str) -> bool:
+    """Case-insensitive shell-style glob (``*``, ``?``, ``[abc]``) on a document's name."""
+    return fnmatch.fnmatchcase(name.lower(), pattern.lower())
+
+
+@router.get("/knowledge/documents", summary="Find documents in the configured knowledge base")
+async def knowledge_documents(
+    knowledge_base_id: str = Query(alias="knowledgeBaseId", max_length=64),
+    pattern: str = Query("*", min_length=1, max_length=200),
+    limit: int = Query(50, ge=1, le=DOCUMENT_LIMIT),
+    grant: Grant = Depends(agent_grant),
+    state: BrokerState = Depends(broker_state),
+) -> Any:
+    """Ready documents whose file name matches a glob, newest first. Only the knowledge base the
+    owner selected in the installation config can be listed."""
+    grant.require("knowledge.search:config")
+    kb_id = grant.configured("knowledgeBaseId", knowledge_base_id)
+    listing = await state.knowledge.request("GET", f"/knowledge-bases/{kb_id}/documents")
+    ready = [d for d in listing if d.get("state") == "READY" and name_matches(d["name"], pattern)]
+    ready.sort(key=lambda d: str(d.get("createdAt", "")), reverse=True)
+    return {
+        "documents": [
+            {"id": d["id"], "name": d["name"], "mime": d.get("mime"), "bytes": d.get("bytes")}
+            for d in ready[:limit]
+        ],
+        "total": len(ready),
+        "truncated": len(ready) > limit,
+    }
+
+
+# --- Starting other agents -----------------------------------------------------------------
+
+
+@router.post("/agents/start", summary="Start another agent (approved targets only)")
+async def agents_start(
+    body: AgentStartIn,
+    grant: Grant = Depends(agent_grant),
+    state: BrokerState = Depends(broker_state),
+) -> Any:
+    """The owner approved this target for this installation (``agents.start:<id>``); the control
+    API enforces the platform limits (depth, count, cycles) and starts the run. Repeating a call
+    with the same ``startKey`` returns the run it started the first time."""
+    grant.require(f"agents.start:{body.agent_id}")
+    return await state.control.request(
+        "POST",
+        f"/runs/{grant.run_id}/agent-runs",
+        json=_attempt(grant, agentId=body.agent_id, startKey=body.start_key, input=body.input),
+    )
+
+
 # --- Gmail ---------------------------------------------------------------------------------
 
 
@@ -436,6 +500,71 @@ async def gmail_get(
 ) -> Any:
     grant.require("google.gmail.readonly")
     return await state.google.gmail_get(message_id)
+
+
+# --- GitHub pull requests (only the repository the owner configured) ------------------------
+
+REPO_PATTERN = r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+
+
+class ReviewComment(ApiModel):
+    path: str = Field(min_length=1, max_length=500)
+    line: int = Field(ge=1)
+    body: str = Field(min_length=1, max_length=5000)
+
+
+class ReviewIn(ApiModel):
+    repo: str = Field(pattern=REPO_PATTERN)
+    commit_id: str = Field(pattern=r"^[0-9a-f]{7,64}$")
+    body: str = Field(max_length=20000)
+    comments: list[ReviewComment] = Field(max_length=50)
+
+
+@router.get("/github/pulls", summary="List open pull requests of the configured repository")
+async def github_list_pulls(
+    repo: str = Query(pattern=REPO_PATTERN),
+    limit: int = Query(10, ge=1, le=50),
+    grant: Grant = Depends(agent_grant),
+    state: BrokerState = Depends(broker_state),
+) -> Any:
+    grant.require("github.pull_requests.read")
+    return await state.github.list_pulls(grant.configured("repo", repo), limit)
+
+
+@router.get("/github/pulls/{number}/files", summary="Changed files of a pull request")
+async def github_list_files(
+    number: int = Path(ge=1),
+    repo: str = Query(pattern=REPO_PATTERN),
+    grant: Grant = Depends(agent_grant),
+    state: BrokerState = Depends(broker_state),
+) -> Any:
+    grant.require("github.pull_requests.read")
+    return await state.github.list_files(grant.configured("repo", repo), number)
+
+
+@router.get("/github/pulls/{number}/reviews", summary="Existing reviews of a pull request")
+async def github_list_reviews(
+    number: int = Path(ge=1),
+    repo: str = Query(pattern=REPO_PATTERN),
+    grant: Grant = Depends(agent_grant),
+    state: BrokerState = Depends(broker_state),
+) -> Any:
+    grant.require("github.pull_requests.read")
+    return await state.github.list_reviews(grant.configured("repo", repo), number)
+
+
+@router.post("/github/pulls/{number}/reviews", summary="Post one COMMENT review")
+async def github_create_review(
+    body: ReviewIn,
+    number: int = Path(ge=1),
+    grant: Grant = Depends(agent_grant),
+    state: BrokerState = Depends(broker_state),
+) -> Any:
+    """The event is always ``COMMENT``: an agent can neither approve nor block a pull request."""
+    grant.require("github.pull_requests.write")
+    repo = grant.configured("repo", body.repo)
+    comments = [c.model_dump() for c in body.comments]
+    return await state.github.create_review(repo, number, body.commit_id, body.body, comments)
 
 
 # --- Sheets (the configured spreadsheet: reads in inputRange, writes in resultRange) -------

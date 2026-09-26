@@ -2,6 +2,7 @@ from enum import StrEnum
 
 
 class RunOutTrigger(StrEnum):
+    AGENT = "agent"
     MANUAL = "manual"
     SCHEDULE = "schedule"
 

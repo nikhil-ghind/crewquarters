@@ -10,6 +10,7 @@ from attrs import field as _attrs_field
 
 from ..models.run_out_state import RunOutState
 from ..models.run_out_trigger import RunOutTrigger
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.run_out_error_type_0 import RunOutErrorType0
@@ -48,6 +49,7 @@ class RunOut:
         started_at (datetime.datetime | None):
         finished_at (datetime.datetime | None):
         updated_at (datetime.datetime):
+        parent_run_id (None | Unset | UUID): The run that started this one (trigger `agent`).
     """
 
     id: UUID
@@ -75,6 +77,7 @@ class RunOut:
     started_at: datetime.datetime | None
     finished_at: datetime.datetime | None
     updated_at: datetime.datetime
+    parent_run_id: Unset | UUID | None = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -159,6 +162,14 @@ class RunOut:
 
         updated_at = self.updated_at.isoformat()
 
+        parent_run_id: str | Unset | None
+        if isinstance(self.parent_run_id, Unset):
+            parent_run_id = UNSET
+        elif isinstance(self.parent_run_id, UUID):
+            parent_run_id = str(self.parent_run_id)
+        else:
+            parent_run_id = self.parent_run_id
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -190,6 +201,8 @@ class RunOut:
                 "updatedAt": updated_at,
             }
         )
+        if parent_run_id is not UNSET:
+            field_dict["parentRunId"] = parent_run_id
 
         return field_dict
 
@@ -340,6 +353,23 @@ class RunOut:
 
         updated_at = datetime.datetime.fromisoformat(d.pop("updatedAt"))
 
+        def _parse_parent_run_id(data: object) -> Unset | UUID | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                parent_run_id_type_0 = UUID(data)
+
+                return parent_run_id_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | Unset | UUID, data)
+
+        parent_run_id = _parse_parent_run_id(d.pop("parentRunId", UNSET))
+
         run_out = cls(
             id=id,
             installation_id=installation_id,
@@ -366,6 +396,7 @@ class RunOut:
             started_at=started_at,
             finished_at=finished_at,
             updated_at=updated_at,
+            parent_run_id=parent_run_id,
         )
 
         run_out.additional_properties = d

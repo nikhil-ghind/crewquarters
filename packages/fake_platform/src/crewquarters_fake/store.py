@@ -18,6 +18,7 @@ from crewquarters_fake.crewq_gateway import CrewquartersGateway
 from crewquarters_fake.faults import FaultRegistry
 from crewquarters_fake.gateway import Gateway
 from crewquarters_fake.knowledge import KnowledgeIndex
+from crewquarters_fake.providers.github import GitHubProvider
 from crewquarters_fake.providers.gmail import GmailProvider
 from crewquarters_fake.providers.sheets import SheetsProvider
 from crewquarters_fake.providers.twilio import TwilioProvider
@@ -129,6 +130,10 @@ class Run:
     waited_seconds: float = 0.0
     sequence: int = 0
     client_event_ids: set[str] = field(default_factory=set)
+    # Runs an agent started (trigger "agent"): the starter, its idempotency key, the input.
+    parent_run_id: str | None = None
+    start_key: str | None = None
+    trigger_input: dict[str, Any] | None = None
 
     @property
     def attempt(self) -> Attempt | None:
@@ -231,7 +236,11 @@ class Store:
         self.input_keys: dict[tuple[str, str], str] = {}
         self.actions: dict[tuple[str, str], ActionRecord] = {}
         self.tokens: dict[str, tuple[str, int]] = {}
-        self.connections: dict[str, str] = {"google": "connected", "twilio": "connected"}
+        self.connections: dict[str, str] = {
+            "google": "connected",
+            "twilio": "connected",
+            "github": "connected",
+        }
         self.auto_answers: list[AutoAnswer] = []
         self.traffic: list[dict[str, Any]] = []
         self.audit: list[dict[str, Any]] = []
@@ -241,11 +250,12 @@ class Store:
         self.reset_providers()
 
     def reset_providers(self) -> None:
-        self.connections = {"google": "connected", "twilio": "connected"}
+        self.connections = {"google": "connected", "twilio": "connected", "github": "connected"}
         self.auto_answers = []
         self.gmail = GmailProvider()
         self.sheets = SheetsProvider()
         self.twilio = TwilioProvider()
+        self.github = GitHubProvider()
         self.knowledge = KnowledgeIndex()
         self.gateway = Gateway(self.settings)
         # The fake engine always exists: a simulated callee queues its lines here.

@@ -7,6 +7,7 @@ members = [
     "crewquarters-agent-contract-probe",
     "crewquarters-agent-gmail-digest",
     "crewquarters-agent-personal-space",
+    "crewquarters-agent-pr-reviewer",
     "crewquarters-agent-voice-caller",
     "crewquarters-capability-broker",
     "crewquarters-control-api",
@@ -426,6 +427,17 @@ requires-dist = [
     { name = "crewquarters-sdk", editable = "packages/python_sdk" },
     { name = "tzdata", specifier = ">=2024.1" },
 ]
+
+[[package]]
+name = "crewquarters-agent-pr-reviewer"
+version = "0.1.0"
+source = { editable = "agents/pr_reviewer" }
+dependencies = [
+    { name = "crewquarters-sdk" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "crewquarters-sdk", editable = "packages/python_sdk" }]
 
 [[package]]
 name = "crewquarters-agent-voice-caller"
@@ -2568,7 +2580,7 @@ name = "tqdm"
 version = "4.70.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "platform_system == 'Windows'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0d/ea/b2a5bd54b28a324dae8211928b2d730b6547500342c7e6c6dea08bd0a485/tqdm-4.70.1.tar.gz", hash = "sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4", size = 171846 }
 wheels = [
@@ -2610,7 +2622,7 @@ version = "0.27.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-doc" },
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "platform_system == 'Windows'" },
     { name = "rich" },
     { name = "shellingham" },
 ]

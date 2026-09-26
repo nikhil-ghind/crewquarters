@@ -206,6 +206,21 @@ For the caller, make a Google Sheet with a `Contacts` tab (columns `name`, `phon
 caller its spreadsheet ID. Consent must be `yes`, `true` or `consented`. Results are written to
 the same row numbers as the contacts ([agents/caller/README.md](../../agents/caller/README.md)).
 
+### GitHub (PR Reviewer)
+
+The PR Reviewer works out of the box in the fake demo against three made-up pull requests. To
+review a real repository, give the broker a token and go live:
+
+```bash
+CQ_PROVIDER_MODE=live
+CQ_GITHUB_TOKEN=$(gh auth token)      # or a fine-grained token: Pull requests read and write
+```
+
+Then install **PR Reviewer**, set `repo` to `owner/name`, and run it. It starts as a dry run and
+shows its findings without posting anything. Turn on `postComments` to have it post one
+comment-only review per pull request; it never approves or requests changes, and it skips a
+commit it has already reviewed ([agents/pr_reviewer/README.md](../../agents/pr_reviewer/README.md)).
+
 ### Twilio
 
 - A **trial account** can call only **verified caller IDs**. Verify each recipient in the Twilio

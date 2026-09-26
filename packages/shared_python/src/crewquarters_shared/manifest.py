@@ -71,6 +71,10 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     spec["resources"].setdefault("pids", 256)
     spec["permissions"]["connectors"].setdefault("google", [])
     spec["permissions"]["connectors"].setdefault("twilio", [])
+    spec["permissions"]["connectors"].setdefault("github", [])
+    spec["permissions"].setdefault("startsAgents", [])
+    if normalized["metadata"]["id"] in spec["permissions"]["startsAgents"]:
+        raise invalid("INVALID_MANIFEST", "An agent cannot list itself in startsAgents.")
     config_schema = spec.setdefault(
         "configurationSchema", {"type": "object", "properties": {}, "additionalProperties": False}
     )

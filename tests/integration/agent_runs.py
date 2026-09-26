@@ -14,7 +14,11 @@ from crewquarters_fake.launcher import LaunchHandle, ProcessLauncher
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "fixtures" / "scenarios"
-AGENTS = {"gmail_digest": REPO / "agents" / "gmail_digest", "caller": REPO / "agents" / "caller"}
+AGENTS = {
+    "gmail_digest": REPO / "agents" / "gmail_digest",
+    "caller": REPO / "agents" / "caller",
+    "pr_reviewer": REPO / "agents" / "pr_reviewer",
+}
 
 
 def prepare(

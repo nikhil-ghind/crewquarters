@@ -11,6 +11,7 @@ import { errorEnvelope, server } from '../test/server';
 import { CallerResult, parseCaller } from './activity/results/CallerResult';
 import { GmailDigestResult, parseDigest } from './activity/results/GmailDigestResult';
 import { PersonalSpaceResult, parsePersonalSpace } from './activity/results/PersonalSpaceResult';
+import { PrReviewResult, parsePrReview } from './activity/results/PrReviewResult';
 import { ResultView } from './activity/results/ResultView';
 import { eventEntry } from './activity/RunDetailPage';
 import LoginPage, { safeNext } from './auth/LoginPage';
@@ -300,5 +301,60 @@ describe('cloud key status', () => {
     expect(profileStatus({ ...base, status: 'CONNECTED' }).label).toBe('Connected');
     expect(profileStatus({ ...base, status: 'UNTESTED' }).label).toBe('Not tested yet');
     expect(profileStatus({ ...base, status: 'CONNECTED', enabled: false }).label).toBe('Disabled');
+  });
+});
+
+describe('PR review result renderer', () => {
+  const data = parsePrReview({
+    repo: 'acme/shop',
+    dryRun: true,
+    counts: { pulls: 2, reviewed: 1, skipped: 1, findings: 1, bugs: 1, style: 0, posted: 0 },
+    pulls: [
+      {
+        number: 7,
+        title: '<img src=x onerror=alert(1)>',
+        author: 'dev',
+        url: 'https://github.com/acme/shop/pull/7',
+        headSha: 'abc',
+        status: 'reviewed',
+        skipReason: null,
+        filesReviewed: 1,
+        filesSkipped: 0,
+        truncated: false,
+        droppedFindings: 0,
+        posted: false,
+        reviewUrl: null,
+        postNote: null,
+        findings: [{ path: 'a.py', line: 3, category: 'bug', severity: 'high', comment: 'Off by one.', suggestion: null }],
+      },
+      {
+        number: 8,
+        title: 'Elsewhere',
+        author: 'dev',
+        url: 'javascript:alert(1)',
+        headSha: 'def',
+        status: 'skipped',
+        skipReason: 'Already reviewed at this commit',
+      },
+    ],
+  });
+
+  it('shows the dry-run notice, findings as text, and only safe GitHub links', () => {
+    expect(data).not.toBeNull();
+    if (!data) return;
+    const { container } = renderWithProviders(<PrReviewResult data={data} />);
+    expect(screen.getByText('Dry run')).toBeInTheDocument();
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText(/Off by one\./)).toBeInTheDocument();
+    expect(screen.getByText('Skipped: Already reviewed at this commit')).toBeInTheDocument();
+    const links = container.querySelectorAll('a');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute('href', 'https://github.com/acme/shop/pull/7');
+    expect(links[0]).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('rejects a result that is not a PR review', () => {
+    expect(parsePrReview({ rows: [] })).toBeNull();
+    expect(parsePrReview(null)).toBeNull();
   });
 });

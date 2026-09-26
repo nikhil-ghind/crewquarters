@@ -35,6 +35,9 @@ class BrokerSettings(Settings):
     voice_barge_in_ms: int = 300
     # Longer than a cold load of every model the call uses.
     voice_gateway_timeout_seconds: float = 1260.0
+    # A GitHub token for the pull-request connector (CQ_GITHUB_TOKEN). Unset: GitHub is not
+    # connected. In fake provider mode it is ignored and a fake GitHub answers.
+    github_token: SecretStr = SecretStr("")
 
     @property
     def google_redirect_uri(self) -> str:

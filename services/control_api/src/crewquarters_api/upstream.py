@@ -26,6 +26,7 @@ from crewquarters_shared.errors import PlatformError, not_found
 PROVIDERS = {
     "google": "Google",
     "twilio": "Twilio",
+    "github": "GitHub",
     "openai": "OpenAI",
     "anthropic": "Anthropic",
 }

@@ -74,15 +74,50 @@ class Harness:
         self.settings = settings
         self.google = fakes.FakeGoogle(extra_messages=0)
         self.twilio = fakes.FakeTwilio()
+        self.github = fakes.FakeGitHub()
         self.run: dict[str, Any] = {}
         self.knowledge_requests: list[dict[str, Any]] = []
+        self.kb_documents: list[dict[str, Any]] = [
+            {
+                "id": "d1",
+                "name": "Policy-Refunds.md",
+                "mime": "text/markdown",
+                "bytes": 120,
+                "state": "READY",
+                "createdAt": "2026-09-01T00:00:00Z",
+            },
+            {
+                "id": "d2",
+                "name": "policy-shipping.md",
+                "mime": "text/markdown",
+                "bytes": 80,
+                "state": "READY",
+                "createdAt": "2026-09-02T00:00:00Z",
+            },
+            {
+                "id": "d3",
+                "name": "policy-draft.md",
+                "mime": "text/markdown",
+                "bytes": 10,
+                "state": "FAILED",
+                "createdAt": "2026-09-03T00:00:00Z",
+            },
+            {
+                "id": "d4",
+                "name": "invoice-2026.pdf",
+                "mime": "application/pdf",
+                "bytes": 900,
+                "state": "READY",
+                "createdAt": "2026-09-04T00:00:00Z",
+            },
+        ]
         self.control_requests: list[dict[str, Any]] = []
         self.event_ids: set[str] = set()
         self.gateway_requests: list[httpx.Request] = []
         self.gateway_error: tuple[int, dict[str, Any]] | None = None
         self.app = create_app(
             settings,
-            provider_transport=fakes.transport(self.google, self.twilio),
+            provider_transport=fakes.transport(self.google, self.twilio, self.github),
             control_transport=httpx.MockTransport(self._control),
             knowledge_transport=httpx.MockTransport(self._knowledge),
             gateway_transport=httpx.MockTransport(self._gateway),
@@ -116,6 +151,17 @@ class Harness:
                         "lastSequence": len(self.event_ids),
                     },
                 )
+            if request.url.path.endswith("/agent-runs"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "runId": "child-run-1",
+                        "agentId": body["agentId"],
+                        "installationId": "child-installation-1",
+                        "state": "QUEUED",
+                        "created": True,
+                    },
+                )
             if "/actions/" in request.url.path:
                 key = request.url.path.split("/actions/")[1].split("/")[0]
                 return httpx.Response(200, json={"key": key, "status": "claimed", "result": None})
@@ -125,6 +171,9 @@ class Harness:
         )
 
     def _knowledge(self, request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path.endswith("/documents"):
+            self.knowledge_requests.append({"path": request.url.path, "body": None})
+            return httpx.Response(200, json=self.kb_documents)
         self.knowledge_requests.append(
             {"path": request.url.path, "body": json.loads(request.content)}
         )
@@ -226,8 +275,12 @@ def permissions_for(caps: list[str]) -> dict[str, Any]:
         "connectors": {
             "google": [c.removeprefix("google.") for c in caps if c.startswith("google.")],
             "twilio": [c.removeprefix("twilio.") for c in caps if c.startswith("twilio.")],
+            "github": [c.removeprefix("github.") for c in caps if c.startswith("github.")],
         },
         "cloudProviders": [c.removeprefix("cloud.") for c in caps if c.startswith("cloud.")],
+        "startsAgents": [
+            c.removeprefix("agents.start:") for c in caps if c.startswith("agents.start:")
+        ],
         "userInput": "user_input" in caps,
     }
 

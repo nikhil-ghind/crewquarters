@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         description="http (capability broker) | fake (dev profile only). "
         "Unset: fake in the dev profile, http otherwise.",
     )
-    fake_connections: list[str] = ["google", "twilio", "openai", "anthropic"]
+    fake_connections: list[str] = ["google", "twilio", "github", "openai", "anthropic"]
 
     broker_url: str = "http://capability-broker:8000"
     knowledge_url: str = "http://knowledge:8000"
@@ -89,6 +89,14 @@ class Settings(BaseSettings):
     exit_watch_interval_seconds: float = 2.0
     scheduler_metrics_host: str = "127.0.0.1"
     scheduler_metrics_port: int = 9101
+
+    # --- Agents starting agents (docs/agent-chaining.md) ---
+    # Kill switch: false refuses every agent-started run, whatever the owner approved.
+    agent_starts_enabled: bool = True
+    # How many agents deep a chain may go (a manual run is depth 0; its child is 1).
+    agent_chain_max_depth: int = Field(3, ge=1, le=10)
+    # How many runs one run may start.
+    agent_starts_per_run: int = Field(5, ge=1, le=50)
 
     # --- Operations: backup, restore, diagnostics (docs/runbooks/backup-restore.md) ---
     # Release shown in backups and diagnostics; the appliance sets it from CQ_VERSION.

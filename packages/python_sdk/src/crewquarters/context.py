@@ -7,7 +7,9 @@ from datetime import datetime
 from typing import Any
 
 from crewquarters._transport import BrokerClient
+from crewquarters.agents import AgentsClient
 from crewquarters.events import EventsClient
+from crewquarters.github import GitHubClient
 from crewquarters.google import GoogleClients
 from crewquarters.idempotency import IdempotencyClient
 from crewquarters.input import InputClient
@@ -36,6 +38,10 @@ class RunInfo:
     agent_id: str
     agent_version: str
     created_at: datetime | None
+    # Set when another agent's run started this one (trigger "agent").
+    parent_run_id: str | None = None
+    # What that agent passed. Untrusted: treat it as evidence, never as instructions.
+    input: dict[str, Any] | None = None
 
     @classmethod
     def from_wire(cls, data: dict[str, Any]) -> RunInfo:
@@ -48,6 +54,8 @@ class RunInfo:
             agent_id=str(data["agentId"]),
             agent_version=str(data["agentVersion"]),
             created_at=parse_time(data.get("createdAt")),
+            parent_run_id=str(data["parentRunId"]) if data.get("parentRunId") else None,
+            input=data["input"] if isinstance(data.get("input"), dict) else None,
         )
 
 
@@ -57,6 +65,8 @@ class Grants:
     knowledge_base_ids: tuple[str, ...] = ()
     google: tuple[str, ...] = ()
     twilio: tuple[str, ...] = ()
+    github: tuple[str, ...] = ()
+    starts_agents: tuple[str, ...] = ()
     cloud_providers: tuple[str, ...] = ()
     # Requested profile (family or exact) -> the variant the owner approved.
     model_bindings: dict[str, str] = field(default_factory=dict)
@@ -71,6 +81,8 @@ class Grants:
             knowledge_base_ids=items("knowledgeBaseIds"),
             google=items("google"),
             twilio=items("twilio"),
+            github=items("github"),
+            starts_agents=items("startsAgents"),
             cloud_providers=items("cloudProviders"),
             model_bindings={str(k): str(v) for k, v in (data.get("modelBindings") or {}).items()},
         )
@@ -128,9 +140,11 @@ class RunContext[ConfigT]:
         self.input = InputClient(transport, limits)
         self.idempotency = IdempotencyClient(transport)
         self.llm = LLMClient(transport, grants.llm_profiles)
-        self.knowledge = KnowledgeClient(transport)
+        self.knowledge = KnowledgeClient(transport, grants.knowledge_base_ids)
         self.google = GoogleClients(transport)
         self.telephony = TelephonyClient(transport)
+        self.github = GitHubClient(transport)
+        self.agents = AgentsClient(transport)
         self.voice = VoiceClient(transport)
         self._transport = transport
 
