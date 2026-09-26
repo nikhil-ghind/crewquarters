@@ -1,0 +1,24 @@
+name: personal-space-research
+timezone: UTC
+knowledge:
+  kb-research: knowledge
+llm:
+  rules:
+    - name: follow-up-queries
+      match: {schemaTitle: Expansion}
+      respond: {json: {queries: ["training cost estimates", "sparse attention"]}}
+    - name: research-brief
+      match: {schemaTitle: SpaceBrief}
+      respond:
+        json:
+          domain: Research library
+          summary: A reading list on attention and scaling laws, with a literature review coming up.
+          themes:
+            - {title: Scaling laws, summary: Loss falls predictably with compute., citations: [p1]}
+            - {title: Attention at long context, summary: Whether attention cost dominates is still open., citations: [p2]}
+          highlights:
+            - title: Compare training cost estimates
+              whyItMatters: It answers what you asked about scaling and cost, and feeds the literature review.
+              nextStep: Read the cost estimates next.
+              citations: [p1, p3]
+          exploreNext: ["Does sparse attention change the scaling picture?"]

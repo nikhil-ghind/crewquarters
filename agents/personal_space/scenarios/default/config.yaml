@@ -1,0 +1,4 @@
+knowledgeBaseId: kb-notes
+# The fake platform ranks with BM25 (scores are not cosine similarities), so nothing is cut off.
+minRelevance: 0
+minEvidencePassages: 3

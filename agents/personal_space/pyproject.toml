@@ -1,0 +1,16 @@
+[project]
+name = "crewquarters-agent-personal-space"
+version = "0.1.0"
+description = "Personal Space agent: a cited, personalized brief built from the owner's own knowledge base"
+requires-python = ">=3.12"
+dependencies = ["crewquarters-sdk", "tzdata>=2024.1"]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/personal_space"]
+
+[tool.uv.sources]
+crewquarters-sdk = { workspace = true }

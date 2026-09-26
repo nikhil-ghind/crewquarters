@@ -1,0 +1,5 @@
+knowledgeBaseId: kb-research
+intent: Understand how model scaling affects training cost
+askForIntent: false
+minRelevance: 0
+minEvidencePassages: 3

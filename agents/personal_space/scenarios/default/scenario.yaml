@@ -1,0 +1,32 @@
+name: personal-space-default
+timezone: UTC
+knowledge:
+  kb-notes: knowledge
+llm:
+  rules:
+    - name: follow-up-queries
+      match: {schemaTitle: Expansion}
+      respond: {json: {queries: ["dashboard alerts page", "marathon training plan"]}}
+    - name: personal-brief
+      match: {schemaTitle: SpaceBrief}
+      respond:
+        json:
+          domain: Personal notes
+          summary: Your notes cover yearly goals, a home-lab dashboard project, and a weekly routine.
+          themes:
+            - {title: Goals and priorities, summary: Health first, then the side project, then reading., citations: [p1, p2]}
+            - {title: Projects and deadlines, summary: The dashboard demo is the nearest commitment., citations: [p3]}
+          highlights:
+            - title: Dashboard demo is due soon
+              whyItMatters: It is the nearest deadline in your notes.
+              nextStep: Finish the alerts page.
+              citations: [p1, p3]
+            - title: Invented item that cites nothing it was shown
+              whyItMatters: This one must be dropped by the agent.
+              nextStep: null
+              citations: [p99]
+          exploreNext: ["What is left on the dashboard?"]
+inputs:
+  autoAnswers:
+    - keyPattern: "space-intent-*"
+      value: {intent: "Plan my week around my goals"}

@@ -1,0 +1,158 @@
+apiVersion: crewquarters/v1alpha1
+kind: Agent
+metadata:
+  id: personal-space
+  name: Personal Space
+  version: 0.1.0
+  summary: A cited, personalized brief built from your own knowledge base.
+  description: Explores the knowledge base you choose, works out what it holds, and writes a brief around what you want from it. Every item cites your own documents, and nothing leaves the device.
+  publisher: Crewquarters
+spec:
+  # `crewctl build --push` pins this to the pushed digest.
+  image: localhost:5001/crewquarters/personal-space@sha256:REQUIRED_DIGEST
+  entrypoint: ["python", "-m", "personal_space"]
+  architectures: ["linux/amd64", "linux/arm64"]
+  triggers: ["manual", "schedule"]
+  permissions:
+    llmProfiles: ["local.general"]
+    # "config": the knowledge base selected in the installation config (knowledgeBaseId).
+    knowledge: ["config"]
+    connectors: {}
+    cloudProviders: []
+    userInput: true
+  resources:
+    cpu: 1
+    memoryMb: 512
+    activeTimeoutSeconds: 1800
+    maxInputWaitSeconds: 3600
+  configurationSchema:
+    type: object
+    required: [knowledgeBaseId]
+    properties:
+      knowledgeBaseId:
+        type: string
+        title: Knowledge base
+        description: The knowledge base this space is built from.
+        x-crewquarters-widget: knowledgeBase
+      intent:
+        type: [string, "null"]
+        maxLength: 500
+        title: What do you want from your space?
+        description: Optional. A sentence about what you are working on or looking for. Leave empty to be asked at run time.
+        x-crewquarters-widget: textarea
+        default: null
+      askForIntent:
+        type: boolean
+        default: true
+        description: When no intent is set, ask a question in Crew Requests before building the brief.
+      timezone:
+        type: string
+        default: UTC
+        description: IANA timezone that defines "today", for example Asia/Kolkata.
+        x-crewquarters-widget: timezone
+      modelProfile:
+        type: string
+        default: local.general.small
+        x-crewquarters-widget: modelProfile
+      minRelevance:
+        type: number
+        minimum: 0
+        maximum: 1000
+        default: 0.3
+        description: Passages scoring below this similarity are ignored.
+        x-crewquarters-group: Advanced
+      minEvidencePassages:
+        type: integer
+        minimum: 1
+        maximum: 20
+        default: 3
+        description: Fewer relevant passages than this gives a "not enough context" result.
+        x-crewquarters-group: Advanced
+      intentWaitSeconds:
+        type: integer
+        minimum: 5
+        maximum: 3600
+        default: 300
+        x-crewquarters-group: Advanced
+      topK:
+        type: integer
+        minimum: 1
+        maximum: 20
+        default: 6
+        x-crewquarters-group: Advanced
+      maxQueries:
+        type: integer
+        minimum: 2
+        maximum: 30
+        default: 12
+        x-crewquarters-group: Advanced
+      maxPassages:
+        type: integer
+        minimum: 5
+        maximum: 80
+        default: 40
+        x-crewquarters-group: Advanced
+      maxPromptChars:
+        type: integer
+        minimum: 2000
+        maximum: 40000
+        default: 12000
+        x-crewquarters-group: Advanced
+  resultSchema:
+    x-crewquarters-renderer: crewquarters.personal-space/v1
+    type: object
+    required: [status, domain, intent, summary, generatedAt, degraded, themes, highlights, exploreNext, suggestedAdditions, sources, stats, model]
+    properties:
+      status: {enum: [ready, insufficient_context]}
+      domain: {type: [string, "null"]}
+      intent: {type: [string, "null"]}
+      summary: {type: string}
+      generatedAt: {type: string}
+      degraded: {type: boolean}
+      themes:
+        type: array
+        items:
+          type: object
+          required: [title, summary, citations]
+          properties:
+            title: {type: string}
+            summary: {type: string}
+            citations: {type: array, items: {type: string}}
+      highlights:
+        type: array
+        items:
+          type: object
+          required: [title, whyItMatters, nextStep, citations]
+          properties:
+            title: {type: string}
+            whyItMatters: {type: string}
+            nextStep: {type: [string, "null"]}
+            citations: {type: array, items: {type: string}}
+      exploreNext: {type: array, items: {type: string}}
+      suggestedAdditions: {type: array, items: {type: string}}
+      sources:
+        type: array
+        items:
+          type: object
+          required: [citationId, documentName, locator, score]
+          properties:
+            citationId: {type: string}
+            documentName: {type: string}
+            locator: {type: object}
+            score: {type: number}
+      stats:
+        type: object
+        required: [queriesRun, passagesConsidered, passagesUsed, documentsSeen]
+        properties:
+          queriesRun: {type: integer, minimum: 0}
+          passagesConsidered: {type: integer, minimum: 0}
+          passagesUsed: {type: integer, minimum: 0}
+          documentsSeen: {type: integer, minimum: 0}
+      model:
+        type: object
+        required: [profile]
+        properties:
+          profile: {type: string}
+          provider: {type: [string, "null"]}
+          model: {type: [string, "null"]}
+          locality: {type: [string, "null"]}

@@ -1,0 +1,19 @@
+name: personal-space-injection
+timezone: UTC
+knowledge:
+  kb-injected: knowledge
+llm:
+  rules:
+    - name: follow-up-queries
+      match: {schemaTitle: Expansion}
+      respond: {json: {queries: []}}
+    - name: brief
+      match: {schemaTitle: SpaceBrief}
+      respond:
+        json:
+          domain: Work notes
+          summary: Notes about a report that is due soon.
+          themes:
+            - {title: The report, summary: The report is the main goal., citations: [p1]}
+          highlights: []
+          exploreNext: []

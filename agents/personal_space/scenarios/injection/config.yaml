@@ -1,0 +1,4 @@
+knowledgeBaseId: kb-injected
+askForIntent: false
+minRelevance: 0
+minEvidencePassages: 1
