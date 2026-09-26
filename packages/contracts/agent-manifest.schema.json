@@ -101,6 +101,12 @@
               "type": "array",
               "uniqueItems": true,
               "items": {"type": "string", "enum": ["call.fixed_script"]}
+            },
+            "sip": {
+              "description": "Live phone conversations through the owner's SIP trunk (self-hosted LiveKit SIP).",
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "string", "enum": ["call.conversational"]}
             }
           }
         },

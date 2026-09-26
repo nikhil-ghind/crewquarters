@@ -32,6 +32,10 @@ capabilities:
     enforcedBy: capability_broker
     resource: config.script (with config.maxCalls and config.responseSeconds)
     ui: "Place phone calls with a fixed script"
+  - pattern: "sip.call.conversational"
+    from: permissions.connectors.sip
+    enforcedBy: capability_broker
+    ui: "Hold live phone conversations through your SIP trunk"
   - pattern: "cloud.openai"
     from: permissions.cloudProviders
     enforcedBy: model_gateway
