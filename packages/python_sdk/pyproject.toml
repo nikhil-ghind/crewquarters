@@ -2,6 +2,7 @@
 name = "crewquarters-sdk"
 version = "0.1.0"
 description = "Crewquarters agent SDK (protocol v1alpha1): RunContext, events, input, LLM, knowledge, Google, telephony, idempotency"
+license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = ["httpx>=0.27", "pydantic>=2.7"]
 

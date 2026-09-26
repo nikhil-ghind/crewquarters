@@ -1,12 +1,19 @@
 /*
  * Crewquarters semantic design tokens (PLAN.md section 13.14).
  *
- * The values in the "Core tokens" block are copied verbatim from the plan. Do not add
- * colors: every component uses these variables. Pale semantic backgrounds are computed
- * from the core tokens with color-mix; the mix ratios were chosen so each semantic text
- * color keeps a WCAG 2.2 AA contrast ratio (>= 4.5:1) on its own pale background:
- *   6% tint: primary 5.75, cloud 5.22, success 4.68, warning 5.00, danger 5.96, info 5.48
- *   3% tint: local 4.62 (teal is the lightest token, so its tint is lighter)
+ * "Sky": a light palette for daytime projector demos. Text is near-black and muted text
+ * is dark slate (projectors wash out pale grays), borders are visible, and one brand color
+ * (sky blue #56CBF9) carries every action. The sky blue is too light for text on white
+ * (1.86:1), so it is only a fill with dark text on it (on-primary 9.45:1); links, focus
+ * rings and blue text use primary-strong (5.93 on white). Do not add colors elsewhere:
+ * every component uses these variables. Pale semantic backgrounds are computed with color-mix; each
+ * semantic text color keeps WCAG 2.2 AA contrast (>= 4.5:1) on the page, cards, subtle
+ * panels, and its own pale background:
+ *   14% tint: primary-strong 5.44
+ *   6% tint: cloud 5.21, success 6.52, warning 6.48, danger 5.84, info 6.09
+ *   3% tint: local 5.15
+ *   text 17.5 and muted text 7.8 on cards
+ * The amber accent is decorative only (2.15:1): never use it for text or as the sole cue.
  *
  * v1 ships the light theme only (section 13.14). A dark theme is added by redefining
  * these variables under [data-theme='dark']; no component hard-codes a color.
@@ -16,23 +23,27 @@
  */
 :root {
   /* Core tokens */
-  --color-bg: #f6f8fb;
+  --color-bg: #f5fafd;
   --color-surface: #ffffff;
-  --color-surface-subtle: #eef2f7;
-  --color-text: #172033;
-  --color-text-muted: #5b677a;
-  --color-border: #d7dee8;
-  --color-primary: #4f46e5;
-  --color-primary-hover: #4338ca;
-  --color-local: #087e8b;
+  --color-surface-subtle: #e8f4fb;
+  --color-text: #0b1b24;
+  --color-text-muted: #3f5563;
+  --color-border: #b7cfdc;
+  --color-primary: #56cbf9;
+  --color-primary-hover: #2fb9ee;
+  --color-on-primary: var(--color-text);
+  --color-primary-strong: #0369a1;
+  --color-primary-strong-hover: #075985;
+  --color-accent: #f59e0b;
+  --color-local: #0e7490;
   --color-cloud: #7c3aed;
-  --color-success: #147d64;
-  --color-warning: #9a5b00;
-  --color-danger: #b42318;
-  --color-info: #175cd3;
+  --color-success: #166534;
+  --color-warning: #92400e;
+  --color-danger: #b91c1c;
+  --color-info: #1d4ed8;
 
   /* Pale companions (computed, contrast-validated; see header) */
-  --color-primary-bg: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+  --color-primary-bg: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
   --color-local-bg: color-mix(in srgb, var(--color-local) 3%, var(--color-surface));
   --color-cloud-bg: color-mix(in srgb, var(--color-cloud) 6%, var(--color-surface));
   --color-success-bg: color-mix(in srgb, var(--color-success) 6%, var(--color-surface));
@@ -47,19 +58,20 @@
   --font-ui: InterVariable, Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-  --text-body: 14px;
-  --leading-body: 20px;
-  --text-long: 16px;
-  --leading-long: 24px;
-  --text-title: 28px;
-  --leading-title: 36px;
-  --weight-title: 680;
-  --text-section: 20px;
-  --leading-section: 28px;
-  --weight-section: 600;
-  --text-label: 13px;
-  --weight-label: 560;
-  --text-small: 12px;
+  /* Sized for a projector at the back of a room. */
+  --text-body: 16px;
+  --leading-body: 24px;
+  --text-long: 17px;
+  --leading-long: 26px;
+  --text-title: 30px;
+  --leading-title: 38px;
+  --weight-title: 700;
+  --text-section: 22px;
+  --leading-section: 30px;
+  --weight-section: 650;
+  --text-label: 14px;
+  --weight-label: 600;
+  --text-small: 13px;
 
   /* Spacing (4 px base scale) */
   --space-1: 4px;
@@ -90,7 +102,7 @@
   --motion-slow: 200ms;
 
   /* Focus */
-  --focus-ring: 2px solid var(--color-primary);
+  --focus-ring: 2px solid var(--color-primary-strong);
   --focus-offset: 2px;
 
   /* Layout */

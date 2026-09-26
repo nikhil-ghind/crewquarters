@@ -84,6 +84,7 @@ jobs:
         run: |
           dpkg-deb -c dist/crewquarters_0.1.0_amd64.deb | grep -q usr/share/doc/crewquarters/THIRD_PARTY_LICENSES.md
           dpkg-deb -c dist/crewquarters_0.1.0_amd64.deb | grep -q usr/share/doc/crewquarters/NOTICE
+          dpkg-deb -c dist/crewquarters_0.1.0_amd64.deb | grep -q usr/share/doc/crewquarters/LICENSE
       - name: Secret scan of the built packages (fails on findings)
         run: infra/scripts/scan_secrets.sh dist/*.deb
       - name: Install, reinstall, remove, purge in ubuntu:22.04

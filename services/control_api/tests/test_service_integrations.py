@@ -215,7 +215,9 @@ async def test_google_start_sets_the_binding_cookie_and_the_callback_connects(
     )
     assert resp.status_code == 200, resp.text
     url = httpx.URL(resp.json()["authorizationUrl"])
-    assert url.params["redirect_uri"] == f"{PUBLIC}/api/v1/connections/google/callback"
+    # Fake mode: consent is one click, so the authorization URL is the callback itself
+    # (live mode sends the browser to Google with this redirect_uri).
+    assert str(url.copy_with(query=None)) == f"{PUBLIC}/api/v1/connections/google/callback"
     cookie = resp.headers["set-cookie"]
     assert cookie.startswith("cq_oauth_binding=")
     for attribute in ("HttpOnly", "Path=/api/v1/connections/google", "SameSite=lax", "Max-Age=600"):
@@ -232,7 +234,7 @@ async def test_google_start_sets_the_binding_cookie_and_the_callback_connects(
     ) as edge:
         done = await edge.get(
             "/api/v1/connections/google/callback",
-            params={"state": url.params["state"], "code": "fake-code"},
+            params={"state": url.params["state"], "code": url.params["code"]},
         )
     assert done.headers["location"].endswith("result=connected"), done.headers["location"]
     app.state.cq.broker.invalidate()

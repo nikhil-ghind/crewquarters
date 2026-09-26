@@ -98,7 +98,42 @@ The component gallery uses static fixtures and makes no API calls. It shows ever
   - "Open in Gmail" links are followed only for `https://mail.google.com`.
   - The Google authorization URL is followed only when it is https or same-origin.
 - **No provider SDKs.** ESLint blocks imports from `openai`, `@anthropic-ai/*`, `twilio` and `googleapis`. `check:bundle` greps the build for provider hosts.
-- **No duplicated server logic.** Readiness, permissions matching, model admission and schedule occurrences are shown as the API reports them. Schedule presets only compose a cron string, and `/schedules/preview` computes the occurrences. The browser keeps only preferences and unsaved non-secret drafts: the sidebar state and the install-wizard form.
+- **No duplicated server logic.** Readiness, permissions matching, model admission and schedule occurrences are shown as the API reports them. Schedule presets only compose a cron string, and `/schedules/preview` computes the occurrences. The browser keeps only preferences and unsaved non-secret drafts: the sidebar state, the per-browser notification choice and the install-wizard form.
+
+## Crew Request notifications (section 13.7)
+
+A run in `WAITING_INPUT` gets an amber card, the Activity badge and, optionally, a browser notification. Code: `src/lib/notifications.ts`, `src/shell/useInputRequestAlerts.ts` and `src/features/common/NotificationControls.tsx`.
+
+- **Tab title.** Every signed-in page prefixes `document.title` with `(N) `, where N is the number of pending Crew Requests (`GET /input-requests?state=pending`). There's no prefix at 0. This works in every browser, including over plain HTTP. The Activity badge still counts all attention items (13.2), so it can be higher than N.
+- **Opt-in, per browser.** The switch is in **System › Settings › Browser notifications**. While requests are pending and the browser hasn't been asked yet, Crew Requests also shows a small "Get notified when an agent needs input" prompt with **Notify me** and **Not now**.
+  - `Notification.requestPermission()` runs only from one of those clicks, never on load.
+  - The choice is kept in `localStorage` (`cq.notify.inputRequests`, and `cq.notify.promptDismissed` for **Not now**). Each browser and device has its own setting.
+- **States the Settings card shows:**
+
+  | State | When | What the owner sees |
+  | --- | --- | --- |
+  | Off | Permission not asked yet, or granted but switched off | **Notify me when an agent needs input** |
+  | On | Switched on and permission granted | **Turn off notifications** |
+  | Blocked by the browser | Permission `denied` | How to allow it again: site settings for this address, set Notifications to Allow, come back |
+  | Needs HTTPS | `window.isSecureContext === false`, for example `http://192.168.1.20:8080` | Notifications need HTTPS or localhost. The Activity badge, the title count and Crew Requests still work |
+  | Not supported | No `Notification` API, or the browser refuses `new Notification()` (Chrome on Android and iOS Safari outside a home-screen app only allow service-worker notifications) | The same "still works" note |
+
+- **Detection.** The shell reuses the pending input-request query, the same cache entry as Crew Requests and Overview.
+  - The first result a tab receives seeds its "seen" set, so requests that already existed never notify.
+  - After that, each new request id shows one notification, but only while the tab is hidden or not focused. When the owner is looking at a Crewquarters tab, the badge and title are enough.
+  - Title: "Needs your input". Body: `<agent name>: <request title>` as plain text on one line, cut to 120 characters. Only display fields are used, never the preview, schema or answer. `tag` is the request id.
+  - Clicking a notification focuses the window and opens `/runs/{runId}`, which shows the request's card.
+- **Polling.** With notifications on and the tab in the background, the list is polled every 5 s (`refetchIntervalInBackground`). Otherwise it's polled every 10 s, and TanStack Query pauses polling in hidden tabs. There's no global event stream for input requests: the SSE streams are per run. Browsers may throttle timers in tabs that stay hidden for a long time, for example Chrome limits them to once a minute after 5 minutes.
+- **Several tabs.** Coordination has two layers:
+  - A `BroadcastChannel` (`cq.input-request-notifications`). A tab that notified, or that saw the request in the foreground, tells the others to skip that request.
+  - If two tabs still race, the shared `tag` makes the browser keep a single notification.
+- **Answered elsewhere.** When a request leaves the pending list on the next poll (answered on another device, cancelled or expired), the tab closes the notification it showed, and the card and title count update. A second answer from a device that hasn't polled yet gets `409 INPUT_ALREADY_CLOSED`, and the card says the request was already answered and the answer wasn't sent again.
+
+### Testing on a phone
+
+- **Plain HTTP over the LAN** (`http://<LAN IP>:8080`): this isn't a secure context, so there are no notifications. Settings shows **Needs HTTPS**. The Activity badge, the `(N)` title count and Crew Requests all work, and answering from the phone closes the desktop's notification within one poll.
+- **The appliance's LAN HTTPS mode ([runbooks/lan-https.md](runbooks/lan-https.md)), or `localhost`**: these are secure contexts, so desktop browsers can notify. Phones mostly can't, because the UI registers no service worker. iOS Safari has no `Notification` outside a home-screen app, so it shows **Not supported**. Chrome on Android lets you turn notifications on, but the first notification fails, and from then on Settings shows **Not supported**.
+- **Mock:** `POST /__mock/input-request` creates a caller run waiting on a new pending Crew Request. `e2e/notifications.spec.ts` drives a desktop and an iPhone 13 context with it.
 
 ## Design tokens and vocabulary
 
@@ -173,6 +208,7 @@ There are no inline scripts and no source maps. The UI must be served from the *
   - SSE de-duplication, reconnect and bounded polling;
   - the component library;
   - the Crew Request card, including double answers;
+  - Crew Request notifications, with a fake `Notification`: permission states, a non-secure context, seeding, one notification per new request, closing on disappearance, the title count, and the Settings and Crew Requests controls;
   - the Gmail digest and caller renderers, and escaping;
   - sign-in and the redirect after it;
   - the bundle check.
@@ -182,6 +218,7 @@ There are no inline scripts and no source maps. The UI must be served from the *
   - model cold start;
   - RAG chat with citations;
   - SSE reconnect and polling;
+  - Crew Request notifications on two devices, desktop and iPhone 13: the notification, the badge and title, answering from the phone, and the desktop's refused second answer;
   - the expired-OAuth reconnect;
   - degraded and offline states, session expiry and reapproval;
   - axe on every main route, with no serious or critical violations;

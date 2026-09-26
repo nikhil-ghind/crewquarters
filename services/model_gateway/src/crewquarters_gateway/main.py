@@ -16,6 +16,15 @@ Routes (``/internal/v1``, service credential required; never routed by the proxy
     DELETE /leases/holders/{type}/{id} release a holder's leases
     POST   /llm/chat                   normalized request; "stream": true -> SSE;
                                        "idempotencyKey" -> replayed for duplicates
+    POST   /audio/transcriptions       raw audio body; ?modelId=&filename=&language=
+                                       [&holderId=]; whole-file speech-to-text
+    POST   /audio/speech               {"modelId", "input", "voice"[, "holderId"]} -> WAV
+    WS     /audio/speech/stream        ?modelId=&voice=[&holderId=]; streaming speech:
+                                       text in ({"type": "text"|"end"|"cancel"}), PCM out
+
+The audio routes, local chat and chat leases need a second credential besides the service
+token: the control API's chat token (owner requests) or the capability broker's voice token
+(a phone call's realtime loop; ``holderId`` names the call and its leases).
     POST   /provider-profiles/{id}/test  check a stored OpenAI/Anthropic key
     GET    /metrics                    Prometheus text
 
@@ -31,6 +40,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import socket
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -38,8 +48,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi import Depends, FastAPI, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 from sqlalchemy import text
 from starlette.datastructures import Headers, MutableHeaders
@@ -47,11 +57,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from crewquarters_gateway import catalog, credentials
+from crewquarters_gateway.adapters import SpeechRequest, SpeechStream, TranscriptionRequest
 from crewquarters_gateway.config import GatewaySettings, get_gateway_settings
 from crewquarters_gateway.control import ControlApiClient
 from crewquarters_gateway.credentials import CloudProfile, CredentialProvider
 from crewquarters_gateway.idempotency import IdempotencyStore, request_key
-from crewquarters_gateway.inference import InferenceService
+from crewquarters_gateway.inference import Caller, InferenceService
 from crewquarters_gateway.manager import JOB_LOAD, JOB_UNLOAD, ModelManager
 from crewquarters_gateway.runtime import DaemonModelRuntime, InProcessModelRuntime, ModelRuntime
 from crewquarters_secret_store.db import ProviderProfile
@@ -64,6 +75,8 @@ from crewquarters_shared.metrics import CONTENT_TYPE
 
 log = logging.getLogger("crewquarters.gateway")
 PREFIX = "/internal/v1"
+LANGUAGE = re.compile(r"[a-z]{2}")
+MAX_SPEECH_CHARS = 1000
 LEADER_LOCK_KEY = 0x4351474D  # "CQGM"
 
 
@@ -367,15 +380,43 @@ def create_app(gateway: Gateway | None = None, *, background: bool = True) -> Fa
     async def chat_client_auth(request: Request) -> None:
         """Chat leases and chat inference are reserved for the control API, which holds a
         separate credential; other services (broker, daemon) share only the service token."""
-        sent = request.headers.get("x-chat-client-token", "")
-        expected = gw.shared.chat_client_token.get_secret_value()
-        if not sent or not hmac.compare_digest(sent.encode(), expected.encode()):
+        if _client_kind(request.headers) != "chat":
             raise PlatformError(
                 "UNAUTHENTICATED", "Chat requests must come from the control API.", 401
             )
 
+    def _client_kind(headers: Headers) -> str | None:
+        """Which second credential the caller holds: "chat" (control API), "voice"
+        (capability broker), or None."""
+        for kind, header, secret in (
+            ("chat", "x-chat-client-token", gw.shared.chat_client_token),
+            ("voice", "x-voice-client-token", gw.shared.voice_client_token),
+        ):
+            sent = headers.get(header, "")
+            if sent and hmac.compare_digest(sent.encode(), secret.get_secret_value().encode()):
+                return kind
+        return None
+
+    async def client_auth(request: Request) -> None:
+        kind = _client_kind(request.headers)
+        if kind is None:
+            raise PlatformError(
+                "UNAUTHENTICATED",
+                "Audio requests must come from the control API or the capability broker.",
+                401,
+            )
+        request.state.client = kind
+
+    def _audio_caller(request: Request, kind: str, holder_id: str | None) -> Caller:
+        if request.state.client == "voice":
+            if not holder_id:
+                raise invalid("HOLDER_REQUIRED", "Voice requests must name their call (holderId).")
+            return gw.inference.voice_caller(holder_id)
+        return gw.inference.owner_caller(kind, request.headers.get("x-actor-id"))
+
     auth = [Depends(service_auth)]
     chat_auth = [Depends(service_auth), Depends(chat_client_auth)]
+    audio_auth = [Depends(service_auth), Depends(client_auth)]
 
     @app.get(f"{PREFIX}/health")
     async def health() -> dict[str, str]:
@@ -464,8 +505,13 @@ def create_app(gateway: Gateway | None = None, *, background: bool = True) -> Fa
             "expiresAt": lease.expires_at.isoformat(),
         }
 
-    @app.delete(f"{PREFIX}/leases/holders/{{holder_type}}/{{holder_id}}", dependencies=chat_auth)
-    async def release_holder(holder_type: str, holder_id: str) -> dict[str, int]:
+    @app.delete(f"{PREFIX}/leases/holders/{{holder_type}}/{{holder_id}}", dependencies=audio_auth)
+    async def release_holder(request: Request, holder_type: str, holder_id: str) -> dict[str, int]:
+        # The broker may release only its own voice-call leases.
+        if request.state.client == "voice" and not (
+            holder_type == "manual" and holder_id.startswith("voice:")
+        ):
+            raise PlatformError("PERMISSION_DENIED", "Only voice-call leases.", 403)
         return {"released": await gw.manager.release_holder(holder_type, holder_id, "released")}
 
     @app.post(f"{PREFIX}/llm/chat", dependencies=auth, response_model=None)
@@ -474,11 +520,19 @@ def create_app(gateway: Gateway | None = None, *, background: bool = True) -> Fa
         if "x-capability-token" in request.headers:  # present (even empty) => a run caller
             caller = await gw.inference.run_caller(request.headers["x-capability-token"])
         else:
-            await chat_client_auth(request)
+            kind = _client_kind(request.headers)
             holder = body.get("holder") or {}
-            if holder.get("type") != "chat" or not holder.get("id"):
-                raise PlatformError("UNAUTHENTICATED", "Runs must present a capability token.", 401)
-            caller = gw.inference.chat_caller(str(holder["id"]), str(holder.get("label") or "Chat"))
+            if kind == "voice" and holder.get("type") == "voice" and holder.get("id"):
+                caller = gw.inference.voice_caller(str(holder["id"]))
+            else:
+                await chat_client_auth(request)
+                if holder.get("type") != "chat" or not holder.get("id"):
+                    raise PlatformError(
+                        "UNAUTHENTICATED", "Runs must present a capability token.", 401
+                    )
+                caller = gw.inference.chat_caller(
+                    str(holder["id"]), str(holder.get("label") or "Chat")
+                )
         rid = _request_id(request)
         key = request_key(caller.holder_type, caller.holder_id, body)
         if not body.get("stream"):
@@ -516,6 +570,106 @@ def create_app(gateway: Gateway | None = None, *, background: bool = True) -> Fa
         return StreamingResponse(
             events(), media_type="text/event-stream", headers={"Cache-Control": "no-store"}
         )
+
+    @app.post(f"{PREFIX}/audio/transcriptions", dependencies=audio_auth)
+    async def audio_transcriptions(
+        request: Request,
+        model_id: str = Query(alias="modelId"),
+        filename: str = "audio",
+        language: str | None = None,
+        holder_id: str | None = Query(None, alias="holderId"),
+    ) -> dict[str, Any]:
+        audio = await request.body()
+        if not audio:
+            raise invalid("EMPTY_AUDIO", "The request body must contain the audio file.")
+        if len(audio) > gw.settings.max_audio_bytes:
+            raise PlatformError(
+                "PAYLOAD_TOO_LARGE",
+                "The audio file is too large.",
+                413,
+                {"maxBytes": gw.settings.max_audio_bytes},
+            )
+        if language is not None and not LANGUAGE.fullmatch(language):
+            raise invalid("INVALID_LANGUAGE", "language must be an ISO 639-1 code such as 'en'.")
+        transcription = TranscriptionRequest(
+            audio=audio,
+            filename=filename[:200] or "audio",
+            content_type=request.headers.get("content-type") or "application/octet-stream",
+            language=language,
+        )
+        caller = _audio_caller(request, "transcription", holder_id)
+        started = asyncio.get_running_loop().time()
+        response = await gw.inference.transcribe(model_id, transcription, caller)
+        gw.metrics.requests.labels("local", "ok").inc()
+        gw.metrics.latency.labels("local").observe(asyncio.get_running_loop().time() - started)
+        return _with_request_id(response, _request_id(request))
+
+    @app.post(f"{PREFIX}/audio/speech", dependencies=audio_auth, response_model=None)
+    async def audio_speech(request: Request) -> Response:
+        body = await _json(request)
+        text = str(body.get("input") or "").strip()
+        if not text or len(text) > MAX_SPEECH_CHARS:
+            raise invalid("INVALID_INPUT", f"input must be 1-{MAX_SPEECH_CHARS} characters.")
+        caller = _audio_caller(request, "speech", body.get("holderId"))
+        result = await gw.inference.speak(
+            str(body.get("modelId") or ""),
+            SpeechRequest(text=text, voice=str(body.get("voice") or "female")),
+            caller,
+        )
+        gw.metrics.requests.labels("local", "ok").inc()
+        gw.metrics.latency.labels("local").observe(result.latency_ms / 1000)
+        return Response(
+            result.wav,
+            media_type="audio/wav",
+            headers={
+                "X-Audio-Seconds": str(result.audio_seconds),
+                "X-Latency-Ms": str(result.latency_ms),
+                "X-Request-Id": _request_id(request),
+            },
+        )
+
+    @app.websocket(f"{PREFIX}/audio/speech/stream")
+    async def audio_speech_stream(
+        ws: WebSocket,
+        model_id: str = Query(alias="modelId"),
+        voice: str = "female",
+        holder_id: str | None = Query(None, alias="holderId"),
+    ) -> None:
+        """Proxy a streaming synthesis between the client and the model container, holding
+        the caller's lease for its duration. Errors before audio are sent as
+        {"type": "error", "error": {...}} before the socket closes."""
+        scheme, _, value = ws.headers.get("authorization", "").partition(" ")
+        expected = gw.shared.internal_service_token.get_secret_value()
+        kind = _client_kind(ws.headers)
+        if (
+            scheme.lower() != "bearer"
+            or not hmac.compare_digest(value.encode(), expected.encode())
+            or kind is None
+        ):
+            await ws.close(code=4401)
+            return
+        await ws.accept()
+        try:
+            if kind == "voice":
+                if not holder_id:
+                    raise invalid("HOLDER_REQUIRED", "Voice requests must name their call.")
+                caller = gw.inference.voice_caller(holder_id)
+            else:
+                caller = gw.inference.owner_caller("speech", ws.headers.get("x-actor-id"))
+            async with gw.inference.speech_stream(model_id, voice, caller) as stream:
+                await _pump_speech(ws, stream)
+        except PlatformError as exc:
+            with contextlib.suppress(Exception):
+                await ws.send_json(
+                    {
+                        "type": "error",
+                        "error": {"code": exc.code, "message": exc.message, "details": exc.details},
+                    }
+                )
+        except WebSocketDisconnect:
+            return
+        with contextlib.suppress(Exception):
+            await ws.close()
 
     @app.post(f"{PREFIX}/provider-profiles/{{profile_id}}/test", dependencies=auth)
     async def test_provider_profile(profile_id: str) -> dict[str, Any]:
@@ -586,6 +740,37 @@ def _observe(gw: Gateway, response: dict[str, Any]) -> None:
     usage = response.get("usage") or {}
     gw.metrics.tokens.labels(provider, "input").inc(usage.get("inputTokens", 0))
     gw.metrics.tokens.labels(provider, "output").inc(usage.get("outputTokens", 0))
+
+
+async def _pump_speech(ws: WebSocket, stream: SpeechStream) -> None:
+    """Client text -> model; model audio and events -> client, until the model is done."""
+
+    async def upstream() -> None:
+        try:
+            while True:
+                message = await ws.receive_json()
+                kind = message.get("type") if isinstance(message, dict) else None
+                if kind == "text":
+                    await stream.send_text(str(message.get("text") or ""))
+                elif kind == "end":
+                    await stream.end()
+                elif kind == "cancel":
+                    await stream.cancel()
+                    return
+        except (WebSocketDisconnect, RuntimeError, ValueError):
+            await stream.cancel()
+
+    reader = asyncio.create_task(upstream())
+    try:
+        async for event in stream.events():
+            if isinstance(event, bytes):
+                await ws.send_bytes(event)
+            else:
+                await ws.send_json(event)
+    finally:
+        reader.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await reader
 
 
 async def _json(request: Request) -> dict[str, Any]:

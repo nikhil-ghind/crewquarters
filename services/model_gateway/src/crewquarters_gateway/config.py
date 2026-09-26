@@ -41,6 +41,8 @@ class GatewaySettings(BaseSettings):
     run_lease_ttl_seconds: int = 300
     chat_lease_ttl_seconds: int = 12 * 3600
     manual_lease_ttl_seconds: int = 3600
+    # A voice call renews its leases on every use; this bounds a call the broker lost.
+    voice_lease_ttl_seconds: int = 600
     # Timeout chain (docs/model-gateway.md, "Timeouts"): a request may wait up to
     # wait_ready_seconds for a cold model and then request_timeout_seconds for the reply.
     # The broker (crewquarters_broker.main.GATEWAY_TIMEOUT_SECONDS) and the SDK
@@ -48,6 +50,9 @@ class GatewaySettings(BaseSettings):
     wait_ready_seconds: int = 900  # matches the dgx catalog startupTimeoutSeconds
 
     max_output_tokens: int = 8192
+    # Whole-file transcription uploads (POST /audio/transcriptions); matches the control
+    # API's CQ_MAX_UPLOAD_BYTES default.
+    max_audio_bytes: int = 25 * 1024 * 1024
     per_run_token_limit: int = 200_000
     daily_cloud_token_budget: int = 0  # 0 disables the daily budget
     request_timeout_seconds: float = 300.0

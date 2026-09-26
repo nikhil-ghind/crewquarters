@@ -2,6 +2,7 @@
 name = "crewquarters-crewctl"
 version = "0.1.0"
 description = "crewctl: scaffold, validate, test, build, and locally publish Crewquarters agents"
+license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
     "crewquarters-shared",

@@ -42,7 +42,7 @@ async def test_requires_service_token(gw_client: httpx.AsyncClient) -> None:
 
 async def test_catalog_lists_pinned_profiles(gw_client: httpx.AsyncClient) -> None:
     models = (await gw_client.get("/internal/v1/models")).json()
-    assert [m["id"] for m in models] == [QUALITY, SMALL]
+    assert [m["id"] for m in models] == ["local.asr.r2t2", QUALITY, SMALL, "local.tts.voxtream"]
     small = next(m for m in models if m["id"] == SMALL)
     assert small["downloadState"] == "NOT_INSTALLED" and small["memoryState"] == "NOT_LOADED"
     assert small["expectedMemoryBytes"] == 2 * GiB and small["validation"] == "mock"

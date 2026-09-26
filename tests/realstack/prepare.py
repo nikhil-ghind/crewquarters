@@ -3,7 +3,9 @@
     uv run python tests/realstack/prepare.py --registry localhost:15001
     uv run python tests/realstack/prepare.py --registry localhost:5001 --out .demo --no-test-variants
 
-The second form is ``make demo-up`` (the developer's own stack): no test-only entries.
+The second form is ``make demo-up`` (the developer's own stack): no test-only entries, and
+no bundled entries whose image digest is a placeholder (``hello-crew``, which only the fake
+runtime can "run"), since the real runtime daemon would fail to pull them.
 
 1. ``crewctl build --push`` for each agent in agents/ (host architecture), pinning the
    pushed digest into tests/realstack/.generated/manifests/<agent>.yaml. Committed manifests
@@ -84,6 +86,15 @@ def variants(probe: dict[str, Any]) -> list[dict[str, Any]]:
     return [oom, crash]
 
 
+def placeholder_image(image: str) -> bool:
+    """True for an image reference that was never pushed: no ``@sha256:`` digest, a
+    non-hex one such as ``REQUIRED_DIGEST``, or an all-zero-ish one such as ``000...01``."""
+    _, sep, digest = image.partition("@sha256:")
+    if not sep or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        return True
+    return len(set(digest)) <= 2
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--registry", default="localhost:15001")
@@ -112,6 +123,10 @@ def main() -> int:
     shutil.rmtree(catalog_dir, ignore_errors=True)
     catalog_dir.mkdir(parents=True)
     for bundled in sorted((REPO / "catalog" / "dev").glob("*.yaml")):
+        image = str((yaml.safe_load(bundled.read_text()).get("spec") or {}).get("image", ""))
+        if args.no_test_variants and placeholder_image(image):
+            print(f"omitted {bundled.name}: placeholder image {image}", flush=True)
+            continue
         shutil.copy(bundled, catalog_dir / bundled.name)
     for agent in AGENTS:
         shutil.copy(manifests_dir / f"{agent}.yaml", catalog_dir / f"{agent}.yaml")

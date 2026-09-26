@@ -51,6 +51,12 @@ export function send(res: ServerResponse, resp: Resp): void {
     res.end();
     return;
   }
+  if (Buffer.isBuffer(resp.body)) {
+    // Binary bodies (e.g. audio) are sent as-is with the handler's Content-Type.
+    res.writeHead(resp.status, headers);
+    res.end(resp.body);
+    return;
+  }
   const text = JSON.stringify(resp.body);
   res.writeHead(resp.status, { 'Content-Type': 'application/json', ...headers });
   res.end(text);

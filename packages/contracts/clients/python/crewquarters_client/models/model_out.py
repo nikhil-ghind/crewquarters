@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from ..models.model_lease_out import ModelLeaseOut
     from ..models.model_out_error_type_0 import ModelOutErrorType0
     from ..models.model_out_license_type_0 import ModelOutLicenseType0
+    from ..models.model_voice_out import ModelVoiceOut
 
 
 T = TypeVar("T", bound="ModelOut")
@@ -41,6 +42,7 @@ class ModelOut:
         capabilities (list[str] | Unset):
         validation (None | str | Unset):
         license_ (ModelOutLicenseType0 | None | Unset):
+        voices (list[ModelVoiceOut] | Unset): Voices of a text-to-speech model.
         error (ModelOutErrorType0 | None | Unset):
         load_started_at (datetime.datetime | None | Unset):
         ready_at (datetime.datetime | None | Unset):
@@ -63,6 +65,7 @@ class ModelOut:
     capabilities: list[str] | Unset = UNSET
     validation: str | Unset | None = UNSET
     license_: ModelOutLicenseType0 | Unset | None = UNSET
+    voices: list[ModelVoiceOut] | Unset = UNSET
     error: ModelOutErrorType0 | Unset | None = UNSET
     load_started_at: datetime.datetime | Unset | None = UNSET
     ready_at: datetime.datetime | Unset | None = UNSET
@@ -134,6 +137,13 @@ class ModelOut:
         else:
             license_ = self.license_
 
+        voices: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.voices, Unset):
+            voices = []
+            for voices_item_data in self.voices:
+                voices_item = voices_item_data.to_dict()
+                voices.append(voices_item)
+
         error: dict[str, Any] | Unset | None
         if isinstance(self.error, Unset):
             error = UNSET
@@ -204,6 +214,8 @@ class ModelOut:
             field_dict["validation"] = validation
         if license_ is not UNSET:
             field_dict["license"] = license_
+        if voices is not UNSET:
+            field_dict["voices"] = voices
         if error is not UNSET:
             field_dict["error"] = error
         if load_started_at is not UNSET:
@@ -223,6 +235,7 @@ class ModelOut:
         from ..models.model_lease_out import ModelLeaseOut
         from ..models.model_out_error_type_0 import ModelOutErrorType0
         from ..models.model_out_license_type_0 import ModelOutLicenseType0
+        from ..models.model_voice_out import ModelVoiceOut
 
         d = dict(src_dict)
         id = d.pop("id")
@@ -309,6 +322,15 @@ class ModelOut:
             return cast(ModelOutLicenseType0 | None | Unset, data)
 
         license_ = _parse_license_(d.pop("license", UNSET))
+
+        _voices = d.pop("voices", UNSET)
+        voices: list[ModelVoiceOut] | Unset = UNSET
+        if _voices is not UNSET:
+            voices = []
+            for voices_item_data in _voices:
+                voices_item = ModelVoiceOut.from_dict(voices_item_data)
+
+                voices.append(voices_item)
 
         def _parse_error(data: object) -> ModelOutErrorType0 | Unset | None:
             if data is None:
@@ -403,6 +425,7 @@ class ModelOut:
             capabilities=capabilities,
             validation=validation,
             license_=license_,
+            voices=voices,
             error=error,
             load_started_at=load_started_at,
             ready_at=ready_at,

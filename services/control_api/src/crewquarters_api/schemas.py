@@ -334,6 +334,11 @@ class ModelDownloadOut(ApiModel):
     revision: str | None = None
 
 
+class ModelVoiceOut(ApiModel):
+    id: str
+    label: str
+
+
 class ModelOut(ApiModel):
     """Installed-on-disk and loaded-in-memory are separate fields (PLAN.md section 13.8)."""
 
@@ -354,6 +359,9 @@ class ModelOut(ApiModel):
     capabilities: list[str] = Field(default_factory=list)
     validation: str | None = None
     license: dict[str, Any] | None = None
+    voices: list[ModelVoiceOut] = Field(
+        default_factory=list, description="Voices of a text-to-speech model."
+    )
     error: dict[str, Any] | None = None
     load_started_at: datetime | None = None
     ready_at: datetime | None = None
@@ -363,6 +371,22 @@ class ModelOut(ApiModel):
 
 class ModelUnloadIn(ApiModel):
     force: bool = Field(False, description="Unload even while runs or chats hold leases.")
+
+
+class TranscriptionOut(ApiModel):
+    """Whole-file speech-to-text result. Neither the audio nor the transcript is stored."""
+
+    model_id: str
+    text: str
+    language: str | None = Field(None, description="The language hint that was sent, if any.")
+    audio_seconds: float | None = Field(None, description="Audio duration the model reported.")
+    latency_ms: int = Field(0, description="Time the model spent transcribing.")
+    request_id: str | None = None
+
+
+class SpeechIn(ApiModel):
+    text: str = Field(min_length=1, max_length=1000)
+    voice: str = Field("female", pattern=r"^[a-z0-9_-]{1,32}$")
 
 
 class ModelCancelInstallIn(ApiModel):
@@ -420,6 +444,43 @@ class TwilioCredentialsIn(ApiModel):
 class TwilioTestCallIn(ApiModel):
     to: str = Field(pattern=E164)
     confirm: bool = Field(description="Must be true: the owner confirmed a live call.")
+
+
+class VoiceCallIn(ApiModel):
+    to: str = Field(pattern=E164, description="A number in CQ_TWILIO_ALLOWED_NUMBERS.")
+    confirm: bool = Field(description="Must be true: the owner confirmed a live call.")
+    voice: str = Field("female", pattern=r"^[a-z0-9_-]{1,32}$", description="Speech voice id.")
+    instructions: str = Field(
+        "", max_length=1000, description="Extra instructions for the assistant on this call."
+    )
+
+
+class VoiceTurnOut(ApiModel):
+    role: Literal["caller", "assistant"]
+    text: str
+    at: datetime
+    interrupted: bool = False
+    timings: dict[str, int] = Field(
+        default_factory=dict,
+        description="asrMs, llmFirstTokenMs, firstAudioMs (from the end of the caller's speech).",
+    )
+
+
+class VoiceCallOut(ApiModel):
+    """A realtime voice call. The transcript lives in memory only, for this live view."""
+
+    id: str
+    state: Literal["created", "dialing", "ringing", "connected", "ended", "failed"]
+    to: str = Field(description="Masked destination.")
+    voice: str
+    simulated: bool = False
+    created_at: datetime
+    connected_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_seconds: int | None = None
+    end_reason: str | None = None
+    error: str | None = None
+    turns: list[VoiceTurnOut] = Field(default_factory=list)
 
 
 class TwilioTestCallOut(ApiModel):

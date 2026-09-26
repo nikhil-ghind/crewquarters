@@ -4,13 +4,14 @@ system status, and audit history."""
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,7 +37,7 @@ from crewquarters_shared import audit
 from crewquarters_shared.config import Settings
 from crewquarters_shared.cron import validate_timezone
 from crewquarters_shared.db.models import AuditEvent, Setting
-from crewquarters_shared.errors import conflict, invalid, not_found
+from crewquarters_shared.errors import PlatformError, conflict, invalid, not_found
 from crewquarters_shared.timeutil import utcnow
 
 router = APIRouter()
@@ -142,6 +143,137 @@ _model_route("/models/{model_id}/install", "install", "Download a pinned model t
 _model_route(
     "/models/{model_id}/load", "load", "Load a model into memory (admission control applies)"
 )
+
+
+# Whole-file transcription uploads have their own body limit (CQ_MAX_UPLOAD_BYTES plus
+# multipart framing) instead of the global CQ_MAX_BODY_BYTES; see ``main.BodySizeLimit``.
+TRANSCRIPTION_PATH = re.compile(r"/api/v1/models/[^/]+/transcriptions")
+AUDIO_TYPES = {
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".webm": "audio/webm",
+}
+
+
+@router.post(
+    "/models/{model_id}/transcriptions",
+    response_model=schemas.TranscriptionOut,
+    tags=["models"],
+    responses={
+        **ERRORS,
+        413: {"model": schemas.ErrorResponse},
+        502: {"model": schemas.ErrorResponse},
+        503: {"model": schemas.ErrorResponse},
+    },
+    summary="Transcribe one audio file with a local speech-to-text model",
+)
+async def transcribe_audio(
+    model_id: str,
+    request: Request,
+    file: UploadFile = File(..., description=".wav, .flac, .mp3, .ogg, .m4a, or .webm"),
+    language: str | None = Form(None, description="ISO 639-1 hint such as 'en' or 'zh'."),
+    auth: AuthContext = Depends(require_owner),
+    state: AppState = Depends(app_state),
+    db: AsyncSession = Depends(get_db),
+) -> schemas.TranscriptionOut:
+    """Loads the model on demand (admission control applies), so the first request can
+    take as long as a cold start. The audio and the transcript are not stored; the audit
+    record holds only the model, size, and outcome. Not replayable: each call transcribes."""
+    name = (file.filename or "audio").rsplit("/", 1)[-1][:200] or "audio"
+    suffix = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if suffix not in AUDIO_TYPES:
+        raise invalid(
+            "UNSUPPORTED_AUDIO_TYPE",
+            "Upload a .wav, .flac, .mp3, .ogg, .m4a, or .webm file.",
+            allowed=sorted(AUDIO_TYPES),
+        )
+    audio = await file.read()
+    if not audio:
+        raise invalid("EMPTY_AUDIO", "The audio file is empty.")
+    gateway: Any = state.models
+    if not hasattr(gateway, "transcribe"):
+        raise PlatformError(
+            "MODEL_GATEWAY_UNAVAILABLE",
+            "Transcription needs the model gateway (CQ_MODEL_GATEWAY_ADAPTER=http).",
+            503,
+        )
+    outcome = "failure"
+    try:
+        result = await gateway.transcribe(
+            model_id,
+            audio,
+            filename=name,
+            content_type=AUDIO_TYPES[suffix],
+            language=language or None,
+            actor=str(auth.user.id),
+        )
+        outcome = "success"
+    finally:
+        audit.record(
+            db,
+            action="model.transcribe",
+            actor_type="user",
+            actor_id=auth.user.id,
+            target_type="model",
+            target_id=model_id,
+            outcome=outcome,
+            request_id=request_id(request),
+            metadata={"bytes": len(audio), "language": language or None},
+        )
+        await db.commit()
+    return schemas.TranscriptionOut.model_validate(result)
+
+
+@router.post(
+    "/models/{model_id}/speech",
+    response_class=Response,
+    tags=["models"],
+    responses={
+        200: {"content": {"audio/wav": {}}, "description": "16-bit mono WAV"},
+        **ERRORS,
+        502: {"model": schemas.ErrorResponse},
+        503: {"model": schemas.ErrorResponse},
+    },
+    summary="Speak a short text with a local text-to-speech model (returns a WAV)",
+)
+async def speak_text(
+    model_id: str,
+    body: schemas.SpeechIn,
+    request: Request,
+    auth: AuthContext = Depends(require_owner),
+    state: AppState = Depends(app_state),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Loads the model on demand (admission control applies). Neither the text nor the
+    audio is stored; the audit record holds only the model, length, and outcome."""
+    gateway: Any = state.models
+    if not hasattr(gateway, "speak"):
+        raise PlatformError(
+            "MODEL_GATEWAY_UNAVAILABLE",
+            "Speech needs the model gateway (CQ_MODEL_GATEWAY_ADAPTER=http).",
+            503,
+        )
+    outcome = "failure"
+    try:
+        wav, headers = await gateway.speak(model_id, body.text, body.voice, str(auth.user.id))
+        outcome = "success"
+    finally:
+        audit.record(
+            db,
+            action="model.speak",
+            actor_type="user",
+            actor_id=auth.user.id,
+            target_type="model",
+            target_id=model_id,
+            outcome=outcome,
+            request_id=request_id(request),
+            metadata={"characters": len(body.text), "voice": body.voice},
+        )
+        await db.commit()
+    return Response(wav, media_type="audio/wav", headers={"Cache-Control": "no-store", **headers})
 
 
 @router.post(

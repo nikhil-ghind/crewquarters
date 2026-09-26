@@ -10,7 +10,6 @@ import { QueryView } from '../../components/QueryView';
 import { StatusBadge } from '../../components/StatusBadge';
 import { formatBytes } from '../../lib/format';
 import { MODEL_DOWNLOAD_STATUS, MODEL_MEMORY_STATUS } from '../../lib/status';
-import { licenseText } from './modelInfo';
 import { ModelActions } from './ModelActions';
 import { ModelProgress } from './ModelProgress';
 import { isModelBusy } from '../../api/queries';
@@ -35,7 +34,7 @@ function ModelCard({ model }: { model: ModelOut }) {
         </h2>
         <LocalityChip provider="local" />
       </div>
-      <dl className="kv" style={{ fontSize: 13 }}>
+      <dl className="kv">
         <dt>On disk</dt>
         <dd>
           <StatusBadge status={MODEL_DOWNLOAD_STATUS[model.downloadState]} context="Disk" /> {model.diskBytes ? formatBytes(model.diskBytes) : ''}
@@ -45,14 +44,6 @@ function ModelCard({ model }: { model: ModelOut }) {
           <StatusBadge status={MODEL_MEMORY_STATUS[model.memoryState]} context="Memory" />{' '}
           {model.reservedBytes > 0 ? `${formatBytes(model.reservedBytes)} reserved` : model.expectedMemoryBytes ? `needs about ${formatBytes(model.expectedMemoryBytes)}` : ''}
         </dd>
-        <dt>Context</dt>
-        <dd>{model.contextLimit ? `${model.contextLimit.toLocaleString()} tokens` : '—'}</dd>
-        <dt>Capabilities</dt>
-        <dd>{(model.capabilities ?? []).join(', ') || '—'}</dd>
-        <dt>This hardware</dt>
-        <dd>{model.validation ?? 'Not yet validated'}</dd>
-        <dt>License</dt>
-        <dd>{licenseText(model)}</dd>
         {leases.length > 0 ? (
           <>
             <dt>Used by</dt>

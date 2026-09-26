@@ -24,10 +24,40 @@ Owner: Akshay Sunil Navani (Person 2). Package `crewquarters_gateway` (`services
 | `GET /memory` | System reserve, serving cap, reservations and host free memory (feeds the top-bar popover) |
 | `POST /leases`, `DELETE /leases/holders/{type}/{id}` | Chat leases (control API only) |
 | `POST /llm/chat` | Normalized request; `"stream": true` returns SSE `delta` / `done` / `error` events |
+| `POST /audio/transcriptions?modelId=&filename=&language=[&holderId=]` | Whole-file speech-to-text (raw audio body up to `CQ_GATEWAY_MAX_AUDIO_BYTES`) |
+| `POST /audio/speech` | `{"modelId", "input", "voice"[, "holderId"]}` -> a WAV (text-to-speech) |
+| `WS /audio/speech/stream?modelId=&voice=[&holderId=]` | Streaming text-to-speech: `{"type": "text"\|"end"\|"cancel"}` in, 16-bit 24 kHz PCM frames and a final `done` out |
 | `POST /provider-profiles/{profileId}/test` | Check a stored OpenAI/Anthropic key (below) |
 | `GET /metrics` | Prometheus: request counts, latency, tokens, residency, reservations |
 
 Every response carries `X-Request-Id`: the caller's value when it is 8 to 128 printable ASCII characters, otherwise one the gateway generates. Error envelopes always carry it as `requestId`.
+
+## Audio credentials
+
+The audio routes, local chat, and chat-lease release need a second credential besides the
+service token: the control API's chat token (owner requests; one-off `manual` lease per
+request) or the capability broker's voice token (`CQ_VOICE_CLIENT_TOKEN`, a realtime phone
+call: `holderId` names the call, whose leases are `manual`/`voice:<id>` and renewed on use).
+See [voice-calls.md](voice-calls.md).
+
+## Text-to-speech models
+
+A profile with the `speech` capability (`local.tts.voxtream`) is served by the Crewquarters
+TTS server (`services/tts_server`, image `infra/docker/voxtream.Dockerfile`): buffered
+`POST /v1/audio/speech` and the streaming WebSocket `/v1/audio/speech/stream`, which the
+gateway proxies while holding the caller's lease. The profile lists its `voices`; an unknown
+voice is `UNKNOWN_VOICE` (422). Like speech-to-text models, it is not counted by the
+one-generative-model policy.
+
+## Speech-to-text models
+
+A catalog profile whose `capabilities` include `transcription` (for example `local.asr.r2t2`) serves vLLM's OpenAI-compatible `/v1/audio/transcriptions`. The control API's `POST /api/v1/models/{id}/transcriptions` (owner only) forwards one uploaded file here.
+
+- Each request holds a `manual` lease (holder `transcription:<uuid>`) until the transcript returns, then releases it, so the model loads on demand and unloads after the idle timeout like any other.
+- `/llm/chat` refuses models without the `chat` capability, and `/audio/transcriptions` refuses models without `transcription` (`MODEL_CAPABILITY_UNSUPPORTED`).
+- The one-generative-model policy counts only chat models, so a speech-to-text model can be resident beside one. The memory checks (serving cap, host free memory) still apply to every load.
+- Usage rows record the model, latency and outcome with zero tokens. Neither the audio nor the transcript is stored or logged.
+- Streaming (live captions) is not served: R2T2's append-only streaming needs the model authors' own client.
 
 ## Normalized request
 
@@ -111,6 +141,9 @@ The broker relays gateway errors to agents unchanged, so the gateway uses the br
 | `NEEDS_CONNECTION` | 409 | No usable provider key, or no master key |
 | `NEEDS_CONFIGURATION` | 409 | No model is configured for this cloud profile name |
 | `MODEL_NOT_INSTALLED` | 409 | Install the model first |
+| `MODEL_CAPABILITY_UNSUPPORTED` | 422 | Chat with a non-chat model, or transcription with a non-transcription model; `details.capability` |
+| `EMPTY_AUDIO` / `INVALID_LANGUAGE` / `PAYLOAD_TOO_LARGE` | 422 / 422 / 413 | Transcription input errors |
+| `UNKNOWN_VOICE` / `INVALID_INPUT` / `HOLDER_REQUIRED` | 422 | Speech input errors; a voice-call request without `holderId` |
 | `MODEL_CAPACITY_EXCEEDED` | 409 | Admission refused; details carry the numbers |
 | `MODEL_LOAD_FAILED` / `MODEL_UNAVAILABLE` / `MODEL_LOAD_TIMEOUT` | 503 / 503 / 504 | The server exited or was unloaded, or never became healthy |
 | `MODEL_UNLOADING` / `MODEL_IN_USE` | 409 | Manual drain in progress / leases held |

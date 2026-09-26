@@ -83,12 +83,12 @@
 }
 .btn-primary {
   background: var(--color-primary);
-  color: var(--color-surface);
+  color: var(--color-on-primary);
   min-height: var(--control-height-primary);
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
-  color: var(--color-surface);
+  color: var(--color-on-primary);
 }
 .btn-secondary {
   background: var(--color-surface);
@@ -101,12 +101,12 @@
 }
 .btn-tertiary {
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-strong);
   padding: 0 var(--space-2);
 }
 .btn-tertiary:hover:not(:disabled) {
   background: var(--color-primary-bg);
-  color: var(--color-primary-hover);
+  color: var(--color-primary-strong-hover);
 }
 .btn-danger {
   background: var(--color-danger);
@@ -247,7 +247,7 @@
   display: block;
 }
 .card-link:hover .card-title {
-  color: var(--color-primary);
+  color: var(--color-primary-strong);
 }
 
 /* ---- Page structure -------------------------------------------------------------- */
@@ -501,6 +501,15 @@
 .banner-title {
   font-weight: 650;
 }
+/* Notification opt-in on Crew Requests: actions wrap under the text on narrow screens. */
+.notify-prompt {
+  flex-wrap: wrap;
+}
+@media (max-width: 767.98px) {
+  .notify-prompt > .row {
+    flex-basis: 100%;
+  }
+}
 .global-banner {
   border-radius: 0;
   border-left-width: 0;
@@ -713,8 +722,8 @@
   color: var(--color-success);
 }
 .stepper-item[data-state='current'] .stepper-marker {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--color-primary-strong);
+  color: var(--color-primary-strong);
   box-shadow: 0 0 0 3px var(--color-primary-bg);
 }
 .stepper-item[data-state='blocked'] .stepper-marker {

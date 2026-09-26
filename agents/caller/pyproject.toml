@@ -2,6 +2,7 @@
 name = "crewquarters-agent-caller"
 version = "0.1.0"
 description = "Caller agent: consenting Google Sheets rows, operator approval, fixed-script Twilio calls, results back to Sheets"
+license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = ["crewquarters-sdk", "tzdata>=2024.1"]
 

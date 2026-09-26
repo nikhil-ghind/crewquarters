@@ -468,3 +468,7 @@ Reviewed on 2026-09-24:
 - [OpenAI API overview](https://developers.openai.com/api/reference/overview)
 - [Anthropic Messages API](https://platform.claude.com/docs/en/api/messages)
 - [K3s architecture requirements](https://docs.k3s.io/installation/requirements)
+
+## License
+
+Crewquarters is licensed under the [Apache License, Version 2.0](LICENSE). Third-party components and models keep their own licenses; see [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

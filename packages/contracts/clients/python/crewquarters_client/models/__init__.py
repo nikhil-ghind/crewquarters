@@ -28,6 +28,9 @@ from .backup_out_status import BackupOutStatus
 from .backup_page import BackupPage
 from .batch_event import BatchEvent
 from .batch_event_payload import BatchEventPayload
+from .body_transcribe_audio_api_v1_models_model_id_transcriptions_post import (
+    BodyTranscribeAudioApiV1ModelsModelIdTranscriptionsPost,
+)
 from .body_upload_document_api_v1_knowledge_bases_kb_id_documents_post import (
     BodyUploadDocumentApiV1KnowledgeBasesKbIdDocumentsPost,
 )
@@ -117,6 +120,7 @@ from .model_out_license_type_0 import ModelOutLicenseType0
 from .model_out_memorystate import ModelOutMemorystate
 from .model_state_in import ModelStateIn
 from .model_unload_in import ModelUnloadIn
+from .model_voice_out import ModelVoiceOut
 from .occurrence_out import OccurrenceOut
 from .page_audit_event_out import PageAuditEventOut
 from .page_catalog_agent_out import PageCatalogAgentOut
@@ -173,12 +177,14 @@ from .settings_out_versions import SettingsOutVersions
 from .settings_patch_in import SettingsPatchIn
 from .settings_patch_in_setup_state_type_0 import SettingsPatchInSetupStateType0
 from .settings_patch_in_versions import SettingsPatchInVersions
+from .speech_in import SpeechIn
 from .status_check import StatusCheck
 from .status_check_group import StatusCheckGroup
 from .status_check_status import StatusCheckStatus
 from .system_status_out import SystemStatusOut
 from .system_status_out_runtime import SystemStatusOutRuntime
 from .system_status_out_status import SystemStatusOutStatus
+from .transcription_out import TranscriptionOut
 from .twilio_credentials_in import TwilioCredentialsIn
 from .twilio_test_call_in import TwilioTestCallIn
 from .twilio_test_call_out import TwilioTestCallOut
@@ -186,6 +192,12 @@ from .user_out import UserOut
 from .user_out_role import UserOutRole
 from .validation_error import ValidationError
 from .validation_error_context import ValidationErrorContext
+from .voice_call_in import VoiceCallIn
+from .voice_call_out import VoiceCallOut
+from .voice_call_out_state import VoiceCallOutState
+from .voice_turn_out import VoiceTurnOut
+from .voice_turn_out_role import VoiceTurnOutRole
+from .voice_turn_out_timings import VoiceTurnOutTimings
 
 __all__ = (
     "ActionClaimIn",
@@ -216,6 +228,7 @@ __all__ = (
     "BackupPage",
     "BatchEvent",
     "BatchEventPayload",
+    "BodyTranscribeAudioApiV1ModelsModelIdTranscriptionsPost",
     "BodyUploadDocumentApiV1KnowledgeBasesKbIdDocumentsPost",
     "BootstrapIn",
     "BootstrapStatusOut",
@@ -301,6 +314,7 @@ __all__ = (
     "ModelOutMemorystate",
     "ModelStateIn",
     "ModelUnloadIn",
+    "ModelVoiceOut",
     "OccurrenceOut",
     "PageAuditEventOut",
     "PageCatalogAgentOut",
@@ -357,12 +371,14 @@ __all__ = (
     "SettingsPatchIn",
     "SettingsPatchInSetupStateType0",
     "SettingsPatchInVersions",
+    "SpeechIn",
     "StatusCheck",
     "StatusCheckGroup",
     "StatusCheckStatus",
     "SystemStatusOut",
     "SystemStatusOutRuntime",
     "SystemStatusOutStatus",
+    "TranscriptionOut",
     "TwilioCredentialsIn",
     "TwilioTestCallIn",
     "TwilioTestCallOut",
@@ -370,4 +386,10 @@ __all__ = (
     "UserOutRole",
     "ValidationError",
     "ValidationErrorContext",
+    "VoiceCallIn",
+    "VoiceCallOut",
+    "VoiceCallOutState",
+    "VoiceTurnOut",
+    "VoiceTurnOutRole",
+    "VoiceTurnOutTimings",
 )

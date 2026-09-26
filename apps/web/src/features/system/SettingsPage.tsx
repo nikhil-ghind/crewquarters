@@ -10,6 +10,7 @@ import { Card, KeyValue, Page, PageHeader } from '../../components/Layout';
 import { QueryView } from '../../components/QueryView';
 import { useFeedback } from '../../components/Toast';
 import { currentTimeIn, isValidTimeZone, timeZones } from '../../lib/format';
+import { NotificationSettingsCard } from '../common/NotificationControls';
 import { CallbackUrls } from '../connections/CallbackUrls';
 import { SystemTabs } from './SystemTabs';
 
@@ -98,6 +99,8 @@ export default function SettingsPage() {
           </>
         )}
       </QueryView>
+      {/* Per-browser, so it works even when the device settings can't be loaded. */}
+      <NotificationSettingsCard />
     </Page>
   );
 }

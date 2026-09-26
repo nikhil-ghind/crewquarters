@@ -1,18 +1,25 @@
 """Deterministic OpenAI-compatible mock model server for laptops and CI.
 
-Serves ``GET /v1/models``, ``GET /health`` and ``POST /v1/chat/completions``
-(streaming and non-streaming, with ``response_format`` JSON-schema support) so the
-model gateway's lease/load/route/unload path runs end to end without a GPU.
+Serves ``GET /v1/models``, ``GET /health``, ``POST /v1/chat/completions``
+(streaming and non-streaming, with ``response_format`` JSON-schema support) and
+``POST /v1/audio/transcriptions`` (multipart, like vLLM's) and ``POST /v1/audio/speech``
+(a WAV, like the Crewquarters TTS server; no streaming WebSocket) so the model gateway's
+lease/load/route/unload path runs end to end without a GPU.
 Standard library only.
 """
 
 from __future__ import annotations
 
 import argparse
+import email.parser
+import email.policy
 import html
+import io
 import json
+import math
 import re
 import time
+import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -81,6 +88,51 @@ def _answer(body: dict[str, Any]) -> str:
     return mock_reply(str(content))
 
 
+def _form_fields(content_type: str, body: bytes) -> dict[str, tuple[str | None, bytes]]:
+    """multipart/form-data -> {name: (filename, bytes)} (standard library only)."""
+    message = email.parser.BytesParser(policy=email.policy.HTTP).parsebytes(
+        f"Content-Type: {content_type}\r\n\r\n".encode() + body
+    )
+    fields: dict[str, tuple[str | None, bytes]] = {}
+    for part in message.iter_parts():
+        name = part.get_param("name", header="content-disposition")
+        if isinstance(name, str):
+            fields[name] = (part.get_filename(), part.get_payload(decode=True) or b"")
+    return fields
+
+
+def transcript_for(filename: str | None, size: int) -> str:
+    """Deterministic mock transcript. Kept identical to
+    crewquarters_gateway.adapters.mock_transcript (a test checks)."""
+    return f"Mock transcript of {filename or 'audio'} ({size} bytes)."
+
+
+MOCK_SPEECH_RATE = 24000
+MOCK_FRAME_SAMPLES = 1920
+
+
+def mock_speech_pcm(text: str) -> bytes:
+    """A quiet 440 Hz tone, 80 ms per word. Kept identical to
+    crewquarters_gateway.adapters.mock_speech_pcm (a test checks)."""
+    frames = max(1, len(text.split())) * MOCK_FRAME_SAMPLES
+    return b"".join(
+        int(3000 * math.sin(2 * math.pi * 440 * i / MOCK_SPEECH_RATE)).to_bytes(
+            2, "little", signed=True
+        )
+        for i in range(frames)
+    )
+
+
+def _wav(pcm: bytes) -> bytes:
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(MOCK_SPEECH_RATE)
+        w.writeframes(pcm)
+    return out.getvalue()
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -103,7 +155,46 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._json(404, {"error": {"message": "not found"}})
 
+    def _transcribe(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        fields = _form_fields(self.headers.get("Content-Type", ""), self.rfile.read(length))
+        model = fields.get("model", (None, b""))[1].decode()
+        if model != SERVED:
+            self._json(404, {"error": {"message": f"model {model} not served"}})
+            return
+        filename, audio = fields.get("file", (None, b""))
+        if not audio:
+            self._json(400, {"error": {"message": "file is required"}})
+            return
+        self._json(
+            200,
+            {
+                "text": transcript_for(filename, len(audio)),
+                "usage": {"type": "duration", "seconds": 1},
+            },
+        )
+
+    def _speech(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        body = json.loads(self.rfile.read(length) or b"{}")
+        text = str(body.get("input") or "").strip()
+        if not text:
+            self._json(422, {"error": {"code": "INVALID_INPUT", "message": "input is required"}})
+            return
+        data = _wav(mock_speech_pcm(text))
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_POST(self) -> None:
+        if self.path == "/v1/audio/transcriptions":
+            self._transcribe()
+            return
+        if self.path == "/v1/audio/speech":
+            self._speech()
+            return
         if self.path != "/v1/chat/completions":
             self._json(404, {"error": {"message": "not found"}})
             return

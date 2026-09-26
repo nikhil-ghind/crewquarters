@@ -67,7 +67,12 @@ Profiles: **dev** = laptop Compose with fakes; **demo-cpu** = laptop end-to-end;
 | `CQ_GATEWAY_SYSTEM_RESERVE_BYTES` | int | 24 GiB | no | dev: 2 GiB | Memory kept free for the OS, database, agents |
 | `CQ_GATEWAY_MAX_SERVING_BYTES` | int | 96 GiB | no | dev: 8 GiB | Cap on total model reservations |
 | `CQ_GATEWAY_LOAD_SAFETY_MARGIN_BYTES` | int | 8 GiB | no | dev: 1 GiB | Extra margin per load |
-| `CQ_GATEWAY_ONE_GENERATIVE_MODEL` | bool | `true` | no | all | Allow only one resident generative model |
+| `CQ_GATEWAY_ONE_GENERATIVE_MODEL` | bool | `true` | no | all | Allow only one resident generative (chat) model; speech-to-text models are not counted |
+| `CQ_GATEWAY_MAX_AUDIO_BYTES` | int | 25 MiB | no | all | Largest audio file `POST /internal/v1/audio/transcriptions` accepts |
+| `CQ_GATEWAY_VOICE_LEASE_TTL_SECONDS` | int | `600` | no | all | Lifetime of a voice call's model leases (renewed on each use) |
+| `CQ_VOICE_CLIENT_TOKEN` | secret | dev placeholder | dgx | dgx: generated in `secrets.env` | Broker-to-gateway credential for voice calls (audio routes, local chat for a call). Only the broker and the gateway get it |
+| `CQ_VOICE_ASR_MODEL` / `CQ_VOICE_LLM_PROFILE` / `CQ_VOICE_TTS_MODEL` | string | `local.asr.r2t2` / `local.general.small` / `local.tts.voxtream` | no | all | Models a realtime voice call uses ([voice-calls.md](voice-calls.md)) |
+| `CQ_VOICE_MAX_CALL_SECONDS` / `CQ_VOICE_BARGE_IN_MS` | int | `300` / `300` | no | all | Voice call length limit; caller speech needed to interrupt the assistant |
 | `CQ_GATEWAY_IDLE_UNLOAD_SECONDS` | int | `600` | no | all | Idle grace before unloading |
 | `CQ_GATEWAY_RUN_LEASE_TTL_SECONDS` / `CQ_GATEWAY_CHAT_LEASE_TTL_SECONDS` | int | `300` / `43200` | no | all | Lease lifetimes |
 | `CQ_GATEWAY_PER_RUN_TOKEN_LIMIT` | int | `200000` | no | all | Tokens per run across all calls |
@@ -95,6 +100,7 @@ Compose interpolation variables, plus the service URLs the stack wires together.
 | `CQ_PUBLIC_BASE_URL` | URL | `http://localhost:8080` | no | dgx | The browser's origin (Google redirect). Do not set it to the tunnel; use `CQ_TWILIO_CALLBACK_BASE_URL` |
 | `CQ_TWILIO_CALLBACK_BASE_URL` | URL | empty | no | dgx (tunnel) | The callback tunnel's `https://` origin for Twilio (docs/runbooks/proxy.md) |
 | `CQ_HTTP_PORT` | int | `8080` | no | all | Host port the proxy publishes for HTTP. In LAN HTTPS mode `80`, and it only redirects to HTTPS |
+| `CQ_HTTP_BIND` | address | `127.0.0.1` | no | laptop Compose | Host address the proxy's port is published on. `0.0.0.0` lets other devices on the LAN reach the UI over plain HTTP (set `CQ_PUBLIC_BASE_URL` to the LAN address). The appliance uses LAN HTTPS mode instead |
 | `CQ_BIND_ADDRESS` | string | `127.0.0.1` | no | dgx (LAN mode) | Host address the proxy publishes on (appliance). LAN HTTPS mode: `0.0.0.0` (or `--bind`), for both HTTP and 443 |
 | `CQ_LAN_HTTPS`, `CQ_LAN_HOSTNAME` | bool, string | unset | no | dgx | Written to `/etc/crewquarters/lan-https.env` by `crewquarters lan-https enable` (informational; the mode is on while that file exists). That file also overrides `CQ_BIND_ADDRESS`, `CQ_HTTP_PORT`, `CQ_PUBLIC_BASE_URL`, `CQ_PUBLIC_ORIGINS` and `CQ_COOKIE_SECURE=true` (docs/runbooks/lan-https.md) |
 | `CREWQUARTERS_HEADLESS`, `CREWQUARTERS_LAN_HOSTNAME` | `yes`, string | unset | no | install time | `sudo CREWQUARTERS_HEADLESS=yes apt install ./crewquarters_*.deb` enables LAN HTTPS mode during install |

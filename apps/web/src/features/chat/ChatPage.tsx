@@ -68,7 +68,8 @@ function ChatStart() {
   const [enableKey] = useIntentKey();
   const navigate = useNavigate();
   const guard = useActionGuard();
-  const local = (models.data ?? []).filter((m) => m.id.startsWith('local.') && !(m.capabilities ?? []).includes('embedding'));
+  // Only chat models: embedding and speech-to-text models cannot hold a conversation.
+  const local = (models.data ?? []).filter((m) => m.id.startsWith('local.') && (m.capabilities ?? []).includes('chat'));
   const [model, setModel] = useState('');
   const [kb, setKb] = useState('');
   const [mode, setMode] = useState<'when_relevant' | 'only_knowledge'>('when_relevant');

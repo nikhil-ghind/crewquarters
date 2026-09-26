@@ -2,6 +2,7 @@
 name = "crewquarters-workspace"
 version = "0.1.0"
 description = "Crewquarters monorepo workspace"
+license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
 # The platform image installs only these (infra/docker/python.Dockerfile). Everything else in
 # the workspace (SDK, crewctl, fake platform, agents) is installed with `uv sync --all-packages`.

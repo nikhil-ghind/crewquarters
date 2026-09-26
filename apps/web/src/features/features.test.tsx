@@ -45,7 +45,7 @@ describe('Crew Request card', () => {
   });
 
   it('reports a double answer instead of answering again', async () => {
-    server.use(http.post('/api/v1/input-requests/:id/answer', () => errorEnvelope(409, 'INPUT_ALREADY_ANSWERED', 'Already answered.')));
+    server.use(http.post('/api/v1/input-requests/:id/answer', () => errorEnvelope(409, 'INPUT_ALREADY_CLOSED', 'This request is already answered.')));
     renderWithProviders(<InputRequestCard request={f.approvalRequest} />);
     await userEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
     expect(await screen.findByText(/already answered, so your answer was not sent again/)).toBeInTheDocument();

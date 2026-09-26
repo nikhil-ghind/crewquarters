@@ -51,6 +51,10 @@ ADMISSION_LOCK_KEY = 0x4351414D  # "CQAM": serializes lease acquisition/admissio
 RESIDENT = ("LOADING", "READY", "DRAINING")
 
 
+def is_generative(capabilities: list[str] | None) -> bool:
+    return "chat" in (capabilities or [])
+
+
 @dataclass(frozen=True)
 class Endpoint:
     model_id: str
@@ -129,6 +133,10 @@ class ModelManager:
             "capabilities": entry.capabilities,
             "validation": (profile.get("validation") or {}).get("status"),
             "license": profile.get("license"),
+            "voices": [
+                {"id": str(v.get("id")), "label": str(v.get("label") or v.get("id"))}
+                for v in profile.get("voices") or []
+            ],
             "error": instance.error or installation.error,
             "loadStartedAt": instance.load_started_at.isoformat()
             if instance.load_started_at
@@ -249,14 +257,20 @@ class ModelManager:
         s = self.settings
         others = (
             await db.execute(
-                select(ModelInstance.model_id, ModelInstance.reserved_bytes).where(
-                    ModelInstance.state.in_(RESIDENT), ModelInstance.model_id != entry.id
+                select(
+                    ModelInstance.model_id,
+                    ModelInstance.reserved_bytes,
+                    ModelCatalogEntry.capabilities,
                 )
+                .join(ModelCatalogEntry, ModelCatalogEntry.id == ModelInstance.model_id)
+                .where(ModelInstance.state.in_(RESIDENT), ModelInstance.model_id != entry.id)
             )
         ).all()
         peak = entry.expected_memory_bytes
-        loaded = [row.model_id for row in others]
-        if s.one_generative_model and loaded:
+        # The one-model policy covers generative (chat) models; a speech-to-text model can
+        # sit beside one, still subject to the memory checks below.
+        loaded = [row.model_id for row in others if is_generative(row.capabilities)]
+        if s.one_generative_model and is_generative(entry.capabilities) and loaded:
             raise PlatformError(
                 "MODEL_CAPACITY_EXCEEDED",
                 "Another model is loaded. Unload it before loading this one.",

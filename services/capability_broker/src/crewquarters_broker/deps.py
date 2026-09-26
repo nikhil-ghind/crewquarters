@@ -17,6 +17,7 @@ from crewquarters_broker.google import GoogleConnector
 from crewquarters_broker.internal import InternalClient
 from crewquarters_broker.metrics import BrokerMetrics
 from crewquarters_broker.twilio import TelephonyService
+from crewquarters_broker.voice import VoiceService
 from crewquarters_secret_store import Keyring
 from crewquarters_shared.errors import PlatformError
 
@@ -37,6 +38,7 @@ class BrokerState:
     gateway: httpx.AsyncClient
     google: GoogleConnector
     telephony: TelephonyService
+    voice: VoiceService
     metrics: BrokerMetrics
 
 

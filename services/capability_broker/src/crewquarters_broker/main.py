@@ -13,13 +13,14 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import text
 
-from crewquarters_broker import agent_api, callbacks, connections, errors, fakes
+from crewquarters_broker import agent_api, callbacks, connections, errors, fakes, voice_routes
 from crewquarters_broker.config import BrokerSettings, get_settings
 from crewquarters_broker.deps import BrokerState, internal_auth
 from crewquarters_broker.google import GoogleConnector
 from crewquarters_broker.internal import InternalClient
 from crewquarters_broker.metrics import BrokerMetrics, MeteredTransport
 from crewquarters_broker.twilio import TelephonyService
+from crewquarters_broker.voice import VoiceService
 from crewquarters_shared.db import create_engine, session_factory
 from crewquarters_shared.logs import configure_logging
 from crewquarters_shared.metrics import CONTENT_TYPE
@@ -63,6 +64,7 @@ def create_app(
         transport=gateway_transport,
     )
     telephony = TelephonyService(settings, keyring, sessions, http, metrics)
+    voice = VoiceService(settings, telephony, http, sessions, gateway_transport)
     simulations: set[asyncio.Task[None]] = set()
     if fake:
         telephony.on_created, simulations = fakes.call_simulator(telephony)
@@ -77,6 +79,7 @@ def create_app(
         await control.close()
         await knowledge.close()
         await gateway.aclose()
+        await voice.close()
         await engine.dispose()
 
     app = FastAPI(
@@ -100,6 +103,7 @@ def create_app(
         gateway=gateway,
         google=GoogleConnector(settings, keyring, sessions, http, metrics),
         telephony=telephony,
+        voice=voice,
         metrics=metrics,
     )
     errors.install(app)
@@ -142,6 +146,8 @@ def create_app(
     app.include_router(agent_api.router)
     app.include_router(connections.router)
     app.include_router(callbacks.router)
+    app.include_router(voice_routes.internal)
+    app.include_router(voice_routes.public)
     return app
 
 

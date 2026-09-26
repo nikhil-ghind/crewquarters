@@ -51,12 +51,15 @@ if [ ! -f /etc/crewquarters/secrets.env ]; then
         echo "CQ_INTERNAL_SERVICE_TOKEN=$token"
         echo "POSTGRES_PASSWORD=$(gen)"
         echo "CQ_CHAT_CLIENT_TOKEN=$(gen)"
+        echo "CQ_VOICE_CLIENT_TOKEN=$(gen)"
     } > /etc/crewquarters/secrets.env
     umask "$old_umask"
 fi
-# Older installs: add the chat credential if missing.
+# Older installs: add the chat and voice-call credentials if missing.
 grep -q '^CQ_CHAT_CLIENT_TOKEN=' /etc/crewquarters/secrets.env \
     || echo "CQ_CHAT_CLIENT_TOKEN=$(gen)" >> /etc/crewquarters/secrets.env
+grep -q '^CQ_VOICE_CLIENT_TOKEN=' /etc/crewquarters/secrets.env \
+    || echo "CQ_VOICE_CLIENT_TOKEN=$(gen)" >> /etc/crewquarters/secrets.env
 # The daemon's token file always mirrors the service token (recreated if missing).
 ( umask 077; sed -n 's/^CQ_INTERNAL_SERVICE_TOKEN=//p' /etc/crewquarters/secrets.env \
     | tr -d '\n' > /etc/crewquarters/runtime-token )

@@ -83,8 +83,8 @@ demo-down: ## Stop the local demo (keeps data; `make demo-down V=1` also deletes
 	-docker ps -aq --filter label=io.crewquarters.kind --filter network=$${CQ_RUNTIME_MODEL_NETWORK:-cq-models} | xargs -r docker rm -f
 	$(if $(V),-$(DEMO_COMPOSE) run --rm --no-deps --entrypoint sh runtime-daemon \
 		-c 'rm -rf "$$CQ_RUNTIME_DATA_DIR/runs" "$$CQ_RUNTIME_DATA_DIR/models"')
-	$(DEMO_COMPOSE) down $(if $(V),-v)
-	$(COMPOSE) --profile fake rm -sf registry
+	# The fake profile holds the registry; including it lets `down` remove the network too.
+	$(DEMO_COMPOSE) --profile fake down $(if $(V),-v)
 
 integration-down: ## Stop the integration stack
 	# Agent and model containers belong to the runtime daemon, not to Compose; only this

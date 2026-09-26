@@ -320,7 +320,10 @@ def create_app(
     app.add_middleware(
         BodySizeLimit,
         limit=settings.max_body_bytes,
-        overrides=[(knowledge.UPLOAD_PATH, settings.max_upload_bytes + knowledge.MULTIPART_SLACK)],
+        overrides=[
+            (knowledge.UPLOAD_PATH, settings.max_upload_bytes + knowledge.MULTIPART_SLACK),
+            (platform.TRANSCRIPTION_PATH, settings.max_upload_bytes + knowledge.MULTIPART_SLACK),
+        ],
     )
     return app
 

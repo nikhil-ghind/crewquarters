@@ -55,8 +55,9 @@ AGENT_ROOTS = [
     "crewquarters-agent-personal-space",
 ]
 
+# Custom model-use licenses (usage thresholds, field-of-use bans) always need review too.
 REVIEW = re.compile(r"GPL|SSPL|EUPL|MPL|CDDL|EPL|OSL|CC-BY-SA|Commons Clause|BUSL|Proprietary|"
-                    r"NVIDIA|UNKNOWN|Other", re.IGNORECASE)  # fmt: skip
+                    r"NVIDIA|UNKNOWN|Other|Model Use License", re.IGNORECASE)  # fmt: skip
 
 # Classifier and free-text license names mapped to SPDX identifiers.
 _SPDX = {
@@ -175,12 +176,24 @@ def components() -> list[Component]:
             "github.com/cloudflare/cloudflared/LICENSE.",
         ),
     ]
-    vllm_images = sorted(
-        {
-            json.loads(p.read_text())["launch"]["image"]
-            for p in (ROOT / "catalog/models/dgx").glob("*.json")
-        }
-    )
+    launches = [
+        json.loads(p.read_text())["launch"] for p in (ROOT / "catalog/models/dgx").glob("*.json")
+    ]
+    # A profile whose serving image is not NGC vLLM describes it in launch.imageLicense.
+    for launch in sorted(
+        (la for la in launches if "imageLicense" in la), key=lambda la: la["image"]
+    ):
+        info = launch["imageLicense"]
+        out.append(
+            Component(
+                info["component"],
+                launch["image"],
+                info["name"],
+                "model serving on GB10 (built from source; pushed to a registry by digest)",
+                info["note"],
+            )
+        )
+    vllm_images = sorted({la["image"] for la in launches if "imageLicense" not in la})
     for image in vllm_images:
         out.append(
             Component(
@@ -387,8 +400,10 @@ def render() -> str:
         if needs_review(e.license):
             review.append([f"{e.name} {e.version}", e.license, e.where])
     for c in comps + mods:
-        if needs_review(c.license) or "declares no license" in c.note:
-            review.append([c.name, c.license, c.note])
+        row = [c.name, c.license, c.note]
+        # One row per distinct component (e.g. several pinned vLLM image digests).
+        if (needs_review(c.license) or "declares no license" in c.note) and row not in review:
+            review.append(row)
     lines = [
         "# Third-party licenses",
         "",

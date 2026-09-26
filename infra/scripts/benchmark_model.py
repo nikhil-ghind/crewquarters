@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import sys
 import time
@@ -71,11 +72,14 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--gateway", default="http://127.0.0.1:8090")
     parser.add_argument("--token", required=True)
+    # Chat inference also needs the control API's chat credential (X-Chat-Client-Token).
+    parser.add_argument("--chat-token", default=os.environ.get("CQ_CHAT_CLIENT_TOKEN"))
     parser.add_argument("--out", default="benchmark.json")
     args = parser.parse_args()
-    client = httpx.Client(
-        base_url=args.gateway, headers={"Authorization": f"Bearer {args.token}"}, timeout=60
-    )
+    if not args.chat_token:
+        parser.error("--chat-token (or CQ_CHAT_CLIENT_TOKEN) is required")
+    headers = {"Authorization": f"Bearer {args.token}", "X-Chat-Client-Token": args.chat_token}
+    client = httpx.Client(base_url=args.gateway, headers=headers, timeout=60)
 
     before = available(client)
     started = time.perf_counter()

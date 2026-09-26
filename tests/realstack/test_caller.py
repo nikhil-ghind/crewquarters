@@ -121,7 +121,9 @@ def test_caller_approval_fixed_script_calls_and_signed_callbacks(
     # --- results written to the fake sheet (RAW) ---------------------------------------------
     written = state["sheets"][sheet]["Results"]
     assert written[0][:2] == ["source_row", "name"]
-    by_row = {r[0]: r for r in written[1:]}
+    # Results sit at their source row numbers; rows 4 and 5 (skipped) stay blank, as in Sheets.
+    assert written[3:5] == [[], []]
+    by_row = {r[0]: r for r in written[1:] if r}
     assert set(by_row) == {"2", "3", "6"}
     assert by_row["2"][1] == "Asha" and by_row["2"][4] == "answered_speech"
     assert by_row["3"][4] == "busy" and by_row["6"][4] == "answered_no_speech"

@@ -2,6 +2,7 @@
 name = "crewquarters-fake"
 version = "0.1.0"
 description = "Crewquarters fake platform for development and tests: broker, control-API slice, mock providers, launchers"
+license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
     "crewquarters-shared",

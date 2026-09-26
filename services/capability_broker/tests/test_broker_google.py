@@ -46,11 +46,12 @@ async def _callback(h: Any, binding: str | None, **params: str) -> str:
     return resp.headers["location"]
 
 
-async def test_start_builds_exact_consent_url(harness: Any, user_id: uuid.UUID) -> None:
-    state, _, url = await _start(harness, user_id, ["spreadsheets", "gmail.readonly"])
+async def test_start_builds_exact_consent_url(live_harness: Any, user_id: uuid.UUID) -> None:
+    """Live mode; fake mode sends the browser to the callback (test_broker_fake_demo.py)."""
+    state, _, url = await _start(live_harness, user_id, ["spreadsheets", "gmail.readonly"])
     params = url.params
     assert str(url).startswith(google.AUTH_URL + "?")
-    assert params["redirect_uri"] == f"{harness.PUBLIC}/api/v1/connections/google/callback"
+    assert params["redirect_uri"] == f"{live_harness.PUBLIC}/api/v1/connections/google/callback"
     assert params["scope"] == " ".join(sorted(google.SCOPES.values()))
     assert params["access_type"] == "offline" and params["include_granted_scopes"] == "true"
     assert params["code_challenge_method"] == "S256" and len(state) >= 43
@@ -67,8 +68,10 @@ async def test_start_requires_service_token_and_valid_scopes(
 
 
 async def test_callback_stores_encrypted_refresh_token(
-    harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
+    live_harness: Any, user_id: uuid.UUID, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
+    # Live mode, whose consent URL carries the PKCE challenge the exchange must match.
+    harness = live_harness
     state, binding, url = await _start(harness, user_id, ["gmail.readonly", "spreadsheets"])
     location = await _callback(harness, binding, state=state, code="fake-code")
     assert location == f"{harness.PUBLIC}/connections/google?result=connected"
