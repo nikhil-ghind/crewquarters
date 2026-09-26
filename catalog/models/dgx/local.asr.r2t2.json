@@ -1,0 +1,63 @@
+{
+  "id": "local.asr.r2t2",
+  "family": "local.asr",
+  "displayName": "Speech to text - Confucius4-R2T2 (2B)",
+  "backend": "vllm",
+  "source": {
+    "type": "huggingface",
+    "repo": "netease-youdao/Confucius4-R2T2",
+    "revision": "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9",
+    "allowPatterns": [
+      "*.json",
+      "*.safetensors",
+      "*.txt",
+      "README.md"
+    ]
+  },
+  "license": {
+    "name": "NetEase Youdao Model Use License Agreement",
+    "gated": false,
+    "url": "https://raw.githubusercontent.com/netease-youdao/Confucius4-R2T2/refs/heads/master/MODEL_LICENSE"
+  },
+  "quantization": "bf16",
+  "launch": {
+    "image": "nvcr.io/nvidia/vllm@sha256:bebcf9576b1720214319ee5c7ee4f7661954cbbf59ed3fcd188cd79a67f1967e",
+    "gpu": true,
+    "ipcHost": true,
+    "port": 8000,
+    "healthPath": "/v1/models",
+    "startupTimeoutSeconds": 900,
+    "args": [
+      "vllm",
+      "serve",
+      "{model_path}",
+      "--served-model-name",
+      "{served_model_name}",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "{port}",
+      "--max-model-len",
+      "8192",
+      "--gpu-memory-utilization",
+      "0.1"
+    ],
+    "env": {
+      "HF_HUB_OFFLINE": "1",
+      "VLLM_NO_USAGE_STATS": "1"
+    }
+  },
+  "memory": {
+    "weightBytes": 4076191640,
+    "startupPeakBytes": 17179869184,
+    "validated": true
+  },
+  "contextLimit": 8192,
+  "capabilities": [
+    "transcription"
+  ],
+  "validation": {
+    "status": "validated-gb10",
+    "note": "Whole-file transcription through vLLM's /v1/audio/transcriptions (NGC vllm 26.06-py3, vLLM 0.22.1; 25.09 and 26.03 cannot load Qwen3-ASR). Measured on a GB10: about 14 GiB resident at --gpu-memory-utilization 0.1, ready in about 90 s. R2T2's append-only streaming mode needs the authors' own client and is not served."
+  }
+}

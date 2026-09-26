@@ -67,7 +67,12 @@ Profiles: **dev** = laptop Compose with fakes; **demo-cpu** = laptop end-to-end;
 | `CQ_GATEWAY_SYSTEM_RESERVE_BYTES` | int | 24 GiB | no | dev: 2 GiB | Memory kept free for the OS, database, agents |
 | `CQ_GATEWAY_MAX_SERVING_BYTES` | int | 96 GiB | no | dev: 8 GiB | Cap on total model reservations |
 | `CQ_GATEWAY_LOAD_SAFETY_MARGIN_BYTES` | int | 8 GiB | no | dev: 1 GiB | Extra margin per load |
-| `CQ_GATEWAY_ONE_GENERATIVE_MODEL` | bool | `true` | no | all | Allow only one resident generative model |
+| `CQ_GATEWAY_ONE_GENERATIVE_MODEL` | bool | `true` | no | all | Allow only one resident generative (chat) model; speech-to-text models are not counted |
+| `CQ_GATEWAY_MAX_AUDIO_BYTES` | int | 25 MiB | no | all | Largest audio file `POST /internal/v1/audio/transcriptions` accepts |
+| `CQ_GATEWAY_VOICE_LEASE_TTL_SECONDS` | int | `600` | no | all | Lifetime of a voice call's model leases (renewed on each use) |
+| `CQ_VOICE_CLIENT_TOKEN` | secret | dev placeholder | dgx | dgx: generated in `secrets.env` | Broker-to-gateway credential for voice calls (audio routes, local chat for a call). Only the broker and the gateway get it |
+| `CQ_VOICE_ASR_MODEL` / `CQ_VOICE_LLM_PROFILE` / `CQ_VOICE_TTS_MODEL` | string | `local.asr.r2t2` / `local.general.small` / `local.tts.voxtream` | no | all | Models a realtime voice call uses ([voice-calls.md](voice-calls.md)) |
+| `CQ_VOICE_MAX_CALL_SECONDS` / `CQ_VOICE_BARGE_IN_MS` | int | `300` / `300` | no | all | Voice call length limit; caller speech needed to interrupt the assistant |
 | `CQ_GATEWAY_IDLE_UNLOAD_SECONDS` | int | `600` | no | all | Idle grace before unloading |
 | `CQ_GATEWAY_RUN_LEASE_TTL_SECONDS` / `CQ_GATEWAY_CHAT_LEASE_TTL_SECONDS` | int | `300` / `43200` | no | all | Lease lifetimes |
 | `CQ_GATEWAY_PER_RUN_TOKEN_LIMIT` | int | `200000` | no | all | Tokens per run across all calls |

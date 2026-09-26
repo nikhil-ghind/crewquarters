@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from functools import partial
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from crewquarters_api import idempotency, schemas
 from crewquarters_api.deps import AppState, AuthContext, app_state, get_db, require_owner
 from crewquarters_api.pagination import page_in_memory
+from crewquarters_shared.errors import not_found
 
 router = APIRouter(tags=["connections"])
 
@@ -226,6 +228,80 @@ async def twilio_test_call(
     return await _proxied(
         request, auth, db, state, fingerprint, call, model=schemas.TwilioTestCallOut
     )
+
+
+@router.post(
+    "/connections/twilio/voice-calls",
+    response_model=schemas.VoiceCallOut,
+    responses={**ERRORS, 429: {"model": schemas.ErrorResponse}},
+    summary="Start a realtime AI voice call to an allowed number (the owner must confirm)",
+)
+async def start_voice_call(
+    body: schemas.VoiceCallIn,
+    request: Request,
+    auth: AuthContext = Depends(require_owner),
+    state: AppState = Depends(app_state),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Twilio speaks the automated-call disclosure, then the caller talks with the local
+    models (speech-to-text, chat, text-to-speech). One call at a time; a retry with the same
+    ``Idempotency-Key`` replays the first result and never dials twice."""
+    call = partial(
+        state.broker.request,
+        "POST",
+        "/voice/calls",
+        json={
+            "userId": str(auth.user.id),
+            "to": body.to,
+            "confirm": body.confirm,
+            "voice": body.voice,
+            "instructions": body.instructions,
+        },
+    )
+    fingerprint = {
+        "to": _secret_digest(state, body.to),
+        "confirm": body.confirm,
+        "voice": body.voice,
+    }
+    return await _proxied(request, auth, db, state, fingerprint, call, model=schemas.VoiceCallOut)
+
+
+@router.get(
+    "/connections/twilio/voice-calls/{call_id}",
+    response_model=schemas.VoiceCallOut,
+    responses=ERRORS,
+    summary="A voice call's state and live transcript",
+)
+async def get_voice_call(
+    call_id: str,
+    _: AuthContext = Depends(require_owner),
+    state: AppState = Depends(app_state),
+) -> schemas.VoiceCallOut:
+    return schemas.VoiceCallOut.model_validate(
+        await state.broker.request("GET", f"/voice/calls/{_call_id(call_id)}")
+    )
+
+
+@router.post(
+    "/connections/twilio/voice-calls/{call_id}/hangup",
+    response_model=schemas.VoiceCallOut,
+    responses=ERRORS,
+    summary="End a voice call",
+)
+async def hang_up_voice_call(
+    call_id: str,
+    _: AuthContext = Depends(require_owner),
+    state: AppState = Depends(app_state),
+) -> schemas.VoiceCallOut:
+    return schemas.VoiceCallOut.model_validate(
+        await state.broker.request("POST", f"/voice/calls/{_call_id(call_id)}/hangup")
+    )
+
+
+def _call_id(call_id: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{32}", call_id):
+        raise not_found("Voice call", call_id)
+    return call_id
 
 
 @router.delete(

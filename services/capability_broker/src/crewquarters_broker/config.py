@@ -27,6 +27,14 @@ class BrokerSettings(Settings):
     google_client_id: str = ""
     google_client_secret: SecretStr = SecretStr("")
     twilio_allowed_numbers: list[str] = []
+    # Realtime voice calls (crewquarters_broker.voice): the local models they use and limits.
+    voice_asr_model: str = "local.asr.r2t2"
+    voice_llm_profile: str = "local.general.small"
+    voice_tts_model: str = "local.tts.voxtream"
+    voice_max_call_seconds: int = 300
+    voice_barge_in_ms: int = 300
+    # Longer than a cold load of every model the call uses.
+    voice_gateway_timeout_seconds: float = 1260.0
 
     @property
     def google_redirect_uri(self) -> str:

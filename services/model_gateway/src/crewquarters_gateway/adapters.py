@@ -1,6 +1,8 @@
 """LLM adapters behind one normalized request/response (PLAN.md section 8.4).
 
-* ``LocalAdapter``: vLLM's OpenAI-compatible chat API (also the mock model server).
+* ``LocalAdapter``: vLLM's OpenAI-compatible chat API (also the mock model server), its
+  ``/v1/audio/transcriptions`` API for speech-to-text models, and the Crewquarters TTS
+  server's ``/v1/audio/speech`` (buffered) and ``/v1/audio/speech/stream`` (WebSocket).
 * ``InProcessMockAdapter``: deterministic replies with no server (unit tests).
 * ``OpenAIAdapter``: OpenAI Responses API.
 * ``AnthropicAdapter``: Anthropic Messages API through the official ``anthropic`` SDK.
@@ -16,16 +18,22 @@ clear error instead of silently degrading; parameters a model rejects outright
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import html
+import io
 import json
+import math
 import re
 import time
+import wave
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import anthropic
 import httpx
+import websockets
 from jsonschema import Draft202012Validator
 
 from crewquarters_shared.errors import PlatformError
@@ -50,6 +58,87 @@ class ChatRequest:
     temperature: float | None = None
     response_schema: dict[str, Any] | None = None
     tools: list[Any] = field(default_factory=list)
+
+
+@dataclass
+class TranscriptionRequest:
+    audio: bytes
+    filename: str
+    content_type: str
+    language: str | None = None
+
+
+@dataclass
+class TranscriptionResult:
+    text: str
+    model: str
+    latency_ms: int = 0
+    audio_seconds: float | None = None
+    language: str | None = None  # the requested language hint, if any
+
+    def to_wire(self, model_id: str) -> dict[str, Any]:
+        return {
+            "modelId": model_id,
+            "text": self.text,
+            "language": self.language,
+            "audioSeconds": self.audio_seconds,
+            "latencyMs": self.latency_ms,
+        }
+
+
+@dataclass
+class SpeechRequest:
+    text: str
+    voice: str
+
+
+@dataclass
+class SpeechResult:
+    wav: bytes
+    audio_seconds: float
+    latency_ms: int
+
+
+class SpeechStream(Protocol):
+    """One streaming synthesis: text in (possibly word by word), 16-bit PCM frames out."""
+
+    sample_rate: int
+
+    async def send_text(self, text: str) -> None: ...
+
+    async def end(self) -> None: ...
+
+    async def cancel(self) -> None: ...
+
+    def events(self) -> AsyncIterator[bytes | dict[str, Any]]: ...
+
+    async def close(self) -> None: ...
+
+
+def wav_bytes(pcm: bytes, sample_rate: int) -> bytes:
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sample_rate)
+        w.writeframes(pcm)
+    return out.getvalue()
+
+
+MOCK_SPEECH_RATE = 24000
+MOCK_FRAME_SAMPLES = 1920  # 80 ms, like VoXtream
+
+
+def mock_speech_pcm(text: str) -> bytes:
+    """The mock TTS model's audio: a quiet 440 Hz tone, 80 ms per word. Kept identical to
+    ``catalog/models/dev/files/mock_openai_server.py`` (a test checks)."""
+    frames = max(1, len(text.split())) * MOCK_FRAME_SAMPLES
+    return b"".join(
+        int(3000 * math.sin(2 * math.pi * 440 * i / MOCK_SPEECH_RATE)).to_bytes(
+            2, "little", signed=True
+        )
+        for i in range(frames)
+    )
 
 
 @dataclass
@@ -279,6 +368,139 @@ class LocalAdapter:
             )
         yield {"type": "result", "result": result}
 
+    async def transcribe(self, request: TranscriptionRequest) -> TranscriptionResult:
+        """vLLM's OpenAI-compatible whole-file transcription (multipart upload)."""
+        started = time.perf_counter()
+        data = {"model": self.served_model, "response_format": "json"}
+        if request.language:
+            data["language"] = request.language
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/v1/audio/transcriptions",
+                    data=data,
+                    files={"file": (request.filename, request.audio, request.content_type)},
+                )
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise _http_error("Local model", exc) from exc
+        body = response.json()
+        usage = body.get("usage") or {}
+        seconds = usage.get("seconds") if usage.get("type") == "duration" else None
+        return TranscriptionResult(
+            text=str(body.get("text") or "").strip(),
+            model=self.served_model,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            audio_seconds=float(seconds) if seconds is not None else None,
+            language=request.language,
+        )
+
+    async def speak(self, request: SpeechRequest) -> SpeechResult:
+        started = time.perf_counter()
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/v1/audio/speech",
+                    json={"input": request.text, "voice": request.voice, "format": "wav"},
+                )
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise _http_error("Local model", exc) from exc
+        with wave.open(io.BytesIO(response.content)) as w:
+            seconds = w.getnframes() / w.getframerate()
+        return SpeechResult(
+            response.content, round(seconds, 3), int((time.perf_counter() - started) * 1000)
+        )
+
+    async def open_speech_stream(self, voice: str) -> SpeechStream:
+        url = self.base_url.replace("http://", "ws://", 1) + "/v1/audio/speech/stream"
+        try:
+            ws = await websockets.connect(f"{url}?voice={voice}", max_size=1 << 20, open_timeout=10)
+        except (OSError, websockets.WebSocketException) as exc:
+            raise provider_unreachable("Local model", exc) from exc
+        return _ServerSpeechStream(ws)
+
+
+class _ServerSpeechStream:
+    """A streaming synthesis on the TTS server's WebSocket."""
+
+    sample_rate = 24000
+
+    def __init__(self, ws: Any) -> None:
+        self.ws = ws
+
+    async def _send(self, message: dict[str, Any]) -> None:
+        with contextlib.suppress(websockets.ConnectionClosed):
+            await self.ws.send(json.dumps(message))
+
+    async def send_text(self, text: str) -> None:
+        await self._send({"type": "text", "text": text})
+
+    async def end(self) -> None:
+        await self._send({"type": "end"})
+
+    async def cancel(self) -> None:
+        await self._send({"type": "cancel"})
+
+    async def events(self) -> AsyncIterator[bytes | dict[str, Any]]:
+        try:
+            async for message in self.ws:
+                if isinstance(message, bytes):
+                    yield message
+                    continue
+                event = json.loads(message)
+                if event.get("type") == "done":
+                    self.sample_rate = int(event.get("sampleRate") or self.sample_rate)
+                yield event
+                if event.get("type") in ("done", "error"):
+                    return
+        except websockets.ConnectionClosed:
+            return
+
+    async def close(self) -> None:
+        await self.ws.close()
+
+
+class _MockSpeechStream:
+    """In-process mock: after ``end`` (or ``cancel``), emits the mock audio for the text
+    received so far in 80 ms frames, then ``done``."""
+
+    sample_rate = MOCK_SPEECH_RATE
+
+    def __init__(self) -> None:
+        self.words: list[str] = []
+        self.finished = asyncio.Event()
+        self.cancelled = False
+
+    async def send_text(self, text: str) -> None:
+        self.words.extend(text.split())
+
+    async def end(self) -> None:
+        self.finished.set()
+
+    async def cancel(self) -> None:
+        self.cancelled = True
+        self.finished.set()
+
+    async def events(self) -> AsyncIterator[bytes | dict[str, Any]]:
+        await self.finished.wait()
+        pcm = b"" if self.cancelled else mock_speech_pcm(" ".join(self.words))
+        step = MOCK_FRAME_SAMPLES * 2
+        for i in range(0, len(pcm), step):
+            if self.cancelled:
+                break
+            yield pcm[i : i + step]
+            await asyncio.sleep(0)
+        yield {
+            "type": "done",
+            "cancelled": self.cancelled,
+            "audioSeconds": round(len(pcm) / 2 / MOCK_SPEECH_RATE, 3),
+            "sampleRate": MOCK_SPEECH_RATE,
+        }
+
+    async def close(self) -> None:
+        return None
+
 
 class InProcessMockAdapter:
     """Same behavior as ``catalog/models/dev/files/mock_openai_server.py`` without HTTP."""
@@ -316,6 +538,29 @@ class InProcessMockAdapter:
         for i, word in enumerate(result.text.split(" ")):
             yield {"type": "delta", "text": word if i == 0 else " " + word}
         yield {"type": "result", "result": result}
+
+    async def transcribe(self, request: TranscriptionRequest) -> TranscriptionResult:
+        return TranscriptionResult(
+            text=mock_transcript(request.filename, len(request.audio)),
+            model=self.served_model,
+            audio_seconds=1.0,
+            language=request.language,
+        )
+
+    async def speak(self, request: SpeechRequest) -> SpeechResult:
+        pcm = mock_speech_pcm(request.text)
+        return SpeechResult(
+            wav_bytes(pcm, MOCK_SPEECH_RATE), round(len(pcm) / 2 / MOCK_SPEECH_RATE, 3), 0
+        )
+
+    async def open_speech_stream(self, voice: str) -> SpeechStream:
+        return _MockSpeechStream()
+
+
+def mock_transcript(filename: str | None, size: int) -> str:
+    """The mock model's transcript. Kept identical to
+    ``catalog/models/dev/files/mock_openai_server.py`` (a test checks)."""
+    return f"Mock transcript of {filename or 'audio'} ({size} bytes)."
 
 
 # Knowledge-grounded messages (crewquarters_knowledge.service.format_context): a preamble,

@@ -488,6 +488,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{model_id}/transcriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transcribe one audio file with a local speech-to-text model
+         * @description Loads the model on demand (admission control applies), so the first request can
+         *     take as long as a cold start. The audio and the transcript are not stored; the audit
+         *     record holds only the model, size, and outcome. Not replayable: each call transcribes.
+         */
+        post: operations["transcribe_audio_api_v1_models__model_id__transcriptions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{model_id}/speech": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Speak a short text with a local text-to-speech model (returns a WAV)
+         * @description Loads the model on demand (admission control applies). Neither the text nor the
+         *     audio is stored; the audit record holds only the model, length, and outcome.
+         */
+        post: operations["speak_text_api_v1_models__model_id__speech_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{model_id}/install/cancel": {
         parameters: {
             query?: never;
@@ -872,6 +915,62 @@ export interface paths {
          *     twice.
          */
         post: operations["twilio_test_call_api_v1_connections_twilio_test_call_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connections/twilio/voice-calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a realtime AI voice call to an allowed number (the owner must confirm)
+         * @description Twilio speaks the automated-call disclosure, then the caller talks with the local
+         *     models (speech-to-text, chat, text-to-speech). One call at a time; a retry with the same
+         *     ``Idempotency-Key`` replays the first result and never dials twice.
+         */
+        post: operations["start_voice_call_api_v1_connections_twilio_voice_calls_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connections/twilio/voice-calls/{call_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A voice call's state and live transcript */
+        get: operations["get_voice_call_api_v1_connections_twilio_voice_calls__call_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connections/twilio/voice-calls/{call_id}/hangup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** End a voice call */
+        post: operations["hang_up_voice_call_api_v1_connections_twilio_voice_calls__call_id__hangup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1598,6 +1697,19 @@ export interface components {
             payload: {
                 [key: string]: unknown;
             };
+        };
+        /** Body_transcribe_audio_api_v1_models__model_id__transcriptions_post */
+        Body_transcribe_audio_api_v1_models__model_id__transcriptions_post: {
+            /**
+             * File
+             * @description .wav, .flac, .mp3, .ogg, .m4a, or .webm
+             */
+            file: string;
+            /**
+             * Language
+             * @description ISO 639-1 hint such as 'en' or 'zh'.
+             */
+            language?: string | null;
         };
         /** Body_upload_document_api_v1_knowledge_bases__kb_id__documents_post */
         Body_upload_document_api_v1_knowledge_bases__kb_id__documents_post: {
@@ -2449,6 +2561,11 @@ export interface components {
             license?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Voices
+             * @description Voices of a text-to-speech model.
+             */
+            voices?: components["schemas"]["ModelVoiceOut"][];
             /** Error */
             error?: {
                 [key: string]: unknown;
@@ -2479,6 +2596,13 @@ export interface components {
              * @default false
              */
             force: boolean;
+        };
+        /** ModelVoiceOut */
+        ModelVoiceOut: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
         };
         /** OccurrenceOut */
         OccurrenceOut: {
@@ -3062,6 +3186,16 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** SpeechIn */
+        SpeechIn: {
+            /** Text */
+            text: string;
+            /**
+             * Voice
+             * @default female
+             */
+            voice: string;
+        };
         /** StatusCheck */
         StatusCheck: {
             /**
@@ -3103,6 +3237,34 @@ export interface components {
             runtime: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * TranscriptionOut
+         * @description Whole-file speech-to-text result. Neither the audio nor the transcript is stored.
+         */
+        TranscriptionOut: {
+            /** Modelid */
+            modelId: string;
+            /** Text */
+            text: string;
+            /**
+             * Language
+             * @description The language hint that was sent, if any.
+             */
+            language?: string | null;
+            /**
+             * Audioseconds
+             * @description Audio duration the model reported.
+             */
+            audioSeconds?: number | null;
+            /**
+             * Latencyms
+             * @description Time the model spent transcribing.
+             * @default 0
+             */
+            latencyMs: number;
+            /** Requestid */
+            requestId?: string | null;
         };
         /** TwilioCredentialsIn */
         TwilioCredentialsIn: {
@@ -3172,6 +3334,100 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VoiceCallIn */
+        VoiceCallIn: {
+            /**
+             * To
+             * @description A number in CQ_TWILIO_ALLOWED_NUMBERS.
+             */
+            to: string;
+            /**
+             * Confirm
+             * @description Must be true: the owner confirmed a live call.
+             */
+            confirm: boolean;
+            /**
+             * Voice
+             * @description Speech voice id.
+             * @default female
+             */
+            voice: string;
+            /**
+             * Instructions
+             * @description Extra instructions for the assistant on this call.
+             * @default
+             */
+            instructions: string;
+        };
+        /**
+         * VoiceCallOut
+         * @description A realtime voice call. The transcript lives in memory only, for this live view.
+         */
+        VoiceCallOut: {
+            /** Id */
+            id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "created" | "dialing" | "ringing" | "connected" | "ended" | "failed";
+            /**
+             * To
+             * @description Masked destination.
+             */
+            to: string;
+            /** Voice */
+            voice: string;
+            /**
+             * Simulated
+             * @default false
+             */
+            simulated: boolean;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Connectedat */
+            connectedAt?: string | null;
+            /** Endedat */
+            endedAt?: string | null;
+            /** Durationseconds */
+            durationSeconds?: number | null;
+            /** Endreason */
+            endReason?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Turns */
+            turns?: components["schemas"]["VoiceTurnOut"][];
+        };
+        /** VoiceTurnOut */
+        VoiceTurnOut: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "caller" | "assistant";
+            /** Text */
+            text: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Interrupted
+             * @default false
+             */
+            interrupted: boolean;
+            /**
+             * Timings
+             * @description asrMs, llmFirstTokenMs, firstAudioMs (from the end of the caller's speech).
+             */
+            timings?: {
+                [key: string]: number;
+            };
         };
     };
     responses: never;
@@ -4765,6 +5021,157 @@ export interface operations {
             };
         };
     };
+    transcribe_audio_api_v1_models__model_id__transcriptions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_transcribe_audio_api_v1_models__model_id__transcriptions_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscriptionOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    speak_text_api_v1_models__model_id__speech_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpeechIn"];
+            };
+        };
+        responses: {
+            /** @description 16-bit mono WAV */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/wav": unknown;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     cancel_model_install_api_v1_models__model_id__install_cancel_post: {
         parameters: {
             query?: never;
@@ -5979,6 +6386,218 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    start_voice_call_api_v1_connections_twilio_voice_calls_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceCallIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceCallOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_voice_call_api_v1_connections_twilio_voice_calls__call_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceCallOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    hang_up_voice_call_api_v1_connections_twilio_voice_calls__call_id__hangup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceCallOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

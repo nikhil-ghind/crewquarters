@@ -18,6 +18,8 @@ import { ModelActions } from './ModelActions';
 import { licenseText } from './modelInfo';
 import { ModelProgress } from './ModelProgress';
 import { ModelStates } from './ModelsPage';
+import { SpeechPanel, isSpeechModel } from './SpeechPanel';
+import { TranscriptionPanel, isTranscriptionModel } from './TranscriptionPanel';
 
 export default function ModelDetailPage() {
   const { modelId = '' } = useParams();
@@ -69,6 +71,8 @@ function ModelView({ model }: { model: ModelOut }) {
           <ModelActions model={model} />
         </div>
       </Card>
+      {isTranscriptionModel(model) ? <TranscriptionPanel model={model} /> : null}
+      {isSpeechModel(model) ? <SpeechPanel model={model} /> : null}
       <div className="grid-2">
         <Card title="Details">
           <KeyValue
@@ -94,7 +98,7 @@ function ModelView({ model }: { model: ModelOut }) {
                 <li key={l.id} className="row-between">
                   <span>{l.label}</span>
                   <span className="muted" title={formatUtc(l.expiresAt)}>
-                    {l.holderType === 'chat' ? 'Chat' : l.holderType === 'run' ? 'Agent run' : 'Manual'} · lease renews until{' '}
+                    {l.holderType === 'chat' ? 'Chat' : l.holderType === 'run' ? 'Agent run' : l.holderId.startsWith('voice:') ? 'Voice call' : l.holderId.startsWith('transcription:') ? 'Transcription' : l.holderId.startsWith('speech:') ? 'Speech' : 'Manual'} · lease renews until{' '}
                     {formatDateTime(l.expiresAt, timeZone)}
                   </span>
                 </li>

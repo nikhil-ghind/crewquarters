@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     internal_service_token: SecretStr = SecretStr("dev-insecure-internal-token-change-me-0000")
     # Held only by the control API and the model gateway: authorizes chat leases/inference.
     chat_client_token: SecretStr = SecretStr("dev-insecure-chat-token-change-me-000000000")
+    # Held only by the capability broker and the model gateway: authorizes the realtime
+    # phone conversation loop (transcription, chat and speech for a voice call).
+    voice_client_token: SecretStr = SecretStr("dev-insecure-voice-token-change-me-00000000")
 
     public_origins: list[str] = ["http://localhost:8080", "http://127.0.0.1:8080"]
     cookie_secure: bool = False

@@ -33,6 +33,7 @@ x-app-env: &app-env
   # 26 MiB on the upload route (infra/proxy/nginx.conf).
   CQ_MAX_UPLOAD_BYTES: ${CQ_MAX_UPLOAD_BYTES:-26214400}
   CQ_CHAT_CLIENT_TOKEN: ${CQ_CHAT_CLIENT_TOKEN:-dev-insecure-chat-token-change-me-000000000}
+  CQ_VOICE_CLIENT_TOKEN: ${CQ_VOICE_CLIENT_TOKEN:-dev-insecure-voice-token-change-me-00000000}
 
 # Services that decrypt provider secrets: the device keyring, read-only, readable through
 # a dedicated group (mirrors the appliance: root:crewquarters 0640 + group_add).

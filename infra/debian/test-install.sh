@@ -36,6 +36,7 @@ dpkg-deb -c "$DEB" | grep -q "usr/share/doc/crewquarters/lan-https.md" || fail "
 grep -c '^CQ_' /etc/crewquarters/secrets.env
 grep '^CQ_SOCKET_GID=' /etc/crewquarters/secrets.env
 grep -q '^CQ_CHAT_CLIENT_TOKEN=' /etc/crewquarters/secrets.env || fail "chat token"
+grep -q '^CQ_VOICE_CLIENT_TOKEN=' /etc/crewquarters/secrets.env || fail "voice token"
 [ "$(cat /etc/crewquarters/runtime-token)" = "$(sed -n 's/^CQ_INTERNAL_SERVICE_TOKEN=//p' /etc/crewquarters/secrets.env)" ] || fail "runtime token mismatch"
 test -f /usr/lib/tmpfiles.d/crewquarters.conf || fail "tmpfiles"
 [ "$(stat -c '%a %G' /run/crewquarters)" = "750 crewquarters" ] || fail "/run/crewquarters perms: $(stat -c '%a %U:%G' /run/crewquarters)"

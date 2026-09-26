@@ -78,6 +78,26 @@ For each failed check:
 - Loading goes through the gateway's admission control: 24 GiB system reserve, 96 GiB serving cap, 8 GiB margin, and one generative model by default. Tune these in `crewquarters.env`.
 - An idle model unloads after `CQ_GATEWAY_IDLE_UNLOAD_SECONDS` (600 s). The daemon stops and removes the container, then samples memory to confirm the release.
 
+## Model images built from source
+
+`local.tts.voxtream` is served by an image built from this repository
+(`infra/docker/voxtream.Dockerfile`), not pulled from NGC. The runtime daemon runs model
+images only by digest, so the image must have a registry digest:
+
+```bash
+docker build -f infra/docker/voxtream.Dockerfile -t crewquarters/voxtream:<tag> .
+docker run -d --name cq-build-registry -p 127.0.0.1:5001:5000 registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+docker tag crewquarters/voxtream:<tag> localhost:5001/crewquarters/voxtream:<tag>
+docker push localhost:5001/crewquarters/voxtream:<tag>
+docker inspect --format '{{index .RepoDigests 0}}' localhost:5001/crewquarters/voxtream:<tag>
+```
+
+Put that `localhost:5001/...@sha256:...` reference in `launch.image`. On the device that
+pushed it, Docker then resolves the reference locally and the daemon never pulls. Another
+device needs the image from a registry it can reach (publish it and pin that digest), or
+`docker load` plus a push to its own local registry. The image needs no network at run time:
+every auxiliary model, the NLTK data, and the sample voices are baked in and pinned.
+
 ## Benchmark (on the device)
 
 ```bash

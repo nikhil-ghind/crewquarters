@@ -20,6 +20,23 @@ Models (downloaded on the appliance or included in an offline bundle)
   Version 2.0. https://huggingface.co/jinaai/jina-embeddings-v2-small-en
   The ONNX export used (https://huggingface.co/Xenova/jina-embeddings-v2-small-en) is a
   format conversion of that model by Joshua Lochner (Xenova).
+* Confucius4-R2T2, Copyright NetEase Youdao. Used under the NetEase Youdao Model Use
+  License Agreement, a copy of which must accompany the model:
+  https://raw.githubusercontent.com/netease-youdao/Confucius4-R2T2/refs/heads/master/MODEL_LICENSE
+  https://huggingface.co/netease-youdao/Confucius4-R2T2
+* VoXtream, by Nikita Torgashov, Gustav Eje Henter and Gabriel Skantze ("VoXtream: Full-Stream
+  Text-to-Speech with Extremely Low Latency", ICASSP 2026). Weights licensed under CC BY 4.0,
+  https://huggingface.co/herimor/voxtream ; code licensed under the MIT License, with the
+  SesameAI depth transformer under the Apache License, Version 2.0. The weights were trained
+  on the Emilia dataset (https://huggingface.co/datasets/amphion/Emilia-Dataset, CC BY 4.0)
+  and the HiFiTTS-2 dataset (https://huggingface.co/datasets/nvidia/hifitts-2, CC BY 4.0).
+  The two bundled sample voices come from the VoXtream repository (assets/app).
+* Mimi audio codec (kyutai/moshiko-pytorch-bf16), Copyright Kyutai. Weights licensed under
+  CC BY 4.0; the moshi library under the MIT and Apache 2.0 licenses.
+* ReDimNet speaker encoder, Copyright ID R&D. MIT License. https://github.com/IDRnD/ReDimNet
+* Charsiu phoneme aligner (charsiu/en_w2v2_fc_10ms, charsiu/tokenizer_en_cmu), by Jian Zhu
+  et al. The model cards declare no license; the Charsiu project is MIT licensed
+  (https://github.com/lingjzhu/charsiu).
 
 Container images and services (pulled or bundled unmodified)
 -------------------------------------------------------------

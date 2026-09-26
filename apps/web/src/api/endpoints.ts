@@ -11,6 +11,7 @@ import type {
   ProviderProfileCreateIn,
   TwilioCredentialsIn,
   TwilioTestCallIn,
+  VoiceCallIn,
 } from './schema';
 
 /** Largest document the knowledge service accepts (CQ_MAX_UPLOAD_BYTES default). */
@@ -40,6 +41,12 @@ export const endpoints = {
   twilioSave: (body: TwilioCredentialsIn, key?: string) =>
     mutate(api.PUT('/api/v1/connections/twilio', { body, headers: headers(key) })),
   twilioTest: (key?: string) => mutate(api.POST('/api/v1/connections/twilio/test', { headers: headers(key) })),
+  voiceCallStart: (body: VoiceCallIn, key: string) =>
+    mutate(api.POST('/api/v1/connections/twilio/voice-calls', { body, headers: withKey(key) })),
+  voiceCall: (id: string) =>
+    unwrap(api.GET('/api/v1/connections/twilio/voice-calls/{call_id}', { params: { path: { call_id: id } } })),
+  voiceCallHangup: (id: string) =>
+    mutate(api.POST('/api/v1/connections/twilio/voice-calls/{call_id}/hangup', { params: { path: { call_id: id } } })),
   twilioTestCall: (body: TwilioTestCallIn, key: string) =>
     mutate(api.POST('/api/v1/connections/twilio/test-call', { body, headers: withKey(key) })),
   twilioDelete: (key?: string) => mutate(api.DELETE('/api/v1/connections/twilio', { headers: headers(key) })),
@@ -79,6 +86,32 @@ export const endpoints = {
       }),
     );
   },
+  transcribe: (modelId: string, file: File, language: string | null, signal?: AbortSignal) => {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    if (language) form.append('language', language);
+    return mutate(
+      api.POST('/api/v1/models/{model_id}/transcriptions', {
+        params: { path: { model_id: modelId } },
+        body: { file: file.name },
+        bodySerializer: () => form,
+        signal,
+        // A cold model load can take minutes: no default request timeout.
+        fetch: (request: Request) => globalThis.fetch(request),
+      }),
+    );
+  },
+  /** A WAV of the text, spoken by a local text-to-speech model. */
+  speak: (modelId: string, text: string, voice: string): Promise<Blob> =>
+    mutate(
+      api.POST('/api/v1/models/{model_id}/speech', {
+        params: { path: { model_id: modelId } },
+        body: { text, voice },
+        parseAs: 'blob',
+        // A cold model load can take a minute: no default request timeout.
+        fetch: (request: Request) => globalThis.fetch(request),
+      }),
+    ),
   documentDelete: (kbId: string, docId: string, key?: string) =>
     mutate(
       api.DELETE('/api/v1/knowledge-bases/{kb_id}/documents/{document_id}', {

@@ -104,6 +104,55 @@ class GatewayClient:
                 "MODEL_GATEWAY_UNAVAILABLE", "Model gateway stream failed.", 503
             ) from exc
 
+    # --- transcription -----------------------------------------------------------------
+
+    async def transcribe(
+        self,
+        model_id: str,
+        audio: bytes,
+        *,
+        filename: str,
+        content_type: str,
+        language: str | None,
+        actor: str | None,
+    ) -> dict[str, Any]:
+        """Whole-file speech-to-text (loads the model on demand; admission control applies)."""
+        params = {"modelId": model_id, "filename": filename}
+        if language:
+            params["language"] = language
+        headers = {"Content-Type": content_type}
+        if actor:
+            headers["X-Actor-Id"] = actor
+        try:
+            response = await self._client.post(
+                "/internal/v1/audio/transcriptions", params=params, content=audio, headers=headers
+            )
+        except httpx.HTTPError as exc:
+            raise PlatformError(
+                "MODEL_GATEWAY_UNAVAILABLE", f"Model gateway unreachable: {type(exc).__name__}", 503
+            ) from exc
+        return dict(_unwrap(response))
+
+    async def speak(
+        self, model_id: str, text: str, voice: str, actor: str | None
+    ) -> tuple[bytes, dict[str, str]]:
+        """Text-to-speech as a WAV (loads the model on demand; admission control applies)."""
+        headers = {"X-Actor-Id": actor} if actor else None
+        try:
+            response = await self._client.post(
+                "/internal/v1/audio/speech",
+                json={"modelId": model_id, "input": text, "voice": voice},
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            raise PlatformError(
+                "MODEL_GATEWAY_UNAVAILABLE", f"Model gateway unreachable: {type(exc).__name__}", 503
+            ) from exc
+        if response.status_code >= 400:
+            _unwrap(response)
+        keep = ("x-audio-seconds", "x-latency-ms")
+        return response.content, {k: v for k, v in response.headers.items() if k in keep}
+
     # --- chat ------------------------------------------------------------------------------
 
     async def acquire_chat_lease(

@@ -7,6 +7,14 @@ Callers:
   matching capability (``llm.profile:<variant>``, plus ``cloud.<provider>`` for cloud).
 * **Chat** (the control API, service credential): names a chat holder. Chat is
   local-only.
+* **Transcription and speech** (the control API, for the owner): whole-file speech-to-text
+  (``transcription`` capability) and text-to-speech (``speech`` capability) with local
+  models. Each request holds a short ``manual`` lease, so the model loads on demand and
+  idles out afterwards.
+* **Voice calls** (the capability broker, voice credential): the realtime phone loop's
+  transcription, local chat and streaming speech. Every model it uses is held by one
+  ``manual`` lease per call (holder ``voice:<call>``), renewed on each use and released
+  when the call ends (or when it expires).
 
 Cloud routing is never automatic: a cloud profile must be requested explicitly, and an
 enabled provider profile (Connections) must hold the key. The provider profile's
@@ -19,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+import uuid
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -37,6 +46,11 @@ from crewquarters_gateway.adapters import (
     InProcessMockAdapter,
     LocalAdapter,
     OpenAIAdapter,
+    SpeechRequest,
+    SpeechResult,
+    SpeechStream,
+    TranscriptionRequest,
+    TranscriptionResult,
 )
 from crewquarters_gateway.config import GatewaySettings
 from crewquarters_gateway.control import ACTIVE_RUN_STATES, ControlApiClient
@@ -71,6 +85,8 @@ class Caller:
     capabilities: frozenset[str] = frozenset()
     model_bindings: dict[str, str] | None = None
     attempt: int | None = None
+    lease_ttl: int | None = None  # overrides the run/chat lease lifetime
+    release_after_use: bool = False  # one-off owner requests drop their lease afterwards
 
 
 class InferenceService:
@@ -122,6 +138,23 @@ class InferenceService:
     @staticmethod
     def chat_caller(session_id: str, title: str) -> Caller:
         return Caller(holder_type="chat", holder_id=session_id, label=f"Chat: {title[:40]}")
+
+    def voice_caller(self, call_id: str) -> Caller:
+        return Caller(
+            holder_type="manual",
+            holder_id=f"voice:{call_id[:64]}",
+            label=f"Voice call {call_id[:8]}",
+            lease_ttl=self.settings.voice_lease_ttl_seconds,
+        )
+
+    def owner_caller(self, kind: str, actor: str | None) -> Caller:
+        return Caller(
+            holder_type="manual",
+            holder_id=f"{kind}:{uuid.uuid4()}",
+            label=kind.capitalize() + (f" by {actor[:8]}" if actor else ""),
+            lease_ttl=self.settings.wait_ready_seconds + int(self.settings.request_timeout_seconds),
+            release_after_use=True,
+        )
 
     # --- profile resolution -----------------------------------------------------------
 
@@ -290,15 +323,53 @@ class InferenceService:
 
     # --- adapters -----------------------------------------------------------------------
 
-    async def _local_adapter(self, caller: Caller, model_id: str) -> Adapter:
+    async def _catalog_entry(self, model_id: str, capability: str) -> ModelCatalogEntry:
         async with self.sessions() as db:
-            if await db.get(ModelCatalogEntry, model_id) is None:
-                raise invalid("UNKNOWN_MODEL_PROFILE", f"{model_id} is not in the model catalog.")
-        ttl = (
+            entry = await db.get(ModelCatalogEntry, model_id)
+        if entry is None:
+            raise invalid("UNKNOWN_MODEL_PROFILE", f"{model_id} is not in the model catalog.")
+        if capability not in (entry.capabilities or []):
+            raise invalid(
+                "MODEL_CAPABILITY_UNSUPPORTED",
+                f"{model_id} does not support {capability}.",
+                modelId=model_id,
+                capability=capability,
+            )
+        return entry
+
+    async def _local_adapter(self, caller: Caller, model_id: str) -> Adapter:
+        await self._catalog_entry(model_id, "chat")
+        ttl = caller.lease_ttl or (
             self.settings.run_lease_ttl_seconds
             if caller.holder_type == "run"
             else self.settings.chat_lease_ttl_seconds
         )
+        return await self._leased_local(caller, model_id, ttl)
+
+    @contextlib.asynccontextmanager
+    async def _local_use(
+        self, caller: Caller, model_id: str, capability: str
+    ) -> AsyncIterator[LocalAdapter | InProcessMockAdapter]:
+        """Lease (loading on demand), count the request in flight, and drop a one-off
+        owner lease afterwards."""
+        await self._catalog_entry(model_id, capability)
+        try:
+            adapter = await self._leased_local(
+                caller, model_id, caller.lease_ttl or self.settings.run_lease_ttl_seconds
+            )
+            self.manager.inflight[model_id] += 1
+            try:
+                yield adapter
+            finally:
+                self.manager.inflight[model_id] -= 1
+        finally:
+            if caller.release_after_use:
+                await self.manager.release_holder(caller.holder_type, caller.holder_id, "released")
+
+    async def _leased_local(
+        self, caller: Caller, model_id: str, ttl: int
+    ) -> LocalAdapter | InProcessMockAdapter:
+        """Acquire (or renew) the caller's lease, then wait until the model is ready."""
         await self.manager.acquire(
             model_id, caller.holder_type, caller.holder_id, caller.label, ttl
         )
@@ -441,6 +512,62 @@ class InferenceService:
         return result.to_wire(prepared.profile)
 
     # --- entry points -----------------------------------------------------------------
+
+    async def transcribe(
+        self, model_id: str, request: TranscriptionRequest, caller: Caller
+    ) -> dict[str, Any]:
+        """Whole-file speech-to-text. Usage is recorded without the audio or transcript."""
+        started = time.perf_counter()
+        async with self._local_use(caller, model_id, "transcription") as adapter:
+            try:
+                result: TranscriptionResult = await adapter.transcribe(request)
+            except PlatformError as exc:
+                elapsed = int((time.perf_counter() - started) * 1000)
+                await self._record(caller, None, "local", model_id, exc.code, elapsed)
+                raise
+        await self._record(caller, None, "local", model_id, "ok", result.latency_ms)
+        return result.to_wire(model_id)
+
+    async def _check_voice(self, model_id: str, voice: str) -> None:
+        entry = await self._catalog_entry(model_id, "speech")
+        voices = [str(v.get("id")) for v in (entry.profile or {}).get("voices") or []]
+        if voices and voice not in voices:
+            raise invalid("UNKNOWN_VOICE", f"{model_id} has no voice {voice!r}.", voices=voices)
+
+    async def speak(self, model_id: str, request: SpeechRequest, caller: Caller) -> SpeechResult:
+        """Buffered text-to-speech (a WAV). Usage is recorded without the text or audio."""
+        await self._check_voice(model_id, request.voice)
+        started = time.perf_counter()
+        async with self._local_use(caller, model_id, "speech") as adapter:
+            try:
+                result = await adapter.speak(request)
+            except PlatformError as exc:
+                elapsed = int((time.perf_counter() - started) * 1000)
+                await self._record(caller, None, "local", model_id, exc.code, elapsed)
+                raise
+        await self._record(caller, None, "local", model_id, "ok", result.latency_ms)
+        return result
+
+    @contextlib.asynccontextmanager
+    async def speech_stream(
+        self, model_id: str, voice: str, caller: Caller
+    ) -> AsyncIterator[SpeechStream]:
+        """A streaming synthesis session on the model (text in, PCM frames out)."""
+        await self._check_voice(model_id, voice)
+        started = time.perf_counter()
+        outcome = "ok"
+        async with self._local_use(caller, model_id, "speech") as adapter:
+            stream = await adapter.open_speech_stream(voice)
+            try:
+                yield stream
+            except BaseException:
+                outcome = "cancelled"
+                raise
+            finally:
+                await stream.close()
+                elapsed = int((time.perf_counter() - started) * 1000)
+                with contextlib.suppress(Exception):
+                    await self._record(caller, None, "local", model_id, outcome, elapsed)
 
     async def chat(self, caller: Caller, body: dict[str, Any]) -> dict[str, Any]:
         prepared = await self.prepare(caller, body)

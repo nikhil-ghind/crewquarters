@@ -220,9 +220,36 @@ export interface ModelFixture {
   capabilities: string[];
   generative: boolean;
   license: Obj;
+  voices?: { id: string; label: string }[];
 }
 
 export const MODELS: ModelFixture[] = [
+  {
+    id: 'local.asr.r2t2',
+    displayName: 'Speech to text - Confucius4-R2T2 (2B)',
+    family: 'local.asr',
+    diskBytes: Math.round(4.1 * GiB),
+    expectedMemoryBytes: 16 * GiB,
+    contextLimit: 8192,
+    capabilities: ['transcription'],
+    generative: false,
+    license: { name: 'NetEase Youdao Model Use License Agreement', gated: false },
+  },
+  {
+    id: 'local.tts.voxtream',
+    displayName: 'Text to speech - VoXtream (streaming, English)',
+    family: 'local.tts',
+    diskBytes: Math.round(1.7 * GiB),
+    expectedMemoryBytes: 8 * GiB,
+    contextLimit: 1000,
+    capabilities: ['speech', 'streaming'],
+    generative: false,
+    license: { name: 'CC-BY-4.0', gated: false },
+    voices: [
+      { id: 'female', label: 'Sample voice A (VoXtream repository)' },
+      { id: 'male', label: 'Sample voice B (VoXtream repository)' },
+    ],
+  },
   {
     id: 'local.embedding.jina-v2-small-en',
     displayName: 'Jina embeddings v2 small (English)',

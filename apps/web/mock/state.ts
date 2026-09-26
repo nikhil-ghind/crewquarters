@@ -218,6 +218,7 @@ export function loadModels(s: State, installed: boolean): void {
       capabilities: f.capabilities,
       validation: f.generative ? 'Validated on GB10 (vLLM 0.x, bf16)' : 'CPU embedding model',
       license: f.license,
+      voices: f.voices ?? [],
       error: null,
       loadStartedAt: null,
       readyAt: null,

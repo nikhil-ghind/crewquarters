@@ -7,7 +7,9 @@ import { Card, Page, PageHeader } from '../../components/Layout';
 import { readPref, writePref } from '../../lib/storage';
 import { PROVIDER_NAMES } from '../../lib/status';
 import { googleErrorText } from './googleErrors';
+import { useConnections } from '../../api/queries';
 import { GOOGLE_RETURN_KEY, GoogleConnect, ProviderKeyForm, TwilioForm } from './forms';
+import { VoiceCallCard } from './VoiceCallCard';
 
 const PURPOSE: Record<string, string> = {
   google: 'Gmail (read-only) and Google Sheets access for your agents.',
@@ -21,6 +23,8 @@ export default function ProviderPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const client = useQueryClient();
+  const connections = useConnections();
+  const twilioConnected = (connections.data ?? []).some((c) => c.provider === 'twilio' && c.status === 'CONNECTED');
   const result = params.get('result');
   const code = params.get('code');
 
@@ -56,6 +60,7 @@ export default function ProviderPage() {
         {provider === 'twilio' ? <TwilioForm /> : null}
         {provider === 'openai' || provider === 'anthropic' ? <ProviderKeyForm provider={provider} /> : null}
       </Card>
+      {provider === 'twilio' ? <VoiceCallCard connected={twilioConnected} /> : null}
     </Page>
   );
 }

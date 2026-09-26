@@ -1,0 +1,71 @@
+{
+  "id": "local.tts.voxtream",
+  "family": "local.tts",
+  "displayName": "Text to speech - VoXtream (streaming, English)",
+  "backend": "voxtream",
+  "source": {
+    "type": "huggingface",
+    "repo": "herimor/voxtream",
+    "revision": "1b0e673b4a68b578d1c18f2c9c1f91f0d4e2e75d",
+    "allowPatterns": [
+      "config.json",
+      "model.safetensors",
+      "phoneme_to_token.json",
+      "README.md"
+    ]
+  },
+  "license": {
+    "name": "CC-BY-4.0",
+    "gated": false,
+    "url": "https://huggingface.co/herimor/voxtream"
+  },
+  "quantization": "bf16",
+  "launch": {
+    "image": "localhost:5001/crewquarters/voxtream@sha256:b4e1829339c8f489ddd36822ca7b621dea3a358c528a506f6d3bfb7d4da0ac22",
+    "gpu": true,
+    "ipcHost": true,
+    "port": 8000,
+    "healthPath": "/v1/models",
+    "startupTimeoutSeconds": 300,
+    "args": [
+      "python",
+      "/opt/cq-tts/app/cq_tts_server.py",
+      "--model-path",
+      "{model_path}",
+      "--served-model-name",
+      "{served_model_name}",
+      "--port",
+      "{port}"
+    ],
+    "env": {},
+    "imageLicense": {
+      "component": "Crewquarters VoXtream TTS server image (infra/docker/voxtream.Dockerfile)",
+      "name": "Mixed: MIT/Apache-2.0/BSD code; CC-BY-4.0 weights; Charsiu aligner declares no license",
+      "note": "Bundles voxtream 0.1.5 (MIT; SesameAI depth transformer Apache-2.0), moshi 0.2.2 and the Mimi codec weights kyutai/moshiko-pytorch-bf16 (code MIT/Apache-2.0, weights CC-BY-4.0), IDRnD/ReDimNet (MIT), charsiu/en_w2v2_fc_10ms and charsiu/tokenizer_en_cmu (each model card declares no license; the Charsiu project is MIT - review before redistributing), NLTK data, PyTorch (BSD-3-Clause), and the two sample voices from the VoXtream repository. VoXtream weights: attribute the Emilia and HiFiTTS-2 datasets (CC-BY-4.0)."
+    }
+  },
+  "memory": {
+    "weightBytes": 1767213632,
+    "startupPeakBytes": 8589934592,
+    "validated": true
+  },
+  "contextLimit": 1000,
+  "capabilities": [
+    "speech",
+    "streaming"
+  ],
+  "voices": [
+    {
+      "id": "female",
+      "label": "Sample voice A (VoXtream repository)"
+    },
+    {
+      "id": "male",
+      "label": "Sample voice B (VoXtream repository)"
+    }
+  ],
+  "validation": {
+    "status": "validated-gb10",
+    "note": "Custom image infra/docker/voxtream.Dockerfile (voxtream 0.1.5 on torch 2.8 cu129; all auxiliary weights baked in and pinned; runs with no network). Measured on a GB10: about 5.4 GiB resident, healthy in about 30 s, first audio about 150 ms (whole text) or 320 ms (word-by-word input), about 2x faster than real time. English only; voices are the two samples bundled from the VoXtream repository."
+  }
+}

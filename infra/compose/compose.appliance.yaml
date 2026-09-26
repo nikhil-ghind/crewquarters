@@ -131,6 +131,13 @@ services:
       CQ_GOOGLE_CLIENT_ID: ${CQ_GOOGLE_CLIENT_ID:-}
       CQ_GOOGLE_CLIENT_SECRET: ${CQ_GOOGLE_CLIENT_SECRET:-}
       CQ_TWILIO_ALLOWED_NUMBERS: ${CQ_TWILIO_ALLOWED_NUMBERS:-[]}
+      # Realtime voice calls (docs/voice-calls.md): the credential that lets the broker use
+      # the gateway's audio routes, and the local models a call uses.
+      CQ_VOICE_CLIENT_TOKEN: ${CQ_VOICE_CLIENT_TOKEN:?}
+      CQ_VOICE_ASR_MODEL: ${CQ_VOICE_ASR_MODEL:-local.asr.r2t2}
+      CQ_VOICE_LLM_PROFILE: ${CQ_VOICE_LLM_PROFILE:-local.general.small}
+      CQ_VOICE_TTS_MODEL: ${CQ_VOICE_TTS_MODEL:-local.tts.voxtream}
+      CQ_VOICE_MAX_CALL_SECONDS: ${CQ_VOICE_MAX_CALL_SECONDS:-300}
     networks:
       default: {}
       agents:
@@ -199,6 +206,7 @@ services:
       CQ_GATEWAY_LOAD_SAFETY_MARGIN_BYTES: ${CQ_GATEWAY_LOAD_SAFETY_MARGIN_BYTES:-8589934592}
       CQ_GATEWAY_IDLE_UNLOAD_SECONDS: ${CQ_GATEWAY_IDLE_UNLOAD_SECONDS:-600}
       CQ_MASTER_KEY_FILE: /run/crewquarters-keys/master.key
+      CQ_VOICE_CLIENT_TOKEN: ${CQ_VOICE_CLIENT_TOKEN:?}
     networks:
       - default
       - models

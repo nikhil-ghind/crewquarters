@@ -881,6 +881,64 @@ route('POST', `${P}/models/:id/load`, (ctx) => {
   audit('model.load', { type: 'model', id: m.id });
   return ok(modelOut(m), 202);
 });
+route('POST', `${P}/models/:id/transcriptions`, async (ctx) => {
+  const m = modelOrThrow(param(ctx, 'id'));
+  if (ctx.raw.length > MAX_UPLOAD + 64 * 1024) throw new ApiErr(413, 'PAYLOAD_TOO_LARGE', 'Audio files are limited to 25 MiB.');
+  const ct = ctx.req.headers['content-type'] ?? '';
+  if (!ct.startsWith('multipart/form-data')) throw new ApiErr(415, 'UNSUPPORTED_MEDIA_TYPE', 'Upload the file as multipart/form-data.');
+  const form = await new Response(new Uint8Array(ctx.raw), { headers: { 'content-type': ct } }).formData();
+  const file = form.get('file');
+  if (!file || typeof file === 'string') throw validation([{ path: '/file', message: 'Attach an audio file.' }]);
+  if (!(m.capabilities ?? []).includes('transcription')) {
+    throw new ApiErr(422, 'MODEL_CAPABILITY_UNSUPPORTED', `${m.id} does not support transcription.`, { modelId: m.id, capability: 'transcription' });
+  }
+  if (m.downloadState !== 'INSTALLED') throw new ApiErr(409, 'MODEL_NOT_INSTALLED', `Install ${m.id} before using it.`);
+  const ext = (file.name.split('.').pop() ?? '').toLowerCase();
+  if (!['wav', 'flac', 'mp3', 'ogg', 'm4a', 'webm'].includes(ext)) {
+    throw new ApiErr(422, 'UNSUPPORTED_AUDIO_TYPE', 'Upload a .wav, .flac, .mp3, .ogg, .m4a, or .webm file.');
+  }
+  const holder = `transcription-${newId()}`;
+  addLease(m, 'manual', holder, 'Transcription');
+  try {
+    if (m.memoryState !== 'READY') await loadModel(m);
+  } finally {
+    releaseLease(m, holder);
+  }
+  const language = form.get('language');
+  audit('model.transcribe', { type: 'model', id: m.id });
+  return ok({
+    modelId: m.id,
+    text: `Mock transcript of ${file.name} (${file.size} bytes).`,
+    language: typeof language === 'string' && language ? language : null,
+    audioSeconds: 1,
+    latencyMs: 120,
+    requestId: newId(),
+  });
+});
+route('POST', `${P}/models/:id/speech`, async (ctx) => {
+  const m = modelOrThrow(param(ctx, 'id'));
+  if (!(m.capabilities ?? []).includes('speech')) {
+    throw new ApiErr(422, 'MODEL_CAPABILITY_UNSUPPORTED', `${m.id} does not support speech.`, { modelId: m.id, capability: 'speech' });
+  }
+  if (m.downloadState !== 'INSTALLED') throw new ApiErr(409, 'MODEL_NOT_INSTALLED', `Install ${m.id} before using it.`);
+  const text = typeof ctx.body.text === 'string' ? ctx.body.text : '';
+  const holder = `speech-${newId()}`;
+  addLease(m, 'manual', holder, 'Speech');
+  try {
+    if (m.memoryState !== 'READY') await loadModel(m);
+  } finally {
+    releaseLease(m, holder);
+  }
+  audit('model.speak', { type: 'model', id: m.id });
+  // A short quiet 440 Hz tone, 80 ms per word, as a 24 kHz 16-bit WAV.
+  const samples = Math.max(1, text.split(/\s+/).filter(Boolean).length) * 1920;
+  const wav = Buffer.alloc(44 + samples * 2);
+  wav.write('RIFF', 0); wav.writeUInt32LE(36 + samples * 2, 4); wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(24000, 24);
+  wav.writeUInt32LE(48000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(samples * 2, 40);
+  for (let i = 0; i < samples; i++) wav.writeInt16LE(Math.round(3000 * Math.sin((2 * Math.PI * 440 * i) / 24000)), 44 + i * 2);
+  return { status: 200, headers: { 'Content-Type': 'audio/wav' }, body: wav };
+});
 route('POST', `${P}/models/:id/unload`, (ctx) => {
   const m = modelOrThrow(param(ctx, 'id'));
   const force = ctx.body.force === true;

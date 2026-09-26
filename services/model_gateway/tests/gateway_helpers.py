@@ -175,3 +175,13 @@ def _no_real_provider_calls(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
     monkeypatch.setattr(OpenAIAdapter, "base_url", "http://127.0.0.1:9/v1")
+
+
+ASR_TTS_INSTALL = ("local.asr.r2t2", SMALL, "local.tts.voxtream")
+
+
+async def install_models(gateway: Gateway, models: tuple[str, ...]) -> None:
+    """Install models straight through the manager (the in-process runtime is instant)."""
+    for model in models:
+        state = await gateway.manager.install(model)
+        assert state["downloadState"] == "INSTALLED", state
