@@ -22,7 +22,8 @@ async function installCaller(page: import('@playwright/test').Page): Promise<voi
   await wizard.continue();
   await wizard.continue(); // requirements
   await wizard.continue(); // schedule (manual-only agent)
-  await wizard.install();
+  await wizard.install('Caller');
+  await wizard.openInstalled('Caller');
 }
 
 async function startRun(page: import('@playwright/test').Page): Promise<string> {

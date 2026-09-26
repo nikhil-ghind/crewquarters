@@ -9,6 +9,7 @@ import { asSchema, fieldGroups } from '../../lib/jsonSchema';
 import { permissionItems } from '../../lib/permissions';
 import { CloudUseBadge, RequirementBadges, TrustBadge, triggerText } from './AgentBits';
 import { profileFamilies } from './install';
+import { RunNowButton } from './RunNowButton';
 
 const EXAMPLES: Record<string, string> = {
   'crewquarters.gmail-digest/v1':
@@ -61,9 +62,12 @@ export default function AgentDetailPage() {
                 }
                 actions={
                   installation ? (
-                    <ButtonLink to={`/agents/${encodeURIComponent(installation.id)}`} variant="primary">
-                      Open in your crew
-                    </ButtonLink>
+                    <>
+                      <RunNowButton installation={installation} />
+                      <ButtonLink to={`/agents/${encodeURIComponent(installation.id)}`} variant="secondary">
+                        Open in your crew
+                      </ButtonLink>
+                    </>
                   ) : v.compatible ? (
                     <ButtonLink to={`/agents/marketplace/${encodeURIComponent(a.agentId)}/install`} variant="primary">
                       Install agent

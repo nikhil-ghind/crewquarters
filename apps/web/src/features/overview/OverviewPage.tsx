@@ -21,6 +21,7 @@ import { Elapsed, ResourceMeter } from '../../components/Meters';
 import { StatusBadge } from '../../components/StatusBadge';
 import { formatBytes, formatDateTime, formatDuration, formatRelative, formatUtc } from '../../lib/format';
 import { ACTIVE_RUN_STATES, MODEL_MEMORY_STATUS, RUN_STATUS } from '../../lib/status';
+import { RunNowButton, RunNowFor } from '../agents/RunNowButton';
 import { InputRequestCard } from '../common/InputRequestCard';
 import { runDuration } from '../common/RunsTable';
 import { useTimeZone } from '../common/useTimeZone';
@@ -169,6 +170,8 @@ export default function OverviewPage() {
     .sort((a, b) => a.at.localeCompare(b.at))
     .slice(0, 3);
   const activeRuns = (active.data?.items ?? []).filter((r) => !isTerminal(r.state));
+  // With a single agent, "Run a crew member" can start it directly.
+  const onlyAgent = installations.data?.length === 1 ? installations.data[0] : undefined;
 
   return (
     <Page>
@@ -176,9 +179,13 @@ export default function OverviewPage() {
         title="Home"
         purpose="What needs you, what is running, and what just finished."
         actions={
-          <ButtonLink to="/agents/installed" variant="primary" icon={<Play size={16} aria-hidden="true" />}>
-            Run a crew member
-          </ButtonLink>
+          onlyAgent ? (
+            <RunNowButton installation={onlyAgent} />
+          ) : (
+            <ButtonLink to="/agents/installed" variant="primary" icon={<Play size={16} aria-hidden="true" />}>
+              Run a crew member
+            </ButtonLink>
+          )
         }
       />
       <NeedsAttention />
@@ -232,12 +239,18 @@ export default function OverviewPage() {
             <p className="muted">No scheduled runs. Add a schedule from an agent’s Schedule tab.</p>
           ) : (
             <ul className="stack-sm" style={{ listStyle: 'none' }}>
-              {upcoming.map((u) => (
-                <li key={`${u.schedule.id}-${u.at}`} className="stack-sm" style={{ gap: 2 }}>
-                  <span className="field-label">{u.schedule.agentName}</span>
-                  <span className="muted" title={formatUtc(u.at)}>
-                    {formatDateTime(u.at, timeZone)}
+              {upcoming.map((u, i) => (
+                <li key={`${u.schedule.id}-${u.at}`} className="row-between upcoming-row">
+                  <span className="stack-sm upcoming-when">
+                    <span className="field-label">{u.schedule.agentName}</span>
+                    <span className="muted" title={formatUtc(u.at)}>
+                      {formatDateTime(u.at, timeZone)}
+                    </span>
                   </span>
+                  {/* Once per agent: several upcoming times of one schedule share one Run now. */}
+                  {upcoming.findIndex((x) => x.schedule.installationId === u.schedule.installationId) === i ? (
+                    <RunNowFor installationId={u.schedule.installationId} />
+                  ) : null}
                 </li>
               ))}
             </ul>

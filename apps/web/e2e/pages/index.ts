@@ -37,8 +37,14 @@ export class InstallWizardPage {
     const n = await boxes.count();
     for (let i = 0; i < n; i++) await boxes.nth(i).check();
   }
-  async install(): Promise<void> {
+  /** Install from the review step and wait for the finish step. */
+  async install(agentName: string): Promise<void> {
     await this.page.getByRole('button', { name: 'Install agent' }).click();
+    await expect(this.page.getByRole('heading', { level: 2, name: `${agentName} is in your crew` })).toBeVisible();
+  }
+  /** From the finish step, open the installed agent's page. */
+  async openInstalled(agentName: string): Promise<void> {
+    await this.page.getByRole('link', { name: `Open ${agentName}`, exact: true }).click();
     await this.page.waitForURL(/\/agents\/[0-9a-f-]{8,}/);
   }
 }

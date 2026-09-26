@@ -14,6 +14,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { useFeedback } from '../../components/Toast';
 import { currentTimeIn, formatDateTime, formatUtc } from '../../lib/format';
 import { READINESS_NAMES } from '../../lib/status';
+import { RunNowFor } from '../agents/RunNowButton';
 import { useTimeZone } from '../common/useTimeZone';
 import { draftFromCron, summary } from './ScheduleEditor';
 
@@ -110,6 +111,7 @@ export default function SchedulesPage() {
       header: 'Actions',
       cell: (s) => (
         <span className="row">
+          <RunNowFor installationId={s.installationId} />
           <ButtonLink to={`/agents/${encodeURIComponent(s.installationId)}/schedule`} variant="tertiary">
             Edit<span className="sr-only"> {s.agentName} schedule</span>
           </ButtonLink>
