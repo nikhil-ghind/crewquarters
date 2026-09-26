@@ -37,6 +37,7 @@ members = [
     "agents/gmail_digest",
     "agents/caller",
     "agents/personal_space",
+    "packages/speech_server",
 ]
 
 [tool.uv.sources]
@@ -96,6 +97,8 @@ known-first-party = [
     "gmail_digest",
     "caller_agent",
     "personal_space",
+    "crewquarters_speech",
+    "voice_caller",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -139,6 +142,8 @@ markers = [
     "e2e: requires the fake Docker stack (make fake-up) and pushed agent images",
     "live: requires a real Crewquarters platform and CREWQ_LIVE_* settings",
     "realstack: real agent images through the real stack (make realstack-up; tests/realstack)",
+    "voice: requires a local LiveKit server (make voice-up)",
+    "models: downloads or loads real speech models (make speech-models)",
 ]
 testpaths = [
     "packages/shared_python/tests",
@@ -158,6 +163,7 @@ testpaths = [
     "agents",
     "tests/e2e",
     "tests/live",
+    "packages/speech_server/tests",
 ]
 filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
 

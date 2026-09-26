@@ -29,6 +29,7 @@ jobs:
           packages/secret_store/src services/capability_broker/src services/knowledge/src
           packages/python_sdk/src packages/fake_platform/src packages/crewctl/src
           agents/contract_probe/src agents/gmail_digest/src agents/caller/src
+          packages/speech_server/src
       - name: Third-party license inventory is up to date (PLAN.md 23.1)
         run: uv run python infra/scripts/license_inventory.py --check
 

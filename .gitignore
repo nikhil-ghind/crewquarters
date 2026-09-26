@@ -95,3 +95,5 @@ Thumbs.db
 
 # Agent worktrees
 .claude/worktrees/
+# Downloaded speech models (crewq-speech download / make speech-models)
+/.models/

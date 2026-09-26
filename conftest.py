@@ -40,6 +40,8 @@ DB_FREE_ROOTS = (
     "tests/integration",
     "tests/e2e",
     "tests/live",
+    "tests/voice",
+    "packages/speech_server",
     "tests/contract/test_broker_contract_files.py",
     "tests/contract/test_fake_route_parity.py",
     "tests/contract/test_fake_traffic_conformance.py",

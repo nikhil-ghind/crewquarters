@@ -10,9 +10,11 @@ MYPY_PATHS := packages/shared_python/src services/control_api/src services/sched
 	services/model_gateway/src services/runtime_daemon/src \
 	packages/secret_store/src services/capability_broker/src services/knowledge/src \
 	packages/python_sdk/src packages/fake_platform/src packages/crewctl/src \
-	agents/contract_probe/src agents/gmail_digest/src agents/caller/src agents/personal_space/src
+	agents/contract_probe/src agents/gmail_digest/src agents/caller/src agents/personal_space/src \
+	packages/speech_server/src
 # Suites that need no PostgreSQL (SDK, fake platform, crewctl, agents, fake-platform integration).
 SDK_TESTS := packages/python_sdk packages/fake_platform packages/crewctl agents tests/integration \
+	packages/speech_server \
 	tests/contract/test_broker_contract_files.py tests/contract/test_fake_route_parity.py \
 	tests/contract/test_fake_traffic_conformance.py
 
@@ -108,7 +110,7 @@ test-platform: db-up ## All unit, integration, and contract tests (control plane
 	uv run pytest -q
 
 test-sdk: ## SDK, fake platform, crewctl, and agent tests (no database needed)
-	uv run pytest -q -m "not e2e and not live" $(SDK_TESTS)
+	uv run pytest -q -m "not e2e and not live and not voice and not models" $(SDK_TESTS)
 
 coverage: db-up ## Tests with coverage; enforces thresholds on security/state modules
 	uv run pytest -q --cov --cov-report=term --cov-report=json
