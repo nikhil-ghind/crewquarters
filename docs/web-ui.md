@@ -100,6 +100,22 @@ The component gallery uses static fixtures and makes no API calls. It shows ever
 - **No provider SDKs.** ESLint blocks imports from `openai`, `@anthropic-ai/*`, `twilio` and `googleapis`. `check:bundle` greps the build for provider hosts.
 - **No duplicated server logic.** Readiness, permissions matching, model admission and schedule occurrences are shown as the API reports them. Schedule presets only compose a cron string, and `/schedules/preview` computes the occurrences. The browser keeps only preferences and unsaved non-secret drafts: the sidebar state, the per-browser notification choice and the install-wizard form.
 
+## Run now (sections 13.5, 13.6, 13.11)
+
+**Run now** starts an agent immediately (trigger `manual`) and opens `/runs/{id}`. Every placement uses `RunNowButton` (`src/features/agents/RunNowButton.tsx`), or `RunNowFor` where a row only knows the installation id (it reads the cached installations list and adds no request).
+
+| Where | What |
+| --- | --- |
+| Crew list, installed-agent header and its empty Runs tab | As before |
+| Marketplace agent detail | Next to **Open in your crew** once the agent is installed |
+| Install wizard | The finish step after **Install agent**: Run now (primary) and **Open {agent}**; the readiness checklist when it isn't ready |
+| Home | The header action is Run now when exactly one agent is installed, otherwise **Run a crew member** (the Crew list). "Next up" rows have Run now once per agent. There's no per-agent list on Home: it would repeat the Crew page, which the simplified Home avoids |
+| Schedules | A Run now per schedule row. It doesn't change the schedule |
+
+- The accessible name includes the agent ("Run now Daily Gmail Digest").
+- When it can't run, the button is disabled and the reason is shown next to it: offline, runtime down, reapproval, disabled, or the first readiness check that isn't ok.
+- One idempotency key per mounted button. The button is busy while the request is in flight, and the key isn't renewed after success, so a click before the run page opens replays the same run instead of starting a second one.
+
 ## Crew Request notifications (section 13.7)
 
 A run in `WAITING_INPUT` gets an amber card, the Activity badge and, optionally, a browser notification. Code: `src/lib/notifications.ts`, `src/shell/useInputRequestAlerts.ts` and `src/features/common/NotificationControls.tsx`.

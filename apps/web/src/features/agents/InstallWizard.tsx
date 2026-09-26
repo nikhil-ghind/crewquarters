@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { isApiError, type FieldError } from '../../api/errors';
 import { useActionGuard } from '../../api/guards';
 import { useCreateSchedule, useInstallAgent, useIntentKey } from '../../api/mutations';
-import { useCatalogAgent, useConnections, useKnowledgeBases, useModels, useProviderProfiles, useSettings } from '../../api/queries';
+import { useCatalogAgent, useConnections, useInstallation, useKnowledgeBases, useModels, useProviderProfiles, useSettings } from '../../api/queries';
 import type { CatalogAgentOut, InstallationOut } from '../../api/schema';
-import { Button } from '../../components/Button';
+import { Button, ButtonLink } from '../../components/Button';
 import { Banner, ErrorPanel } from '../../components/Feedback';
 import { ErrorSummary, Field } from '../../components/Field';
 import { Card, KeyValue, Page, PageHeader } from '../../components/Layout';
@@ -21,9 +21,10 @@ import { readDraft, writeDraft } from '../../lib/storage';
 import { CONNECTION_STATUS, MODEL_DOWNLOAD_STATUS, PROVIDER_NAMES } from '../../lib/status';
 import { useTimeZone } from '../common/useTimeZone';
 import { cronFor, newDraft, ScheduleEditor, summary, type ScheduleDraft } from '../schedules/ScheduleEditor';
-import { CloudUseBadge, triggerText } from './AgentBits';
+import { CloudUseBadge, installationStatus, ReadinessList, triggerText } from './AgentBits';
 import { resourcesText } from './AgentDetailPage';
 import { allApproved, configSchema, defaultBindings, initialConfig, profileFamilies, requiredConnectionsText, variantsFor } from './install';
+import { RunNowButton } from './RunNowButton';
 import { useFormOptions } from './useFormOptions';
 
 const STEPS = [
@@ -92,6 +93,7 @@ function Wizard({ agent }: { agent: CatalogAgentOut }) {
   );
   const [errors, setErrors] = useState<FieldError[]>([]);
   const [installed, setInstalled] = useState<InstallationOut | null>(null);
+  const [finished, setFinished] = useState(false);
   const update = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
 
   useEffect(() => writeDraft(draftKey, draft), [draftKey, draft]);
@@ -171,7 +173,8 @@ function Wizard({ agent }: { agent: CatalogAgentOut }) {
       }
     }
     writeDraft(draftKey, null);
-    void navigate(`/agents/${encodeURIComponent(inst.id)}`);
+    setFinished(true);
+    window.scrollTo({ top: 0 });
   };
 
   const nextDisabled: string | null =
@@ -193,6 +196,8 @@ function Wizard({ agent }: { agent: CatalogAgentOut }) {
     const next = STEPS[index + 1];
     if (next) go(next.id);
   };
+
+  if (finished && installed) return <Installed agent={agent} installation={installed} scheduled={draft.scheduleOn} />;
 
   return (
     <>
@@ -430,6 +435,50 @@ function Wizard({ agent }: { agent: CatalogAgentOut }) {
           </div>
         </div>
       </div>
+    </>
+  );
+}
+
+/**
+ * The finish step: the agent is in the crew. Run now is the primary action when the
+ * installation is ready; otherwise it stays disabled and says why, as everywhere else.
+ */
+function Installed({ agent, installation, scheduled }: { agent: CatalogAgentOut; installation: InstallationOut; scheduled: boolean }) {
+  // Seeded from the install response, then kept fresh (readiness can change, e.g. a connection).
+  const current = useInstallation(installation.id).data ?? installation;
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => heading.current?.focus(), []);
+  const agentPath = `/agents/${encodeURIComponent(current.id)}`;
+  return (
+    <>
+      <PageHeader
+        title={`Install ${agent.name}`}
+        breadcrumbs={[
+          { label: 'Crew', to: '/agents/installed' },
+          { label: 'Marketplace', to: '/agents/marketplace' },
+          { label: agent.name, to: `/agents/marketplace/${encodeURIComponent(agent.agentId)}` },
+          { label: 'Install' },
+        ]}
+      />
+      <section className="card stack form-width" aria-labelledby="install-done">
+        <div className="row-between">
+          <h2 id="install-done" className="card-title" ref={heading} tabIndex={-1}>
+            {agent.name} is in your crew
+          </h2>
+          <StatusBadge status={installationStatus(current)} context="Readiness" />
+        </div>
+        <p className="muted">
+          {scheduled ? 'Its schedule is saved. ' : ''}
+          {current.readiness.ready ? 'Everything it needs is ready. Start a run now or open the agent.' : 'It can run once the checks marked below are fixed.'}
+        </p>
+        {current.readiness.ready ? null : <ReadinessList installation={current} />}
+        <div className="row">
+          <RunNowButton installation={current} />
+          <ButtonLink to={agentPath} variant="secondary">
+            Open {agent.name}
+          </ButtonLink>
+        </div>
+      </section>
     </>
   );
 }

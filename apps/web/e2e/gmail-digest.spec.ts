@@ -32,7 +32,8 @@ test('install Daily Gmail Digest, run it with a cold model start, and read the d
   await wizard.continue();
   // Review
   await expect(page.getByText('Local on this device')).toBeVisible();
-  await wizard.install();
+  await wizard.install('Daily Gmail Digest');
+  await wizard.openInstalled('Daily Gmail Digest');
 
   await expect(page.getByRole('heading', { level: 1, name: 'Daily Gmail Digest' })).toBeVisible();
   // Slow the simulation so the cold start is observable.

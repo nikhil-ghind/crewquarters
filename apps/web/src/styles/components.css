@@ -140,6 +140,19 @@
   color: var(--color-text-muted);
   line-height: 16px;
 }
+/* Run now inside a row (Home "Next up", schedule rows): keep the reason from widening the row. */
+.upcoming-row {
+  align-items: flex-start;
+}
+.upcoming-when {
+  gap: 2px;
+  min-width: 0;
+}
+.upcoming-row .disabled-reason,
+.data-table .disabled-reason,
+.card-list .disabled-reason {
+  max-width: 28ch;
+}
 
 /* ---- Status badges and chips ------------------------------------------------------ */
 .badge {
