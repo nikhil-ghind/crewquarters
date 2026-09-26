@@ -75,6 +75,8 @@ they are cited. Locally: `make test-platform`, `make test-sdk`, `make fake-up &&
 | Must | Caller completes a fixed-script speech gather on verified test numbers | Person 5 | Fake Twilio: `tests/integration/test_caller.py::test_every_call_state_is_visible`; CI `realstack-e2e`: `test_caller.py::test_caller_approval_fixed_script_calls_and_signed_callbacks`; live harness `tests/live/test_live_platform.py::test_caller_places_approved_calls_without_duplicates` (not run) | Needs live accounts: a Twilio trial account, verified numbers, and the callback tunnel |
 | Must | Results write to the configured tab and retry without duplicate calls | Person 5 | `tests/integration/test_caller.py` (`test_failed_sheet_writes_are_retried_without_redialing`, `test_dropped_create_call_response_places_one_provider_call`, `test_interrupted_run_retries_without_redialing`); `test_broker_twilio.py::test_duplicate_start_places_one_call` | Done |
 | Must | Both agent images run on `linux/amd64` and `linux/arm64` | Person 5 | CI `agent-images-arm64` (build and `--self-check` under QEMU); CI `image-security` (both architectures); CI `agent-e2e` and `realstack-e2e` (amd64); `make agent-images` | Done (laptop): arm64 runs only under emulation; not yet run on the GB10 |
+| Should | Voice call center agent: discloses automation, honours consent and do-not-call, asks for approval, and holds real WebRTC calls through local LiveKit | Person 5 | `agents/voice_caller/tests` (prompts, config, approval, outcome, conversation), `make voice-e2e` and `make voice-e2e-containers` (hardened container, LiveKit containers mode), CI `voice-e2e` job | Done (fake, simulated callee); live SIP trunk and GB10 pending ([docs/voice](../voice/README.md)) |
+| Should | Local speech models (Parakeet STT, Kokoro TTS) serve the `local.stt`/`local.tts` profiles with pinned, checksummed downloads | Person 5 | `packages/speech_server/tests` (`-m models` loads the real models), `make voice-e2e-models` | Done on laptop CPU; GB10 pending |
 
 ## 23.6 Deployment and security
 
@@ -161,3 +163,6 @@ API (`apps/web/e2e/*.spec.ts`).
 - **Isolation coverage** does not include a model container on `cq-models` or the metadata
   address, and host-bridge isolation depends on Docker 28+ or the `.deb` firewall rule
   ([testing-realstack.md](../testing-realstack.md)).
+- Voice: the SIP trunk path, the GB10 (arm64 image built and self-checked under emulation only),
+  and the real broker's `/voice/calls` and `/openai/v1` operations are unverified. Speech-to-text
+  runs per utterance, not streaming. See [docs/voice](../voice/README.md#known-limitations).

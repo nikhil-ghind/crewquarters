@@ -312,6 +312,10 @@ Input sheet columns: `name`, `phone_e164`, `consent`, `status`. The agent reject
 
 Twilio trial accounts can call only verified recipients and have other trial limits. The demo must use test-team numbers, provide a clear automated-call/recording disclosure, and never be used for unsolicited calling. Applicable calling, recording, privacy, and do-not-call rules require separate legal review before any real use.
 
+### Voice call center agent
+
+`voice-call-center` holds short, natural outbound phone conversations with consenting contacts from a Google Sheet, after the owner approves the call plan, and writes each call's outcome back to the sheet. Everything runs locally: the LiveKit media server and SIP gateway, speech-to-text (NVIDIA Parakeet), the LLM (vLLM), and text-to-speech (Kokoro). The agent says in its first sentence that it is an automated assistant and never claims to be human. See [docs/voice](docs/voice/README.md).
+
 ### Daily Gmail digest agent
 
 The agent computes yesterday's boundaries in the configured timezone, converts them to epoch timestamps for a Gmail query, paginates to a configured limit, and fetches message content. It treats all email text as untrusted data, strips quoted/unsafe markup, and never follows instructions found inside messages. It performs bounded map/reduce summarization and produces three groups: urgent, important, and low priority, each with reasons, next actions, and links/message identifiers. The digest is stored in the run result and rendered in the UI.
@@ -448,7 +452,8 @@ make demo-seed && make demo-run AGENT=gmail_digest   # the fake platform's demo 
 - `packages/crewctl`: `crewctl init | validate | test | build | publish`. `validate` applies the control plane's manifest rules; `publish` signs in to the control API.
 - `packages/fake_platform`: a fake capability broker, the control-API operations agents need (same paths and shapes as `packages/contracts/openapi.yaml`), and mock Gmail/Sheets/Twilio/LLM/knowledge, used by tests, `crewctl test`, and `make demo-run`.
 - `packages/contracts/broker-sdk.openapi.yaml`: the SDK-to-broker API (stable for `v1alpha1`, owned by Person 3), served by `services/capability_broker`. Its run, input, and action operations mirror the control plane's `/internal/v1` API. Decisions are recorded in [docs/decisions/0001](docs/decisions/0001-person5-contract-drafts.md).
-- `agents/`: `daily-gmail-digest`, `caller`, and the `contract-probe` acceptance agent. On the real platform they run with `make demo-up` ([local-demo.md](docs/runbooks/local-demo.md)) and in the real-stack suite.
+- `agents/`: `daily-gmail-digest`, `caller`, and the `contract-probe` acceptance agent. On the real platform they run with `make demo-up` ([local-demo.md](docs/runbooks/local-demo.md)) and in the real-stack suite. `voice-call-center` runs against the fake platform for now ([docs/voice](docs/voice/README.md)).
+- `packages/speech_server`: `crewq-speech`, OpenAI-compatible speech-to-text and speech for the `local.stt`/`local.tts` profiles. The voice stack runs with `make livekit-up && make voice-e2e` (no models needed) or `make voice-up && make voice-e2e-models`; see [docs/voice](docs/voice/README.md).
 - [Operator script](docs/demo/operator-script.md) (fake platform) and [release checklist](docs/release/checklist.md).
 
 ## Primary references
