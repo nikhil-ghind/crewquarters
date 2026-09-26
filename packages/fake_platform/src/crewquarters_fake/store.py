@@ -24,9 +24,22 @@ from crewquarters_fake.settings import FakeSettings
 from crewquarters_fake.speech import LocalSpeech, RemoteSpeech, SpeechService
 from crewquarters_fake.statemachine import check_transition
 from crewquarters_fake.timeutil import iso, utcnow
+from crewquarters_fake.voice.backend import VoiceBackend
+from crewquarters_fake.voice.scenario import CalleeScenario
 from crewquarters_speech.fake import FakeSpeechEngine
 
 __all__ = ["iso", "utcnow"]
+
+
+def _voice_backend(settings: FakeSettings) -> VoiceBackend:
+    """A real local LiveKit server when one is configured, otherwise the offline state machine."""
+    if settings.livekit_url:
+        from crewquarters_fake.voice.livekit import LiveKitVoiceBackend
+
+        return LiveKitVoiceBackend(settings)
+    from crewquarters_fake.voice.offline import OfflineVoiceBackend
+
+    return OfflineVoiceBackend()
 
 
 def new_id(prefix: str = "") -> str:
@@ -138,6 +151,35 @@ class InputRequest:
 
 
 @dataclass
+class VoiceCallRecord:
+    """A phone conversation placed through the voice backend (``ctx.voice``)."""
+
+    id: str
+    run_id: str
+    idempotency_key: str
+    to: str  # full E.164 number: never leaves the broker (views show toMasked)
+    ring_timeout: float
+    max_duration: float
+    created_at: datetime
+    updated_at: datetime
+    state: str = "dialing"
+    answered_at: datetime | None = None
+    ended_at: datetime | None = None
+    error_code: str | None = None
+    callee_identity: str = "callee"
+
+    @property
+    def room_name(self) -> str:
+        return f"call-{self.id}"
+
+    @property
+    def duration_seconds(self) -> int | None:
+        if self.answered_at is None or self.ended_at is None:
+            return None
+        return max(0, round((self.ended_at - self.answered_at).total_seconds()))
+
+
+@dataclass
 class ActionRecord:
     """An external-action key (``ctx.idempotency``): claimed, in doubt, or completed."""
 
@@ -177,6 +219,8 @@ class Store:
         self.auto_answers: list[AutoAnswer] = []
         self.traffic: list[dict[str, Any]] = []
         self.audit: list[dict[str, Any]] = []
+        self.voice_calls: dict[str, VoiceCallRecord] = {}
+        self.voice_keys: dict[tuple[str, str], str] = {}
         self.faults.clear()
         self.reset_providers()
 
@@ -195,6 +239,17 @@ class Store:
             if self.settings.speech_url
             else LocalSpeech(self.fake_speech)
         )
+        self.voice_callees: dict[str, CalleeScenario] = {}
+        self.voice_backend = _voice_backend(self.settings)
+
+    def new_voice_call(
+        self, run_id: str, key: str, to: str, *, ring_timeout: float, max_duration: float
+    ) -> VoiceCallRecord:
+        now = utcnow()
+        call = VoiceCallRecord(new_id(), run_id, key, to, ring_timeout, max_duration, now, now)
+        self.voice_calls[call.id] = call
+        self.voice_keys[(run_id, key)] = call.id
+        return call
 
     # --- events -------------------------------------------------------------------------------
     def append_event(self, run: Run, event_type: str, payload: dict[str, Any]) -> Event:

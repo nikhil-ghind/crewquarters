@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from crewquarters.redact import mask_phone
 from crewquarters_fake.contracts import PLACEHOLDER_DIGEST
 from crewquarters_fake.store import (
     ActionRecord,
@@ -17,8 +18,10 @@ from crewquarters_fake.store import (
     Installation,
     Run,
     Store,
+    VoiceCallRecord,
     iso,
 )
+from crewquarters_fake.voice.backend import VoiceRoom
 
 
 def _version_view(entry: CatalogEntry) -> dict[str, Any]:
@@ -169,3 +172,26 @@ def page(items: list[dict[str, Any]], limit: int, cursor: str | None) -> dict[st
     chunk = items[start : start + limit]
     next_cursor = str(start + limit) if start + limit < len(items) else None
     return {"items": chunk, "nextCursor": next_cursor}
+
+
+def voice_call_view(call: VoiceCallRecord, room: VoiceRoom | None) -> dict[str, Any]:
+    """The broker's VoiceCall. The full number never appears; the room only while it is useful."""
+    active = call.state in {"dialing", "ringing", "answered"}
+    return {
+        "id": call.id,
+        "idempotencyKey": call.idempotency_key,
+        "toMasked": mask_phone(call.to),
+        "state": call.state,
+        "room": (
+            {"url": room.url, "name": room.name, "token": room.token, "identity": room.identity}
+            if room is not None and active
+            else None
+        ),
+        "calleeIdentity": call.callee_identity,
+        "answeredAt": iso(call.answered_at),
+        "endedAt": iso(call.ended_at),
+        "durationSeconds": call.duration_seconds,
+        "errorCode": call.error_code,
+        "createdAt": iso(call.created_at),
+        "updatedAt": iso(call.updated_at),
+    }

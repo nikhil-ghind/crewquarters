@@ -164,6 +164,7 @@ testpaths = [
     "tests/e2e",
     "tests/live",
     "packages/speech_server/tests",
+    "tests/voice",
 ]
 filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
 

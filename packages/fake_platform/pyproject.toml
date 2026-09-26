@@ -15,6 +15,9 @@ dependencies = [
     "jsonschema>=4.23",
     "click>=8.1",
     "tzdata>=2024.1",
+    # Voice calls through a local LiveKit server (imported only when one is configured).
+    "livekit==1.1.20",
+    "livekit-api==1.2.1",
 ]
 
 [project.scripts]

@@ -12,6 +12,7 @@ import yaml
 from crewquarters_fake.llm_rules import RuleSet
 from crewquarters_fake.mailbox import build_message, expand_mailbox
 from crewquarters_fake.store import AutoAnswer, Store, utcnow
+from crewquarters_fake.voice.scenario import parse_callees
 
 
 def _data(root: Path, value: Any) -> Any:
@@ -35,6 +36,7 @@ def load(store: Store, path: Path, now: datetime | None = None) -> dict[str, Any
     store.twilio.load(_data(root, doc.get("twilio", {}).get("outcomes", {})) or {})
     llm = doc.get("llm", {})
     store.gateway.rules = RuleSet.from_list(_data(root, llm.get("rules", [])) or [])
+    store.voice_callees = parse_callees(doc.get("voice", {}).get("callees", {}))
     store.gateway.cold_start_seconds = float(llm.get("coldStartSeconds", 0))
     for kb_id, directory in doc.get("knowledge", {}).items():
         store.knowledge.load_dir(kb_id, root / directory)

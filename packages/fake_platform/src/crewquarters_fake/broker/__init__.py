@@ -11,8 +11,19 @@ from crewquarters_fake.broker import (
     llm,
     openai_compat,
     telephony,
+    voice,
 )
 
 router = APIRouter(prefix="/internal/v1/sdk")
-for module in (lifecycle, input, actions, llm, openai_compat, knowledge, google, telephony):
+for module in (
+    lifecycle,
+    input,
+    actions,
+    llm,
+    openai_compat,
+    knowledge,
+    google,
+    telephony,
+    voice,
+):
     router.include_router(module.router)

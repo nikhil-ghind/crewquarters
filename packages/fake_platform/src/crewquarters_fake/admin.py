@@ -20,6 +20,7 @@ from crewquarters_fake.views import (
     input_control_view,
     installation_view,
     run_view,
+    voice_call_view,
 )
 
 router = APIRouter(prefix="/fake/v1")
@@ -178,6 +179,8 @@ async def state(kind: str, request: Request) -> Any:
         return store.sheets.snapshot()
     if kind == "llm":
         return store.gateway.log
+    if kind == "voice":
+        return [voice_call_view(c, None) for c in store.voice_calls.values()]
     if kind == "speech":
         return {
             "synthesized": store.fake_speech.synthesized,
