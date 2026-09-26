@@ -14,6 +14,7 @@ import { VoiceCallCard } from './VoiceCallCard';
 const PURPOSE: Record<string, string> = {
   google: 'Gmail (read-only) and Google Sheets access for your agents.',
   twilio: 'Phone calls with a fixed, disclosed script, placed only after you approve them.',
+  github: 'Read pull requests and post review comments in the repository an agent is configured for. The token is set on the device (CQ_GITHUB_TOKEN).',
   openai: 'Optional cloud models. Nothing is sent unless an agent is approved for OpenAI.',
   anthropic: 'Optional cloud models. Nothing is sent unless an agent is approved for Anthropic.',
 };
