@@ -459,6 +459,21 @@ paths:
               schema: {$ref: "#/components/schemas/VoiceCall"}
         default: {$ref: "#/components/responses/Error"}
 
+  /openai/v1/models:
+    get:
+      operationId: openaiListModels
+      x-capability: null
+      x-idempotent: true
+      x-fault-target: broker.openai.models
+      description: The profile variants this run may use (OpenAI's model list shape).
+      responses:
+        "200":
+          description: The run's granted model profiles.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OpenAIModelList"}
+        default: {$ref: "#/components/responses/Error"}
+
   /openai/v1/chat/completions:
     post:
       operationId: openaiChatCompletions
@@ -1046,3 +1061,18 @@ components:
         voice: {type: string}
         response_format: {enum: [pcm, wav], default: pcm}
         speed: {type: number, minimum: 0.5, maximum: 2.0, default: 1.0}
+
+    OpenAIModelList:
+      type: object
+      required: [object, data]
+      properties:
+        object: {const: list}
+        data:
+          type: array
+          items:
+            type: object
+            required: [id, object]
+            properties:
+              id: {type: string}
+              object: {const: model}
+              owned_by: {type: string}

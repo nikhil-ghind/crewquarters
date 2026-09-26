@@ -1,0 +1,13 @@
+# LiveKit SIP for real phone calls (profile `sip`). The broker creates calls through the LiveKit
+# API with an outbound trunk it registers (see docs/voice/README.md); this service carries the
+# SIP signalling and RTP audio between LiveKit rooms and the trunk provider.
+api_key: crewq-dev
+api_secret: crewquarters-local-development-secret-0001
+ws_url: ws://livekit:7880
+redis:
+  address: redis:6379
+sip_port: 5060
+rtp_port: 10000-10100
+use_external_ip: true
+logging:
+  level: info

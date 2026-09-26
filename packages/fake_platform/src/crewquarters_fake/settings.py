@@ -21,8 +21,9 @@ class FakeSettings:
     livekit_url: str | None = None  # what agents connect to (for example ws://livekit:7880)
     livekit_callee_url: str | None = None  # what the simulated callee connects to (default: same)
     livekit_api_url: str | None = None  # server API (default: the callee URL over http)
-    livekit_api_key: str = "devkey"  # `livekit-server --dev` defaults
-    livekit_api_secret: str = "secret"  # noqa: S105 - a development default, not a credential
+    # The development key in infra/livekit/*.yaml (never used on a reachable network).
+    livekit_api_key: str = "crewq-dev"
+    livekit_api_secret: str = "crewquarters-local-development-secret-0001"  # noqa: S105
     sip_trunk_id: str | None = None  # dial real numbers through this LiveKit SIP trunk
 
     @classmethod
@@ -39,7 +40,9 @@ class FakeSettings:
             livekit_url=os.environ.get("CREWQ_FAKE_LIVEKIT_URL") or None,
             livekit_callee_url=os.environ.get("CREWQ_FAKE_LIVEKIT_CALLEE_URL") or None,
             livekit_api_url=os.environ.get("CREWQ_FAKE_LIVEKIT_API_URL") or None,
-            livekit_api_key=os.environ.get("CREWQ_FAKE_LIVEKIT_API_KEY", "devkey"),
-            livekit_api_secret=os.environ.get("CREWQ_FAKE_LIVEKIT_API_SECRET", "secret"),
+            livekit_api_key=os.environ.get("CREWQ_FAKE_LIVEKIT_API_KEY", cls.livekit_api_key),
+            livekit_api_secret=os.environ.get(
+                "CREWQ_FAKE_LIVEKIT_API_SECRET", cls.livekit_api_secret
+            ),
             sip_trunk_id=os.environ.get("CREWQ_FAKE_SIP_TRUNK_ID") or None,
         )

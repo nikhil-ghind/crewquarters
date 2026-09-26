@@ -1,0 +1,16 @@
+# LiveKit server for hardened agent containers (GB10, or make voice-up LIVEKIT_MODE=containers):
+# agents on the internal crewq-agents network reach media at LiveKit's fixed address there.
+# Replace the development key before exposing SIP to a trunk provider (docs/voice/README.md).
+port: 7880
+bind_addresses: ["0.0.0.0"]
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  node_ip: 10.231.72.10
+keys:
+  crewq-dev: crewquarters-local-development-secret-0001
+room:
+  empty_timeout: 60
+logging:
+  level: info

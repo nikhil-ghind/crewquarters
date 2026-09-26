@@ -215,3 +215,31 @@ def test_the_exact_failed_call_timeline_does_not_fire():
     # 18.948 + 4s is where the real call was killed.
     assert d.check(now=22.95) is None
     assert d.check(now=40.0) is None
+
+
+# Crewquarters: the transcript is a second, independent voicemail signal. The audio heuristic
+# above disarms at the first pause, and a spoken greeting has pauses.
+import pytest  # noqa: E402
+
+from voice_caller.voicemail import looks_like_voicemail  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Hi, you've reached the voicemail of Jordan Lee. Please leave a message after the tone.",
+        "The person you are calling is not available. Please leave your name and number.",
+        "Sorry I can't take your call right now, leave a message.",
+        "Your call has been forwarded to an automated voice messaging system.",
+    ],
+)
+def test_voicemail_greetings_are_recognized(text: str) -> None:
+    assert looks_like_voicemail(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Hello?", "Yes, I have a minute.", "Can I leave a comment about my appointment?", ""],
+)
+def test_people_are_not_mistaken_for_voicemail(text: str) -> None:
+    assert not looks_like_voicemail(text)

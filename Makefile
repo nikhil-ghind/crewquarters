@@ -21,6 +21,9 @@ SDK_TESTS := packages/python_sdk packages/fake_platform packages/crewctl agents 
 AGENTS := contract_probe gmail_digest caller personal_space
 REGISTRY ?= localhost:5001
 FAKE_URL ?= http://127.0.0.1:8090
+VOICE_COMPOSE := $(COMPOSE) --profile voice
+LIVEKIT_MODE ?= host
+VOICE_LIVEKIT_URL ?= ws://127.0.0.1:7880
 DEMO := tests/fixtures/scenarios/demo
 # Lazy (=) so it is only evaluated by the targets that need it.
 HOST_PLATFORM = $(shell uv run python -c "from crewctl.build import host_platform; print(host_platform())")
@@ -29,7 +32,8 @@ HOST_PLATFORM = $(shell uv run python -c "from crewctl.build import host_platfor
         test test-platform test-contract test-sdk contracts contracts-check lint fmt image image-arm64 \
         fake-up fake-down agent-images e2e-images e2e \
         demo-seed demo-reset demo-run demo-pending demo-approve evidence \
-        integration-up integration-down demo-up demo-down realstack-images realstack-up realstack-test realstack-down
+        integration-up integration-down demo-up demo-down realstack-images realstack-up realstack-test realstack-down \
+        speech-models voice-up voice-down livekit-up voice-e2e voice-e2e-models
 
 help:
 	@grep -E '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -229,3 +233,24 @@ realstack-down: ## Remove the cqreal stack: containers, volumes, agent networks,
 	$(REALSTACK_COMPOSE) down -v --remove-orphans
 	-docker network rm cqreal-agents cqreal-models
 	-rmdir $(REALSTACK_DATA)
+
+# --- Person 5: local voice stack (LiveKit + speech models) ---------------------------------
+
+speech-models: ## Download and verify the speech models into the speech-models volume (~800 MB, once)
+	$(VOICE_COMPOSE) run --rm --build speech download
+
+livekit-up: ## Start only LiveKit (ws://127.0.0.1:7880); enough for the voice E2E with fake speech
+	CREWQ_LIVEKIT_MODE=$(LIVEKIT_MODE) $(VOICE_COMPOSE) up -d --wait livekit
+
+voice-up: speech-models ## Start LiveKit and the speech server (http://127.0.0.1:8200); LIVEKIT_MODE=host|containers|sip
+	CREWQ_LIVEKIT_MODE=$(LIVEKIT_MODE) $(VOICE_COMPOSE) up -d --build --wait livekit speech
+
+voice-down: ## Stop LiveKit and the speech server
+	$(VOICE_COMPOSE) stop livekit speech
+
+voice-e2e: ## The voice agent through local LiveKit with fake speech (needs make livekit-up)
+	CREWQ_VOICE_LIVEKIT_URL=$(VOICE_LIVEKIT_URL) uv run pytest -q -m voice tests/voice
+
+voice-e2e-models: ## The same with the real speech models (needs make voice-up)
+	CREWQ_VOICE_LIVEKIT_URL=$(VOICE_LIVEKIT_URL) CREWQ_VOICE_SPEECH_URL=http://127.0.0.1:8200 \
+		uv run pytest -q -m voice tests/voice/test_voice_e2e.py

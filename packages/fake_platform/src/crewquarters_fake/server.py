@@ -17,7 +17,7 @@ class BackgroundServer:
         self.port = port
         self.url = ""
         self._server = uvicorn.Server(
-            uvicorn.Config(app, host=host, port=port, log_level="warning", lifespan="off")
+            uvicorn.Config(app, host=host, port=port, log_level="warning", lifespan="on")
         )
         self._thread = threading.Thread(target=self._server.run, name="crewq-fake", daemon=True)
 

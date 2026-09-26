@@ -67,6 +67,7 @@ class ScheduledRunIn(BaseModel):
 
 class TranscriptsIn(BaseModel):
     lines: list[str]
+    channel: str = ""  # a voice call id, or "" when no call is in progress
 
 
 class ConnectionIn(BaseModel):
@@ -152,7 +153,7 @@ async def set_connection(body: ConnectionIn, request: Request) -> dict[str, Any]
 @router.post("/speech/transcripts")
 async def queue_transcripts(body: TranscriptsIn, request: Request) -> dict[str, Any]:
     """Queue what the fake speech-to-text will "hear" next (in order)."""
-    store_of(request).fake_speech.queue_transcripts(body.lines)
+    store_of(request).fake_speech.queue_transcripts(body.lines, body.channel)
     return {"queued": len(body.lines)}
 
 

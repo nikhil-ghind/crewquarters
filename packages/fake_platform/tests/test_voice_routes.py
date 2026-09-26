@@ -148,3 +148,21 @@ async def test_answered_call_ends_at_its_maximum_duration(app: FastAPI) -> None:
     await OfflineVoiceBackend().dial(store, call)
     assert await store.wait_until(lambda: call.state == "completed", 3)
     assert call.error_code == "MAX_DURATION"
+
+
+def test_the_background_server_closes_the_voice_backend_on_exit() -> None:
+    from crewquarters_fake.app import create_app
+    from crewquarters_fake.server import BackgroundServer
+    from crewquarters_fake.settings import FakeSettings
+
+    closed: list[bool] = []
+
+    class Backend:
+        async def aclose(self) -> None:
+            closed.append(True)
+
+    app = create_app(FakeSettings())
+    app.state.store.voice_backend = Backend()
+    with BackgroundServer(app):
+        pass
+    assert closed == [True]

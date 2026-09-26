@@ -155,3 +155,9 @@ def test_voice_call_never_exposes_the_full_number() -> None:
     assert "to" not in call and "toMasked" in call
     room = broker["VoiceRoom"]
     assert set(room["required"]) == {"url", "name", "token", "identity"}
+
+
+def test_the_model_facade_lists_models() -> None:
+    operation = contracts.broker_openapi()["paths"]["/openai/v1/models"]["get"]
+    assert operation["operationId"] == "openaiListModels"
+    assert operation["x-capability"] is None

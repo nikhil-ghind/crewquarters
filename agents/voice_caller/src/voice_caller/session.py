@@ -29,7 +29,7 @@ from typing import Any, Protocol
 
 from livekit.agents import Agent, ModelSettings, TurnHandlingOptions, function_tool
 from livekit.agents import RunContext as ToolContext
-from livekit.agents.llm import ChatContext, ChatMessage
+from livekit.agents.llm import ChatContext, ChatMessage, StopResponse
 
 from caller_agent.rows import ContactRow
 from crewquarters import RunContext
@@ -48,7 +48,7 @@ from voice_caller.safety import sanitize_user_text
 from voice_caller.texture import TextureState, humanize
 from voice_caller.transcript import Transcript
 from voice_caller.turn_detection import load_turn_detector
-from voice_caller.voicemail import VoicemailDetector
+from voice_caller.voicemail import VoicemailDetector, looks_like_voicemail
 
 log = logging.getLogger(__name__)
 
@@ -133,12 +133,17 @@ class VoiceCallAgent(Agent):
         self._hang_up = hang_up
         self.raw_user_text: dict[str, str] = {}  # item id -> unmasked text, for the transcript
         self._texture = TextureState()
+        # Until the greeting is spoken, the callee's words ("Hello?") are answered by the
+        # greeting itself; a model reply as well would talk over them.
+        self.greeted = False
 
     def tts_node(self, text: AsyncIterable[str], model_settings: ModelSettings) -> Any:
         speakable = humanize(plain_speech(text), self._texture, sounds=False)
         return Agent.default.tts_node(self, speakable, model_settings)
 
     async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
+        if not self.greeted:
+            raise StopResponse
         text = new_message.text_content or ""
         cleaned, changed = sanitize_user_text(text)
         if changed:
@@ -360,6 +365,10 @@ class LiveKitCallRunner:
             if role == "user":
                 raw = agent.raw_user_text.pop(getattr(item, "id", ""), text)
                 transcript.add("callee", raw)
+                log.debug("call %s: heard a callee turn (%d chars)", call.id, len(raw))
+                if len(transcript.said("callee")) <= 2 and looks_like_voicemail(raw):
+                    finish("voicemail_reached")  # hang up; never leave a message
+                    return
                 if _END_RE.search(raw):
                     closer = DNC_SIGN_OFF if _DNC_RE.search(raw) else self._rng.choice(SIGN_OFFS)
                     spawn(wrap_up(closer, "callee_ended"))
@@ -391,6 +400,7 @@ class LiveKitCallRunner:
             delete_room_on_close=False,
         )
         await session.start(agent, room=room, room_options=options)
+        log.info("call %s: answered; session started", call.id)
 
         async def their_turn(within: float) -> bool:
             try:
@@ -414,6 +424,7 @@ class LiveKitCallRunner:
             await asyncio.sleep(GREETING_BEAT_S)
             if not done.done():
                 await session.say(build_greeting(config, contact.name, self._rng))
+                agent.greeted = True
                 detector.on_answer(at=elapsed())
                 spawn(self._watch_for_machine(detector, elapsed, done, finish))
             try:
@@ -432,6 +443,8 @@ class LiveKitCallRunner:
             with contextlib.suppress(Exception):
                 await session.aclose()
         final = await self._hang_up(ctx, call)
+        log.info("call %s: ended (%s) after %d turns", call.id, reason, len(transcript.turns))
+        await ctx.events.log("info", "Call ended", call_id=call.id, reason=reason)
         totals = [turn.total_ms() for turn in latency.turns]
         return CallReport(
             call_id=call.id,

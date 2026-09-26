@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
@@ -23,8 +24,18 @@ from crewquarters_fake.store import Store
 
 def create_app(settings: FakeSettings | None = None) -> FastAPI:
     settings = settings or FakeSettings.from_env()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        yield
+        await app.state.store.voice_backend.aclose()
+
     app = FastAPI(
-        title="Crewquarters fake platform", version="0.1.0", docs_url=None, redoc_url=None
+        title="Crewquarters fake platform",
+        version="0.1.0",
+        docs_url=None,
+        redoc_url=None,
+        lifespan=lifespan,
     )
     app.state.store = Store(settings)
     app.add_exception_handler(ApiError, api_error_handler)

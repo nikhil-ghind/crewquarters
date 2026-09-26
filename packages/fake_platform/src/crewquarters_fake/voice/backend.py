@@ -31,6 +31,10 @@ class VoiceBackend(Protocol):
 
     def room(self, call: VoiceCallRecord) -> VoiceRoom: ...
 
+    async def aclose(self) -> None:
+        """Release connections when the platform shuts down."""
+        ...
+
 
 def set_ringing(call: VoiceCallRecord) -> None:
     if call.state == "dialing":

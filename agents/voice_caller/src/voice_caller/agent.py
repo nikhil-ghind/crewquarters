@@ -93,8 +93,8 @@ async def _write_row(
             config.spreadsheet_id, result_range(config, contact.row), [values]
         )
         status = STATUS_AFTER.get(outcome.disposition)
-        if status is None and answered:
-            status = "called"  # someone picked up: never dial them again automatically
+        if status is None and answered and outcome.disposition != "voicemail":
+            status = "called"  # a person picked up: never dial them again automatically
         if status is not None:
             await ctx.google.sheets.update_values(
                 config.spreadsheet_id, status_range(config, contact.row), [[status]]

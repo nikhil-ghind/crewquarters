@@ -34,6 +34,8 @@ a monotonic clock tied to actual session events.
 
 from __future__ import annotations
 
+import re
+
 
 class VoicemailDetector:
     def __init__(self, silence_limit_s: float = 4.0, monologue_limit_s: float = 6.0) -> None:
@@ -121,3 +123,23 @@ class VoicemailDetector:
             return "voicemail_reached"
 
         return None
+
+
+# Crewquarters: a transcript signal, independent of the audio timing above. The audio heuristic
+# disarms at the far end's first pause, and a spoken voicemail greeting has pauses, so a greeting
+# that talks for twenty seconds could otherwise be treated as a person.
+_VOICEMAIL_PHRASES = re.compile(
+    r"\b(?:"
+    r"leave (?:a|your) (?:message|name)|after the (?:tone|beep)|"
+    r"(?:you(?:'ve| have)|you) reached (?:the )?(?:voicemail|voice mail|mailbox)|"
+    r"(?:is|are) not available|"
+    r"(?:can't|cannot|can not) (?:take|come to) (?:your|the) (?:call|phone)|"
+    r"voice messaging system|record your message|mailbox is full"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_voicemail(text: str) -> bool:
+    """True when an opening utterance reads like a voicemail or answering-service greeting."""
+    return bool(text) and bool(_VOICEMAIL_PHRASES.search(text))

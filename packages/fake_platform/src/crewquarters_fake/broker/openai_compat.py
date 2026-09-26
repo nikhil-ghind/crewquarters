@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from crewquarters_fake.broker.auth import RunAuth, run_auth
+from crewquarters_fake.broker.auth import RunAuth, require, run_auth
 from crewquarters_fake.broker.llm import prepare_profile
 from crewquarters_fake.errors import ApiError
 from crewquarters_fake.gateway import ChatReply
@@ -40,6 +40,16 @@ def require_kind(model: str, kind: str) -> None:
         raise ApiError(
             422, "WRONG_MODEL_KIND", f"{model} cannot be used for {kind} (check the profile family)"
         )
+
+
+def _active_call(auth: RunAuth) -> str:
+    """The run's call in progress: fake speech-to-text hears what that call's callee queued."""
+    live = [
+        c
+        for c in auth.store.voice_calls.values()
+        if c.run_id == auth.run.id and c.state == "answered"
+    ]
+    return live[-1].id if live else ""
 
 
 class SpeechIn(BaseModel):
@@ -119,6 +129,19 @@ def _sse(reply: ChatReply, model: str, include_usage: bool) -> AsyncIterator[str
     return stream()
 
 
+@router.get("/models")
+async def list_models(auth: RunAuth = Depends(run_auth)) -> dict[str, Any]:
+    async def operation() -> dict[str, Any]:
+        require(auth, None, "broker.openai.models")
+        profiles = auth.installation.resolved_profiles
+        return {
+            "object": "list",
+            "data": [{"id": p, "object": "model", "owned_by": "crewquarters"} for p in profiles],
+        }
+
+    return await auth.store.faults.run("broker.openai.models", operation)
+
+
 @router.post("/chat/completions", response_model=None)
 async def chat_completions(
     request: Request, auth: RunAuth = Depends(run_auth)
@@ -182,7 +205,7 @@ async def transcriptions(
         await prepare_profile(auth, model, "broker.openai.transcriptions")
         audio = await file.read()
         started = time.monotonic()
-        text = await auth.store.speech.transcribe(audio, model, language)
+        text = await auth.store.speech.transcribe(audio, model, language, _active_call(auth))
         auth.store.audit_event(
             auth.run,
             "speech.call",
@@ -226,4 +249,4 @@ async def speech(body: SpeechIn, auth: RunAuth = Depends(run_auth)) -> Streaming
         async for chunk in audio:
             yield chunk
 
-    return StreamingResponse(stream(), media_type=media)
+    return StreamingResponse(stream(), media_type=media, headers={"x-request-id": uuid.uuid4().hex})

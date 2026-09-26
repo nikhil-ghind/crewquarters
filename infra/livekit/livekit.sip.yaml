@@ -1,0 +1,17 @@
+# LiveKit server with SIP (GB10 with a real trunk): the containers configuration plus Redis,
+# which LiveKit SIP requires. Replace the key and secret before connecting a trunk.
+port: 7880
+bind_addresses: ["0.0.0.0"]
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  node_ip: 10.231.72.10
+redis:
+  address: redis:6379
+keys:
+  crewq-dev: crewquarters-local-development-secret-0001
+room:
+  empty_timeout: 60
+logging:
+  level: info

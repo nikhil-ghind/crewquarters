@@ -241,3 +241,47 @@ async def test_admin_queues_and_reports_fake_speech(api: httpx.AsyncClient) -> N
     assert r.json()["text"] == "Who is this?"
     state = (await api.get("/fake/v1/state/speech")).json()
     assert state["transcribed"] == ["Who is this?"]
+
+
+async def test_transcripts_are_routed_to_the_runs_active_call(
+    app: FastAPI, api: httpx.AsyncClient
+) -> None:
+    """A line a simulated callee queued for one call is never heard on another call."""
+    store = app.state.store
+    started = await start(
+        api,
+        manifest(
+            llmProfiles=VOICE_PROFILES,
+            connectors={"google": [], "twilio": [], "sip": ["call.conversational"]},
+            userInput=True,
+        ),
+    )
+    first = store.new_voice_call(
+        started.run_id, "k1", "+15555550101", ring_timeout=5, max_duration=60
+    )
+    first.state = "completed"
+    store.fake_speech.queue_transcripts(["Stale goodbye from the first call."], channel=first.id)
+    second = store.new_voice_call(
+        started.run_id, "k2", "+15555550102", ring_timeout=5, max_duration=60
+    )
+    second.state = "answered"
+    store.fake_speech.queue_transcripts(["Hi, you've reached voicemail."], channel=second.id)
+    r = await api.post(
+        f"{OPENAI}/audio/transcriptions",
+        data={"model": "local.stt.small"},
+        files={"file": ("u.wav", wav(), "audio/wav")},
+        headers=started.headers,
+    )
+    assert r.json()["text"] == "Hi, you've reached voicemail."
+
+
+async def test_models_lists_the_runs_granted_profiles(api: httpx.AsyncClient) -> None:
+    started = await start(api, voice_manifest())
+    r = await api.get(f"{OPENAI}/models", headers=started.headers)
+    body = r.json()
+    assert body["object"] == "list"
+    assert {m["id"] for m in body["data"]} == {
+        "local.general.small",
+        "local.stt.small",
+        "local.tts.small",
+    }

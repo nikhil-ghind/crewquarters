@@ -239,6 +239,21 @@ jobs:
       - if: always()
         run: make realstack-down
 
+  # The voice agent holding real WebRTC calls through a local LiveKit server (fake speech).
+  voice-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.11"
+      - run: uv sync --frozen --python 3.12 --all-packages
+      - run: make livekit-up
+      - run: make voice-e2e
+      - if: failure()
+        run: docker compose -f infra/compose/compose.yaml --profile voice logs livekit
+
   agent-images-arm64:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -248,11 +263,13 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - name: Build arm64 agent and fake-platform images; self-check under emulation
         run: |
-          for agent in contract_probe gmail_digest caller; do
+          for agent in contract_probe gmail_digest caller voice_caller; do
             docker buildx build --platform linux/arm64 -f agents/$agent/Dockerfile -t crewq/$agent:arm64 --load .
             docker run --rm --platform linux/arm64 --network none crewq/$agent:arm64 --self-check
           done
           docker buildx build --platform linux/arm64 -f packages/fake_platform/Dockerfile -t crewq/fake-platform:arm64 --load .
+          docker buildx build --platform linux/arm64 -f packages/speech_server/Dockerfile -t crewq/speech:arm64 --load .
+          docker run --rm --platform linux/arm64 crewq/speech:arm64 --help
           docker run --rm --platform linux/arm64 crewq/fake-platform:arm64 --help
 
   # --- Person 4: web UI (apps/web) ---------------------------------------------------------

@@ -112,6 +112,7 @@ async def test_filter_words_are_masked_before_the_model_sees_them() -> None:
     from livekit.agents.llm import ChatContext, ChatMessage
 
     agent = VoiceCallAgent(build_system_prompt(make_config(), "Asha"), lambda: asyncio.sleep(0))
+    agent.greeted = True
     message = ChatMessage(role="user", content=["This is bullshit, why are you calling"])
     await agent.on_user_turn_completed(ChatContext.empty(), message)
     assert "bullshit" not in (message.text_content or "")
@@ -125,3 +126,18 @@ async def test_plain_speech_drops_markup_across_chunks() -> None:
 
     spoken = "".join([piece async for piece in plain_speech(chunks())])
     assert spoken == " Hi, there ."
+
+
+async def test_turns_before_the_greeting_get_no_model_reply() -> None:
+    """The callee's pickup "Hello?" is answered by the scripted greeting, not by the LLM too."""
+    from livekit.agents.llm import ChatContext, ChatMessage, StopResponse
+
+    agent = VoiceCallAgent(build_system_prompt(make_config(), "Asha"), lambda: asyncio.sleep(0))
+    with pytest.raises(StopResponse):
+        await agent.on_user_turn_completed(
+            ChatContext.empty(), ChatMessage(role="user", content=["Hello?"])
+        )
+    agent.greeted = True
+    await agent.on_user_turn_completed(
+        ChatContext.empty(), ChatMessage(role="user", content=["Yes, I have a minute."])
+    )

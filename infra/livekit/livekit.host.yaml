@@ -1,0 +1,16 @@
+# LiveKit server for laptop development (make voice-up): the fake platform, the simulated callee,
+# and agents run as host processes and reach media on 127.0.0.1 through the published ports.
+# Development keys only: never use these on a reachable network.
+port: 7880
+bind_addresses: ["0.0.0.0"]
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  node_ip: 127.0.0.1
+keys:
+  crewq-dev: crewquarters-local-development-secret-0001
+room:
+  empty_timeout: 60
+logging:
+  level: info

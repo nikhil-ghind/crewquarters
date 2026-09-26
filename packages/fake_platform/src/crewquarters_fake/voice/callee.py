@@ -143,15 +143,18 @@ class SimulatedCallee:
         from livekit import rtc
 
         speech = self.store.speech
-        if isinstance(speech, LocalSpeech):
-            speech.engine.queue_transcripts([text])
         self.spoken.append(text)
-        buffer = b""
-        async for chunk in speech.synthesize(TTS_PROFILE, text, self.scenario.voice, "pcm", 1.0):
-            buffer += chunk
-            while len(buffer) >= FRAME_SAMPLES * 2:
-                frame, buffer = buffer[: FRAME_SAMPLES * 2], buffer[FRAME_SAMPLES * 2 :]
-                await source.capture_frame(rtc.AudioFrame(frame, SAMPLE_RATE, 1, FRAME_SAMPLES))
+        log.info("call %s: simulated callee says %r", self.call.id, text)
+        audio = b"".join(
+            [c async for c in speech.synthesize(TTS_PROFILE, text, self.scenario.voice, "pcm", 1.0)]
+        )
+        if isinstance(speech, LocalSpeech):
+            # The fake speech-to-text "hears" this line once it has finished playing.
+            finished = time.monotonic() + len(audio) / (2 * SAMPLE_RATE)
+            speech.engine.queue_transcripts([text], channel=self.call.id, available_at=finished)
+        for start in range(0, len(audio) - FRAME_SAMPLES * 2 + 1, FRAME_SAMPLES * 2):
+            frame = audio[start : start + FRAME_SAMPLES * 2]
+            await source.capture_frame(rtc.AudioFrame(frame, SAMPLE_RATE, 1, FRAME_SAMPLES))
         silence = bytes(FRAME_SAMPLES * 2)
         for _ in range(15):  # 300 ms of silence so voice-activity detection closes the turn
             await source.capture_frame(rtc.AudioFrame(silence, SAMPLE_RATE, 1, FRAME_SAMPLES))

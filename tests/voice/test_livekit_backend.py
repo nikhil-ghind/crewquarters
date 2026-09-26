@@ -64,7 +64,7 @@ async def test_simulated_callee_answers_and_speaks(livekit_url: str) -> None:
         assert await wait(lambda: call.state == "answered", 10)
         assert await wait(lambda: any(level > 0.02 for level in levels), 10), "no callee audio"
         # The fake speech-to-text was told what the callee said before it said it.
-        assert store.fake_speech._transcripts[0] == "Hello?"
+        assert store.fake_speech._transcripts[call.id][0][0] == "Hello?"
         await store.voice_backend.hangup(store, call)
         assert call.state == "completed" and call.duration_seconds is not None
     finally:

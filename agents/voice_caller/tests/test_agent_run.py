@@ -280,3 +280,27 @@ async def test_result_matches_the_manifest_schema(
     result, _ = await execute(platform, ScriptedRunner({2: ["Yes."], 4: ["Yes."]}))
     schema = load_manifest(AGENT_DIR / "manifest.yaml")["spec"]["resultSchema"]
     Draft202012Validator(schema).validate(result)
+
+
+async def test_voicemail_leaves_the_contact_eligible(
+    platform: BackgroundServer, tmp_path: Path
+) -> None:
+    """A machine answering is not a person answering: the contact can be tried again later."""
+    from voice_caller import session as session_module
+
+    client = FakePlatformClient(platform.url)
+    seed(client, tmp_path)
+
+    class VoicemailRunner(ScriptedRunner):
+        async def run_call(
+            self, ctx: RunContext[Any], call: Any, contact: ContactRow, config: VoiceCallerConfig
+        ) -> CallReport:
+            report = await super().run_call(ctx, call, contact, config)
+            if report.answered and contact.row == 2:
+                report.ended_by = "voicemail_reached"
+            return report
+
+    assert session_module.CallReport is CallReport
+    result, client = await execute(platform, VoicemailRunner({4: ["Yes."]}))
+    assert {r["row"]: r["disposition"] for r in result["rows"]}[2] == "voicemail"
+    assert sheet(client, "Contacts")[1][3] == ""

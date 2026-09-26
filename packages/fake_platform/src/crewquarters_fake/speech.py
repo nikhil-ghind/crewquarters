@@ -21,7 +21,9 @@ MEDIA_TYPES = {"pcm": f"audio/pcm; rate={OUTPUT_SAMPLE_RATE}", "wav": "audio/wav
 
 
 class SpeechService(Protocol):
-    async def transcribe(self, audio: bytes, model: str, language: str | None) -> str: ...
+    async def transcribe(
+        self, audio: bytes, model: str, language: str | None, channel: str = ""
+    ) -> str: ...
 
     def synthesize(
         self, model: str, text: str, voice: str | None, response_format: str, speed: float
@@ -40,12 +42,14 @@ class LocalSpeech:
     def __init__(self, engine: FakeSpeechEngine) -> None:
         self.engine = engine
 
-    async def transcribe(self, audio: bytes, model: str, language: str | None) -> str:
+    async def transcribe(
+        self, audio: bytes, model: str, language: str | None, channel: str = ""
+    ) -> str:
         try:
             samples, rate = decode_wav(audio)
         except InvalidAudio as exc:
             raise ApiError(422, "INVALID_AUDIO", str(exc)) from exc
-        return await run_in_threadpool(self.engine.transcribe, samples, rate)
+        return await run_in_threadpool(self.engine.transcribe, samples, rate, channel)
 
     async def synthesize(
         self, model: str, text: str, voice: str | None, response_format: str, speed: float
@@ -62,7 +66,9 @@ class RemoteSpeech:
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url.rstrip("/")
 
-    async def transcribe(self, audio: bytes, model: str, language: str | None) -> str:
+    async def transcribe(
+        self, audio: bytes, model: str, language: str | None, channel: str = ""
+    ) -> str:
         data = {"model": model, **({"language": language} if language else {})}
         files = {"file": ("utterance.wav", audio, "audio/wav")}
         try:

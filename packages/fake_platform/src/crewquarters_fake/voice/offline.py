@@ -52,3 +52,6 @@ class OfflineVoiceBackend:
         return VoiceRoom(
             url="offline://voice", name=call.room_name, token=OFFLINE_TOKEN, identity="agent"
         )
+
+    async def aclose(self) -> None:
+        return None

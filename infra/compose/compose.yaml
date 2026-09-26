@@ -287,6 +287,11 @@ services:
       CREWQ_FAKE_HEARTBEAT_SECONDS: "2"
       CREWQ_FAKE_LLM_BASE_URL: ${CREWQ_FAKE_LLM_BASE_URL:-}
       CREWQ_FAKE_LLM_MODEL: ${CREWQ_FAKE_LLM_MODEL:-}
+      # Voice calls (set by `make voice-fake-up`): LiveKit on the agent network, real speech.
+      CREWQ_FAKE_LIVEKIT_URL: ${CREWQ_FAKE_LIVEKIT_URL:-}
+      CREWQ_FAKE_LIVEKIT_API_URL: ${CREWQ_FAKE_LIVEKIT_API_URL:-}
+      CREWQ_FAKE_SPEECH_URL: ${CREWQ_FAKE_SPEECH_URL:-}
+      CREWQ_FAKE_SIP_TRUNK_ID: ${CREWQ_FAKE_SIP_TRUNK_ID:-}
     volumes:
       # Scenarios are read from the repository (read-only): tests/fixtures/scenarios, agents/*/scenarios.
       - ../..:/workspace:ro
@@ -312,10 +317,96 @@ services:
     ports:
       - "127.0.0.1:5001:5000"
 
+  # --- Person 5: local voice stack (profile `voice`: make voice-up) -------------------------
+  # LiveKit carries call audio; agents join a call's room with a per-room token from the
+  # broker. CREWQ_LIVEKIT_MODE picks the media address (infra/livekit/livekit.<mode>.yaml):
+  # `host` for host processes (laptop development), `containers` for hardened agent
+  # containers on crewq-agents, `sip` for a real trunk (adds Redis and livekit-sip).
+  livekit:
+    profiles: [voice]
+    image: livekit/livekit-server:v1.13.7@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    command: ["--config", "/etc/livekit.yaml"]
+    volumes:
+      - ../livekit/livekit.${CREWQ_LIVEKIT_MODE:-host}.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "127.0.0.1:7880:7880"
+      - "127.0.0.1:7881:7881"
+      - "127.0.0.1:7882:7882/udp"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:7880/"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks:
+      default: {}
+      agents:
+        ipv4_address: 10.231.72.10
+        aliases: [livekit]
+
+  # OpenAI-compatible speech-to-text (Parakeet) and speech (Kokoro) for local.stt.* and
+  # local.tts.*. Models live in the speech-models volume: `make speech-models` fills it once.
+  speech:
+    profiles: [voice]
+    build:
+      context: ../..
+      dockerfile: packages/speech_server/Dockerfile
+    image: crewquarters/speech:dev
+    environment:
+      CREWQ_SPEECH_ENGINE: sherpa
+      CREWQ_SPEECH_THREADS: ${CREWQ_SPEECH_THREADS:-4}
+    volumes:
+      - speech-models:/models
+    ports:
+      - "127.0.0.1:8200:8200"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8200/health/ready')"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks:
+      default: {}
+      agents:
+        aliases: [speech]
+
+  # Real phone numbers through a SIP trunk (profile `sip`; see docs/voice/README.md).
+  redis:
+    profiles: [sip]
+    image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    read_only: true
+    tmpfs: [/data]
+    networks: [agents]
+
+  livekit-sip:
+    profiles: [sip]
+    image: livekit/sip:v1.17.0@sha256:d3c6441eb0918a81ab9e48ba7df6f02c1eebbeace42c963b2c6a6e5418675671
+    environment:
+      SIP_CONFIG_FILE: /etc/sip.yaml
+    volumes:
+      - ../livekit/sip.yaml:/etc/sip.yaml:ro
+    # SIP signalling and RTP media must reach the trunk provider: publish them on the GB10's
+    # LAN address and forward them on the router (docs/voice/README.md).
+    ports:
+      - "5060:5060/udp"
+      - "10000-10100:10000-10100/udp"
+    networks:
+      default: {}
+      agents: {}
+
 networks:
   agents:
     name: crewq-agents
     internal: true
+    ipam:
+      config:
+        - subnet: 10.231.72.0/24
   # Proxy <-> tunnel only. The tunnel cannot reach the control API, broker or database.
   callbacks: {}
 
@@ -325,3 +416,4 @@ volumes:
   documents:
   embedding-models:
   backups:
+  speech-models:
