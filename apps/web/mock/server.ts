@@ -25,6 +25,8 @@
  *                                                 (authorizationUrl from /google/start points here)
  *     POST /__mock/new-version    {agentId}       publish 0.2.0 with an added cloud permission
  *     POST /__mock/model-error    {modelId}       memoryState LOAD_ERROR
+ *     POST /__mock/input-request                  a caller run WAITING_INPUT with a new pending
+ *                                                 Crew Request → {runId, inputRequestId, title}
  *     GET  /__mock/state                          summary for debugging
  * Credentials: owner / correct-horse-battery. Bootstrap token (fresh): CQ-DEMO-SETUP.
  */
@@ -59,7 +61,16 @@ import {
   type Resp,
   type Result,
 } from './http.ts';
-import { applyScenario, BOOTSTRAP_TOKEN, createInstallation, createRun, defaultsFrom, SCENARIOS, type Scenario } from './scenarios.ts';
+import {
+  applyScenario,
+  BOOTSTRAP_TOKEN,
+  createInstallation,
+  createPendingInputRequest,
+  createRun,
+  defaultsFrom,
+  SCENARIOS,
+  type Scenario,
+} from './scenarios.ts';
 import {
   addLease,
   cancelRun,
@@ -716,8 +727,8 @@ function validateAnswer(schema: Obj, value: unknown): string | null {
 route('POST', `${P}/input-requests/:id/answer`, (ctx) => {
   const req = st().inputs.get(param(ctx, 'id'));
   if (!req) throw notFound('Input request', param(ctx, 'id'));
-  if (req.state === 'answered') throw new ApiErr(409, 'INPUT_ALREADY_ANSWERED', 'This request was already answered.');
-  if (req.state !== 'pending') throw new ApiErr(409, 'INPUT_CLOSED', `This request is ${req.state}.`);
+  // Same code as the control API (crewquarters_shared.runs.service.answer): state first, then version.
+  if (req.state !== 'pending') throw new ApiErr(409, 'INPUT_ALREADY_CLOSED', `This request is already ${req.state}.`);
   if (ctx.body.version !== req.version) {
     throw new ApiErr(409, 'VERSION_CONFLICT', 'This request changed; reload it before answering.', { currentVersion: req.version });
   }
@@ -1384,6 +1395,10 @@ async function mockControl(ctx: Ctx): Promise<Result> {
       const m = modelOrThrow(str(ctx.body.modelId) ?? 'local.general.small');
       changeModel(m, { memoryState: 'LOAD_ERROR', stage: null, reservedBytes: 0, error: { code: 'LOAD_FAILED', message: 'vLLM exited during Loading weights (out of memory).' } });
       return ok(modelOut(m));
+    }
+    case 'POST /__mock/input-request': {
+      if (!s.owner) throw new ApiErr(409, 'NO_OWNER', 'Reset to the ready or populated scenario first.');
+      return ok(createPendingInputRequest());
     }
     case 'GET /__mock/state':
       return ok({

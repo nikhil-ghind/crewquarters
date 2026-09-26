@@ -185,6 +185,22 @@ function addBackups(populated: boolean): void {
   s.backups.push(archive(24 * 6, 'pre-upgrade', 'device', true));
 }
 
+/**
+ * A caller run waiting on its approval (a pending Crew Request), created on demand by
+ * POST /__mock/input-request. Reuses the owner's caller installation when there is one.
+ */
+export function createPendingInputRequest(): { runId: string; inputRequestId: string; title: string; agentName: string | null } {
+  const caller =
+    [...st().installations.values()].find((i) => i.agentId === 'caller') ??
+    createInstallation('caller', { spreadsheetId: '1AbCdEfGhIjKlMnOp' });
+  const run = createRun(caller);
+  setRunState(run, 'PREPARING');
+  setRunState(run, 'RUNNING');
+  appendEvent(run, 'run.progress', { percent: 15, step: 'validate', message: 'Checking consent and E.164 numbers' });
+  const req = askCallerApproval(run);
+  return { runId: run.id, inputRequestId: req.id, title: req.title, agentName: req.agentName ?? null };
+}
+
 export function applyScenario(scenario: Scenario): void {
   const prev = S.current;
   resetIds();

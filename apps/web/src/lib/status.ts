@@ -235,3 +235,14 @@ export const PROVIDER_NAMES: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
 };
+
+/** Browser notifications for Crew Requests (per browser; section 13.7). */
+export type NotifyState = 'on' | 'off' | 'blocked' | 'insecure' | 'unsupported';
+
+export const NOTIFY_STATUS: Record<NotifyState, StatusSpec> = {
+  on: { label: 'On', tone: 'success', icon: 'check' },
+  off: { label: 'Off', tone: 'neutral', icon: 'minus' },
+  blocked: { label: 'Blocked by the browser', tone: 'warning', icon: 'ban' },
+  insecure: { label: 'Needs HTTPS', tone: 'warning', icon: 'alert' },
+  unsupported: { label: 'Not supported', tone: 'neutral', icon: 'info' },
+};

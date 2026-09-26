@@ -71,7 +71,7 @@ const REMEDIATION: Record<string, string> = {
     'The request came from an address the device does not trust. Open Crewquarters from its usual address.',
   RATE_LIMITED: 'Too many attempts. Wait a minute and try again.',
   VERSION_CONFLICT: 'Someone else changed this. Reload to see the latest version.',
-  INPUT_ALREADY_ANSWERED: 'This request was already answered.',
+  INPUT_ALREADY_CLOSED: 'This request was already answered or closed.',
   PAYLOAD_TOO_LARGE: 'The file or request is too large.',
   MODEL_GATEWAY_UNAVAILABLE: 'Model serving is unavailable. Check System status.',
   RUNTIME_UNAVAILABLE: 'The agent runtime is unavailable. Check System status.',

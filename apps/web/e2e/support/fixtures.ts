@@ -55,6 +55,10 @@ export class MockControls {
   modelError(modelId: string) {
     return this.post('model-error', { modelId });
   }
+  /** A caller run waiting on a new pending Crew Request. */
+  inputRequest() {
+    return this.post('input-request') as Promise<{ runId: string; inputRequestId: string; title: string; agentName: string | null }>;
+  }
   async sseLog(): Promise<{ runId: string; lastEventId: string | null; after: string | null; at: string }[]> {
     const res = await this.request.get('/__mock/sse-log');
     return (await res.json()) as { runId: string; lastEventId: string | null; after: string | null; at: string }[];

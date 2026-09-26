@@ -4,6 +4,7 @@ import { EmptyState, SkeletonBlock } from '../../components/Feedback';
 import { Page, PageHeader, RouteTabs } from '../../components/Layout';
 import { QueryView } from '../../components/QueryView';
 import { InputRequestCard } from '../common/InputRequestCard';
+import { NotificationPrompt } from '../common/NotificationControls';
 import { useTimeZone } from '../common/useTimeZone';
 import { useActivityTabs } from './RunsPage';
 
@@ -28,6 +29,7 @@ export default function ApprovalsPage() {
       >
         {(list) => (
           <div className="stack">
+            <NotificationPrompt />
             {list.map((r) => (
               <InputRequestCard key={r.id} request={r} showRunLink timeZone={timeZone} />
             ))}
