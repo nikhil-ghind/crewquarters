@@ -100,7 +100,8 @@ jobs:
           docker compose -f infra/compose/compose.yaml -f infra/compose/compose.runtime.yaml config -q
           docker compose -f infra/compose/compose.yaml --profile callbacks --profile fake config -q
           export CQ_VERSION=0 CQ_SOCKET_GID=1 POSTGRES_PASSWORD=x CQ_SECRET_KEY=x \
-            CQ_CAPABILITY_SIGNING_KEY=x CQ_INTERNAL_SERVICE_TOKEN=x CQ_CHAT_CLIENT_TOKEN=x
+            CQ_CAPABILITY_SIGNING_KEY=x CQ_INTERNAL_SERVICE_TOKEN=x CQ_CHAT_CLIENT_TOKEN=x \
+            CQ_VOICE_CLIENT_TOKEN=x
           docker compose -f infra/compose/compose.appliance.yaml config -q
           docker compose -f infra/compose/compose.appliance.yaml --profile callbacks config -q
           docker compose -f infra/compose/compose.appliance.yaml -f infra/compose/compose.lan-https.yaml config -q
