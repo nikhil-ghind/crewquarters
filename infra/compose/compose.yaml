@@ -136,6 +136,8 @@ services:
       CQ_GOOGLE_CLIENT_SECRET: ${CQ_GOOGLE_CLIENT_SECRET:-dev-client-secret}
       # Live mode only: the numbers the caller may dial (JSON list of E.164).
       CQ_TWILIO_ALLOWED_NUMBERS: ${CQ_TWILIO_ALLOWED_NUMBERS:-[]}
+      # Live mode only: a GitHub token for the PR reviewer (for example `gh auth token`).
+      CQ_GITHUB_TOKEN: ${CQ_GITHUB_TOKEN:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

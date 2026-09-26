@@ -3,6 +3,7 @@ from enum import StrEnum
 
 class ConnectionOutProvider(StrEnum):
     ANTHROPIC = "anthropic"
+    GITHUB = "github"
     GOOGLE = "google"
     OPENAI = "openai"
     TWILIO = "twilio"

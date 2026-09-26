@@ -10,11 +10,13 @@ from attrs import field as _attrs_field
 
 from ..models.internal_run_out_state import InternalRunOutState
 from ..models.internal_run_out_trigger import InternalRunOutTrigger
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.internal_run_out_config import InternalRunOutConfig
     from ..models.internal_run_out_modelbindings import InternalRunOutModelbindings
     from ..models.internal_run_out_permissions import InternalRunOutPermissions
+    from ..models.internal_run_out_trigger_input_type_0 import InternalRunOutTriggerInputType0
 
 
 T = TypeVar("T", bound="InternalRunOut")
@@ -43,6 +45,9 @@ class InternalRunOut:
         permissions (InternalRunOutPermissions):
         model_bindings (InternalRunOutModelbindings):
         config (InternalRunOutConfig):
+        parent_run_id (None | Unset | UUID):
+        trigger_input (InternalRunOutTriggerInputType0 | None | Unset): Untrusted input the starting agent passed
+            (trigger `agent`).
     """
 
     id: UUID
@@ -64,9 +69,13 @@ class InternalRunOut:
     permissions: InternalRunOutPermissions
     model_bindings: InternalRunOutModelbindings
     config: InternalRunOutConfig
+    parent_run_id: Unset | UUID | None = UNSET
+    trigger_input: InternalRunOutTriggerInputType0 | Unset | None = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.internal_run_out_trigger_input_type_0 import InternalRunOutTriggerInputType0
+
         id = str(self.id)
 
         state = self.state.value
@@ -110,6 +119,22 @@ class InternalRunOut:
 
         config = self.config.to_dict()
 
+        parent_run_id: str | Unset | None
+        if isinstance(self.parent_run_id, Unset):
+            parent_run_id = UNSET
+        elif isinstance(self.parent_run_id, UUID):
+            parent_run_id = str(self.parent_run_id)
+        else:
+            parent_run_id = self.parent_run_id
+
+        trigger_input: dict[str, Any] | Unset | None
+        if isinstance(self.trigger_input, Unset):
+            trigger_input = UNSET
+        elif isinstance(self.trigger_input, InternalRunOutTriggerInputType0):
+            trigger_input = self.trigger_input.to_dict()
+        else:
+            trigger_input = self.trigger_input
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -135,6 +160,10 @@ class InternalRunOut:
                 "config": config,
             }
         )
+        if parent_run_id is not UNSET:
+            field_dict["parentRunId"] = parent_run_id
+        if trigger_input is not UNSET:
+            field_dict["triggerInput"] = trigger_input
 
         return field_dict
 
@@ -145,6 +174,9 @@ class InternalRunOut:
             InternalRunOutModelbindings,
         )
         from ..models.internal_run_out_permissions import InternalRunOutPermissions
+        from ..models.internal_run_out_trigger_input_type_0 import (
+            InternalRunOutTriggerInputType0,
+        )
 
         d = dict(src_dict)
         id = UUID(d.pop("id"))
@@ -203,6 +235,40 @@ class InternalRunOut:
 
         config = InternalRunOutConfig.from_dict(d.pop("config"))
 
+        def _parse_parent_run_id(data: object) -> Unset | UUID | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                parent_run_id_type_0 = UUID(data)
+
+                return parent_run_id_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | Unset | UUID, data)
+
+        parent_run_id = _parse_parent_run_id(d.pop("parentRunId", UNSET))
+
+        def _parse_trigger_input(data: object) -> InternalRunOutTriggerInputType0 | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                trigger_input_type_0 = InternalRunOutTriggerInputType0.from_dict(data)
+
+                return trigger_input_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(InternalRunOutTriggerInputType0 | None | Unset, data)
+
+        trigger_input = _parse_trigger_input(d.pop("triggerInput", UNSET))
+
         internal_run_out = cls(
             id=id,
             state=state,
@@ -223,6 +289,8 @@ class InternalRunOut:
             permissions=permissions,
             model_bindings=model_bindings,
             config=config,
+            parent_run_id=parent_run_id,
+            trigger_input=trigger_input,
         )
 
         internal_run_out.additional_properties = d

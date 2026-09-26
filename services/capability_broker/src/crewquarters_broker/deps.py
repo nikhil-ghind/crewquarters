@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crewquarters_broker.auth import Grant, authorize, bearer
 from crewquarters_broker.config import BrokerSettings
+from crewquarters_broker.github import GitHubConnector
 from crewquarters_broker.google import GoogleConnector
 from crewquarters_broker.internal import InternalClient
 from crewquarters_broker.metrics import BrokerMetrics
@@ -39,6 +40,7 @@ class BrokerState:
     google: GoogleConnector
     telephony: TelephonyService
     voice: VoiceService
+    github: GitHubConnector
     metrics: BrokerMetrics
 
 

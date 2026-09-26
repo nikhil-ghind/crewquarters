@@ -53,6 +53,7 @@ AGENT_ROOTS = [
     "crewquarters-agent-gmail-digest",
     "crewquarters-agent-caller",
     "crewquarters-agent-personal-space",
+    "crewquarters-agent-pr-reviewer",
 ]
 
 # Custom model-use licenses (usage thresholds, field-of-use bans) always need review too.

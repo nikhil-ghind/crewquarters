@@ -197,7 +197,10 @@ class RunOut(ApiModel):
     agent_id: str
     agent_name: str
     agent_version: str
-    trigger: Literal["manual", "schedule"]
+    trigger: Literal["manual", "schedule", "agent"]
+    parent_run_id: uuid.UUID | None = Field(
+        None, description="The run that started this one (trigger `agent`)."
+    )
     schedule_id: uuid.UUID | None
     scheduled_for: datetime | None
     state: RunStateLiteral
@@ -406,7 +409,7 @@ class MemoryOut(ApiModel):
 
 
 class ConnectionOut(ApiModel):
-    provider: Literal["google", "twilio", "openai", "anthropic"]
+    provider: Literal["google", "twilio", "github", "openai", "anthropic"]
     display_name: str
     status: Literal["NOT_CONNECTED", "CONNECTED", "NEEDS_ATTENTION", "DISABLED", "UNKNOWN"] = Field(
         description="UNKNOWN: the capability broker could not be reached; nothing is assumed."
@@ -727,7 +730,11 @@ class InternalRunOut(ApiModel):
     state: RunStateLiteral
     current_attempt: int
     installation_id: uuid.UUID
-    trigger: Literal["manual", "schedule"]
+    trigger: Literal["manual", "schedule", "agent"]
+    parent_run_id: uuid.UUID | None = None
+    trigger_input: dict[str, Any] | None = Field(
+        None, description="Untrusted input the starting agent passed (trigger `agent`)."
+    )
     scheduled_for: datetime | None
     agent_id: str = Field(description="Manifest agent id.")
     agent_version: str = Field(description="Manifest version (semver).")
@@ -744,6 +751,20 @@ class InternalRunOut(ApiModel):
     permissions: dict[str, Any]
     model_bindings: dict[str, str]
     config: dict[str, Any]
+
+
+class AgentStartIn(AttemptIn):
+    agent_id: str = Field(pattern=r"^[a-z][a-z0-9-]{1,62}$")
+    start_key: str = Field(pattern=r"^[A-Za-z0-9_.:-]{1,200}$")
+    input: dict[str, Any] | None = None
+
+
+class AgentStartOut(ApiModel):
+    run_id: uuid.UUID
+    agent_id: str
+    installation_id: uuid.UUID
+    state: RunStateLiteral
+    created: bool = Field(description="False when this startKey had already started the run.")
 
 
 class ActionClaimIn(AttemptIn):

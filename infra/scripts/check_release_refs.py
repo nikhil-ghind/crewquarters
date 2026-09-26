@@ -40,6 +40,7 @@ DOCKERFILES = [
     "agents/contract_probe/Dockerfile",
     "agents/gmail_digest/Dockerfile",
     "agents/caller/Dockerfile",
+    "agents/pr_reviewer/Dockerfile",
 ]
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 # Placeholder values that let `docker compose config` render without real secrets.

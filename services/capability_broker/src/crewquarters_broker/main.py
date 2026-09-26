@@ -16,6 +16,7 @@ from sqlalchemy import text
 from crewquarters_broker import agent_api, callbacks, connections, errors, fakes, voice_routes
 from crewquarters_broker.config import BrokerSettings, get_settings
 from crewquarters_broker.deps import BrokerState, internal_auth
+from crewquarters_broker.github import GitHubConnector
 from crewquarters_broker.google import GoogleConnector
 from crewquarters_broker.internal import InternalClient
 from crewquarters_broker.metrics import BrokerMetrics, MeteredTransport
@@ -40,7 +41,7 @@ def create_app(
     knowledge_transport: httpx.AsyncBaseTransport | None = None,
     gateway_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
-    """Transports are injectable for tests. In fake provider mode, Google and Twilio are
+    """Transports are injectable for tests. In fake provider mode, Google, Twilio and GitHub are
     served by :mod:`crewquarters_broker.fakes` unless a transport is given."""
     settings = settings or get_settings()
     keyring = settings.keyring()
@@ -49,7 +50,9 @@ def create_app(
     token = settings.internal_service_token.get_secret_value()
     fake = settings.provider_mode == "fake"
     if fake and provider_transport is None:
-        provider_transport = fakes.transport(fakes.FakeGoogle(), fakes.FakeTwilio())
+        provider_transport = fakes.transport(
+            fakes.FakeGoogle(), fakes.FakeTwilio(), fakes.FakeGitHub()
+        )
     metrics = BrokerMetrics()
     http = httpx.AsyncClient(
         timeout=PROVIDER_TIMEOUT_SECONDS,
@@ -104,6 +107,7 @@ def create_app(
         google=GoogleConnector(settings, keyring, sessions, http, metrics),
         telephony=telephony,
         voice=voice,
+        github=GitHubConnector(settings, http),
         metrics=metrics,
     )
     errors.install(app)

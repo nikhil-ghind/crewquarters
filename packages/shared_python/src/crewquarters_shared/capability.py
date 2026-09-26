@@ -52,6 +52,10 @@ def capabilities_from_permissions(
         caps.add(f"twilio.{op}")
     for op in connectors.get("sip", []):
         caps.add(f"sip.{op}")
+    for op in connectors.get("github", []):
+        caps.add(f"github.{op}")
+    for agent_id in permissions.get("startsAgents", []) or []:
+        caps.add(f"agents.start:{agent_id}")
     for provider in permissions.get("cloudProviders", []):
         caps.add(f"cloud.{provider}")
     if permissions.get("userInput"):

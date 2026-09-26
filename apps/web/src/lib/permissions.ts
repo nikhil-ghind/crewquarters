@@ -30,6 +30,7 @@ interface Permissions {
   knowledge?: unknown;
   connectors?: unknown;
   cloudProviders?: unknown;
+  startsAgents?: unknown;
   userInput?: unknown;
 }
 
@@ -46,6 +47,17 @@ const CONNECTOR_COPY: Record<string, { capability: string; impact: string; resou
     capability: 'Read and write Google Sheets you configure',
     impact: 'Only the spreadsheet named in this agent’s configuration.',
     resource: 'Spreadsheet in configuration',
+  },
+  'github.pull_requests.read': {
+    capability: 'Read pull requests in the GitHub repository you configure',
+    impact: 'The agent can read the titles and code changes of open pull requests in that repository only.',
+    resource: 'Repository in configuration',
+  },
+  'github.pull_requests.write': {
+    capability: 'Post review comments on pull requests in the GitHub repository you configure',
+    impact:
+      'When you turn posting on, the agent adds a comment-only review to pull requests in that repository. It cannot approve, request changes, merge or edit code.',
+    resource: 'Repository in configuration',
   },
   'twilio.call.fixed_script': {
     capability: 'Place phone calls with a fixed script',
@@ -84,6 +96,16 @@ export function permissionItems(raw: Record<string, unknown> | null | undefined)
         emphasis: copy?.emphasis,
       });
     }
+  }
+
+  for (const agentId of strings(p.startsAgents)) {
+    items.push({
+      id: `agents.start:${agentId}`,
+      group: 'External services',
+      capability: `Start the ${agentId} agent`,
+      impact: `When this agent decides to, it can start a run of ${agentId} and pass it a small piece of data. That run uses only the permissions you approved for ${agentId}, not this agent's. Chains are limited in depth and count, and you can turn the feature off for the whole device.`,
+      resource: `Agent: ${agentId}`,
+    });
   }
 
   for (const profile of strings(p.llmProfiles)) {

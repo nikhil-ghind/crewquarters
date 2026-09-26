@@ -57,7 +57,7 @@ async def test_every_list_endpoint_is_paginated(owner: httpx.AsyncClient) -> Non
         await owner.get("/api/v1/connections", params={"limit": 3, "cursor": first["nextCursor"]})
     ).json()
     providers = [c["provider"] for c in first["items"] + rest["items"]]
-    assert providers == ["anthropic", "google", "openai", "twilio"]
+    assert providers == ["anthropic", "github", "google", "openai", "twilio"]
     assert rest["nextCursor"] is None
 
 

@@ -155,7 +155,7 @@ function RunView({ run }: { run: RunOut }) {
         documentTitle={`${run.agentName} run`}
         purpose={
           <>
-            Run <span className="mono">#{shortId(run.id)}</span> · {run.trigger === 'schedule' ? 'Scheduled' : 'Started manually'}
+            Run <span className="mono">#{shortId(run.id)}</span> · {run.trigger === 'schedule' ? 'Scheduled' : run.trigger === 'agent' ? 'Started by another agent' : 'Started manually'}
             {run.currentAttempt > 1 ? ` · attempt ${run.currentAttempt}` : ''}
           </>
         }

@@ -1,7 +1,7 @@
 """Broker metrics (PLAN.md section 15.1), served at ``/internal/v1/metrics``.
 
 Labels never carry IDs, tokens, or phone numbers: routes are templates, providers are
-``google`` or ``twilio``, and outcomes are status classes or error codes.
+``google``, ``twilio`` or ``github``, and outcomes are status classes or error codes.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ _PROVIDERS = {
     "gmail.googleapis.com": "google",
     "sheets.googleapis.com": "google",
     "api.twilio.com": "twilio",
+    "api.github.com": "github",
 }
 
 

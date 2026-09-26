@@ -1,0 +1,145 @@
+apiVersion: crewquarters/v1alpha1
+kind: Agent
+metadata:
+  id: pr-reviewer
+  name: PR Reviewer
+  version: 0.1.0
+  summary: Reviews the latest open GitHub pull requests for likely bugs and code-style problems.
+  description: >
+    Reads the latest open pull requests of one GitHub repository, asks a local model to find likely
+    bugs and code-style problems in the changed lines, and (when you turn it on) posts them as one
+    inline-comment review per pull request. It only ever posts COMMENT reviews, never approvals or
+    change requests, and it skips a commit it has already reviewed.
+  publisher: Crewquarters
+spec:
+  # `crewctl build --push` pins this to the pushed digest.
+  image: localhost:5001/crewquarters/pr-reviewer@sha256:REQUIRED_DIGEST
+  entrypoint: ["python", "-m", "pr_reviewer"]
+  architectures: ["linux/amd64", "linux/arm64"]
+  triggers: ["manual", "schedule"]
+  permissions:
+    llmProfiles: ["local.general"]
+    knowledge: []
+    connectors:
+      github: ["pull_requests.read", "pull_requests.write"]
+    cloudProviders: []
+    userInput: false
+  resources:
+    cpu: 1
+    memoryMb: 512
+    activeTimeoutSeconds: 3600
+    maxInputWaitSeconds: 0
+  configurationSchema:
+    type: object
+    required: [repo]
+    properties:
+      repo:
+        type: string
+        pattern: "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+        description: The repository to review, as owner/name, for example acme/shop.
+      maxPrs:
+        type: integer
+        minimum: 1
+        maximum: 20
+        default: 5
+        description: How many of the most recently updated open pull requests to review.
+      postComments:
+        type: boolean
+        default: false
+        description: >
+          Off (a dry run): findings are shown here and nothing is posted. On: post one review
+          with inline comments to each pull request that has findings.
+      skipDrafts:
+        type: boolean
+        default: true
+      styleGuide:
+        type: string
+        maxLength: 2000
+        default: ""
+        description: Optional team conventions to check, in plain language.
+      modelProfile:
+        type: string
+        default: local.general.small
+        x-crewquarters-widget: modelProfile
+      maxFilesPerPr:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 30
+        x-crewquarters-group: Advanced
+      maxCommentsPerPr:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 15
+        x-crewquarters-group: Advanced
+      maxDiffCharsPerFile:
+        type: integer
+        minimum: 500
+        maximum: 60000
+        default: 12000
+        x-crewquarters-group: Advanced
+      maxCharsPerBatch:
+        type: integer
+        minimum: 2000
+        maximum: 60000
+        default: 16000
+        x-crewquarters-group: Advanced
+  resultSchema:
+    x-crewquarters-renderer: crewquarters.pr-review/v1
+    type: object
+    required: [repo, dryRun, counts, pulls, model]
+    properties:
+      repo: {type: string}
+      dryRun: {type: boolean}
+      counts:
+        type: object
+        required: [pulls, reviewed, skipped, findings, bugs, style, posted]
+        properties:
+          pulls: {type: integer}
+          reviewed: {type: integer}
+          skipped: {type: integer}
+          findings: {type: integer}
+          bugs: {type: integer}
+          style: {type: integer}
+          posted: {type: integer}
+      pulls:
+        type: array
+        items:
+          type: object
+          required: [number, title, author, url, headSha, status, filesReviewed, filesSkipped, truncated, findings, droppedFindings, posted]
+          properties:
+            number: {type: integer}
+            title: {type: string}
+            author: {type: string}
+            url: {type: string}
+            headSha: {type: string}
+            status: {enum: [reviewed, skipped]}
+            skipReason: {type: [string, "null"]}
+            filesReviewed: {type: integer}
+            filesSkipped: {type: integer}
+            truncated: {type: boolean}
+            droppedFindings: {type: integer}
+            posted: {type: boolean}
+            reviewUrl: {type: [string, "null"]}
+            postNote: {type: [string, "null"]}
+            findings:
+              type: array
+              items:
+                type: object
+                required: [path, line, category, severity, comment]
+                properties:
+                  path: {type: string}
+                  line: {type: integer}
+                  category: {enum: [bug, style]}
+                  severity: {enum: [high, medium, low]}
+                  comment: {type: string}
+                  suggestion: {type: [string, "null"]}
+      model:
+        type: object
+        required: [profile]
+        properties:
+          profile: {type: string}
+          provider: {type: [string, "null"]}
+          model: {type: [string, "null"]}
+          locality: {type: [string, "null"]}

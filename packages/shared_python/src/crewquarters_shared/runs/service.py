@@ -211,11 +211,16 @@ async def create_run(
     created_by: uuid.UUID | None = None,
     schedule_id: uuid.UUID | None = None,
     scheduled_for: datetime | None = None,
+    parent_run_id: uuid.UUID | None = None,
+    start_key: str | None = None,
+    trigger_input: dict[str, Any] | None = None,
 ) -> NewRun:
     """Create a QUEUED run and its first dispatch job.
 
     Scheduled runs are inserted with ``ON CONFLICT DO NOTHING`` against the unique
-    ``(schedule_id, scheduled_for)`` index, which is the final duplicate defense.
+    ``(schedule_id, scheduled_for)`` index, which is the final duplicate defense. Runs an agent
+    starts do the same against ``(parent_run_id, start_key)``, so a retried start returns the
+    run the first attempt created.
     """
     resources = version.manifest["spec"]["resources"]
     run_id = uuid7()
@@ -238,20 +243,28 @@ async def create_run(
         "input_wait_seconds_used": 0.0,
         "retryable": False,
         "created_by": created_by,
+        "parent_run_id": parent_run_id,
+        "start_key": start_key,
+        "trigger_input": trigger_input,
     }
     stmt = pg_insert(AgentRun).values(**values)
+    duplicate = None
     if schedule_id is not None:
         stmt = stmt.on_conflict_do_nothing(
             index_elements=["schedule_id", "scheduled_for"],
             index_where=AgentRun.schedule_id.isnot(None),
         )
+        duplicate = (AgentRun.schedule_id == schedule_id, AgentRun.scheduled_for == scheduled_for)
+    elif parent_run_id is not None:
+        stmt = stmt.on_conflict_do_nothing(
+            index_elements=["parent_run_id", "start_key"],
+            index_where=AgentRun.parent_run_id.isnot(None),
+        )
+        duplicate = (AgentRun.parent_run_id == parent_run_id, AgentRun.start_key == start_key)
     inserted = await session.scalar(stmt.returning(AgentRun.id))
     if inserted is None:
-        existing = await session.scalar(
-            select(AgentRun).where(
-                AgentRun.schedule_id == schedule_id, AgentRun.scheduled_for == scheduled_for
-            )
-        )
+        assert duplicate is not None
+        existing = await session.scalar(select(AgentRun).where(*duplicate))
         assert existing is not None
         return NewRun(existing, False)
     run = await lock_run(session, run_id)

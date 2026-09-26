@@ -4,6 +4,8 @@ from fastapi import APIRouter
 
 from crewquarters_fake.broker import (
     actions,
+    agents,
+    github,
     google,
     input,
     knowledge,
@@ -19,10 +21,12 @@ for module in (
     lifecycle,
     input,
     actions,
+    agents,
     llm,
     openai_compat,
     knowledge,
     google,
+    github,
     telephony,
     voice,
 ):

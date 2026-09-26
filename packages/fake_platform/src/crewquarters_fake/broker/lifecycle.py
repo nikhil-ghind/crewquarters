@@ -77,6 +77,8 @@ async def handshake(body: HandshakeIn, auth: RunAuth = Depends(run_auth)) -> dic
                 "agentId": installation.agent_id,
                 "agentVersion": installation.version,
                 "createdAt": iso(run.created_at),
+                "parentRunId": run.parent_run_id,
+                "input": run.trigger_input,
             },
             "config": installation.config,
             "capabilities": sorted(installation.capabilities),
@@ -86,6 +88,8 @@ async def handshake(body: HandshakeIn, auth: RunAuth = Depends(run_auth)) -> dic
                 "knowledgeBaseIds": installation.knowledge_base_ids,
                 "google": list(connectors.get("google", [])),
                 "twilio": list(connectors.get("twilio", [])),
+                "github": list(connectors.get("github", [])),
+                "startsAgents": list(permissions.get("startsAgents", [])),
                 "cloudProviders": list(permissions.get("cloudProviders", [])),
             },
             "limits": {

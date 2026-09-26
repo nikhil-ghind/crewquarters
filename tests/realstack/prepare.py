@@ -30,7 +30,7 @@ from crewctl.build import build, host_platform
 
 REPO = Path(__file__).resolve().parents[2]
 GENERATED = REPO / "tests" / "realstack" / ".generated"
-AGENTS = ("contract_probe", "gmail_digest", "caller", "personal_space")
+AGENTS = ("contract_probe", "gmail_digest", "caller", "personal_space", "pr_reviewer")
 
 # A tiny agent, run from the contract probe image with the manifest's entrypoint: it hands
 # shakes, logs, then allocates memory until the container's cgroup limit kills it.

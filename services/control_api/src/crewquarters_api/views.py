@@ -126,6 +126,8 @@ async def readiness(
         required.setdefault("google", []).append(scope)
     for op in perms["connectors"].get("twilio", []):
         required.setdefault("twilio", []).append(op)
+    for op in perms["connectors"].get("github", []):
+        required.setdefault("github", []).append(op)
     for provider in perms.get("cloudProviders", []):
         required.setdefault(provider, []).append(f"cloud.{provider}")
     for provider, scopes in required.items():
@@ -228,6 +230,7 @@ def _run_out(run: AgentRun, version: str, agent_id: str, name: str, pending: int
         agent_name=name,
         agent_version=version,
         trigger=run.trigger,
+        parent_run_id=run.parent_run_id,
         schedule_id=run.schedule_id,
         scheduled_for=run.scheduled_for,
         state=run.state,

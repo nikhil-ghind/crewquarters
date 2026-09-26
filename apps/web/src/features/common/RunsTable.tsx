@@ -15,7 +15,7 @@ export function runDuration(run: RunOut): number | null {
 }
 
 export function TriggerLabel({ run }: { run: RunOut }) {
-  return <>{run.trigger === 'schedule' ? 'Scheduled' : 'Manual'}</>;
+  return <>{run.trigger === 'schedule' ? 'Scheduled' : run.trigger === 'agent' ? 'Started by another agent' : 'Manual'}</>;
 }
 
 interface RunsTableProps {

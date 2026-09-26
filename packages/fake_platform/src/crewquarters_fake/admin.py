@@ -71,7 +71,7 @@ class TranscriptsIn(BaseModel):
 
 
 class ConnectionIn(BaseModel):
-    provider: Literal["google", "twilio"]
+    provider: Literal["google", "twilio", "github"]
     status: Literal["connected", "expired", "missing"]
 
 
@@ -176,6 +176,8 @@ async def state(kind: str, request: Request) -> Any:
         return store.traffic
     if kind == "calls":
         return store.twilio.snapshot()
+    if kind == "reviews":
+        return store.github.snapshot()
     if kind == "sheets":
         return store.sheets.snapshot()
     if kind == "llm":

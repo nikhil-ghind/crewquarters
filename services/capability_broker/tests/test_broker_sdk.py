@@ -67,6 +67,8 @@ async def test_handshake_returns_run_context(harness: Any) -> None:
         "knowledgeBaseIds": ["kb-1"],
         "google": ["gmail.readonly"],
         "twilio": [],
+        "github": [],
+        "startsAgents": [],
         "cloudProviders": [],
     }
     assert 0 < body["limits"]["activeTimeoutSeconds"] <= 600
@@ -170,3 +172,97 @@ async def test_llm_rejects_tools(harness: Any) -> None:
         f"{SDK}/llm/chat", headers=headers, json={**CHAT, "tools": [{"name": "x"}]}
     )
     assert resp.status_code == 422 and resp.json()["error"]["code"] == "INVALID_REQUEST"
+
+
+async def test_knowledge_documents_match_a_glob_in_the_configured_base_only(harness: Any) -> None:
+    headers = harness.agent(["knowledge.search:config"], config={"knowledgeBaseId": harness.KB_ID})
+    url = f"{harness.SDK}/knowledge/documents"
+    found = await harness.client.get(
+        url, params={"knowledgeBaseId": harness.KB_ID, "pattern": "POLICY-*.md"}, headers=headers
+    )
+    assert found.status_code == 200, found.text
+    body = found.json()
+    # Case-insensitive, ready documents only (policy-draft.md failed), newest first.
+    assert [d["name"] for d in body["documents"]] == ["policy-shipping.md", "Policy-Refunds.md"]
+    assert body["total"] == 2 and body["truncated"] is False
+    assert harness.knowledge_requests[-1]["path"].endswith(
+        f"/knowledge-bases/{harness.KB_ID}/documents"
+    )
+
+    everything = await harness.client.get(
+        url, params={"knowledgeBaseId": harness.KB_ID, "limit": 1}, headers=headers
+    )
+    assert everything.json()["total"] == 3 and everything.json()["truncated"] is True
+    other = await harness.client.get(
+        url, params={"knowledgeBaseId": "some-other-base"}, headers=headers
+    )
+    assert other.status_code == 403 and other.json()["error"]["code"] == "PERMISSION_DENIED"
+
+
+async def test_knowledge_documents_need_the_knowledge_capability(harness: Any) -> None:
+    headers = harness.agent(["events.write"], config={"knowledgeBaseId": harness.KB_ID})
+    resp = await harness.client.get(
+        f"{harness.SDK}/knowledge/documents",
+        params={"knowledgeBaseId": harness.KB_ID},
+        headers=headers,
+    )
+    assert resp.status_code == 403 and resp.json()["error"]["code"] == "CAPABILITY_DENIED"
+
+
+async def test_starting_an_agent_needs_that_agents_capability_and_forwards_the_attempt(
+    harness: Any,
+) -> None:
+    headers = harness.agent(["agents.start:worker"])
+    url = f"{harness.SDK}/agents/start"
+    payload = {"agentId": "worker", "startKey": "pr-7", "input": {"pr": 7}}
+    ok = await harness.client.post(url, json=payload, headers=headers)
+    assert ok.status_code == 200, ok.text
+    assert ok.json() == {
+        "runId": "child-run-1",
+        "agentId": "worker",
+        "installationId": "child-installation-1",
+        "state": "QUEUED",
+        "created": True,
+    }
+    forwarded = harness.control_requests[-1]
+    assert forwarded["path"].endswith(f"/runs/{harness.run['id']}/agent-runs")
+    assert forwarded["body"] == {
+        "attempt": 1,
+        "agentId": "worker",
+        "startKey": "pr-7",
+        "input": {"pr": 7},
+    }
+    other = await harness.client.post(url, json={**payload, "agentId": "stranger"}, headers=headers)
+    assert other.status_code == 403 and other.json()["error"]["code"] == "CAPABILITY_DENIED"
+    assert len(harness.control_requests) == 1  # nothing forwarded for the refused target
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"agentId": "Worker!", "startKey": "k"},
+        {"agentId": "worker", "startKey": "has spaces"},
+        {"agentId": "worker", "startKey": "k", "input": "not an object"},
+        {"agentId": "worker", "startKey": "k", "extra": 1},
+    ],
+)
+async def test_starting_an_agent_validates_the_request(harness: Any, bad: dict[str, Any]) -> None:
+    headers = harness.agent(["agents.start:worker"])
+    resp = await harness.client.post(f"{harness.SDK}/agents/start", json=bad, headers=headers)
+    assert resp.status_code == 422
+
+
+async def test_handshake_reports_who_started_the_run_and_what_it_passed(harness: Any) -> None:
+    headers = harness.agent(["agents.start:worker"])
+    harness.run.update(
+        {"trigger": "agent", "parentRunId": "parent-run-1", "triggerInput": {"pr": 7}}
+    )
+    resp = await harness.client.post(
+        f"{harness.SDK}/handshake",
+        json={"protocol": "v1alpha1", "sdkVersion": "0.1.0", "agentId": "starter"},
+        headers=headers,
+    )
+    body = resp.json()
+    assert body["run"]["trigger"] == "agent"
+    assert body["run"]["parentRunId"] == "parent-run-1" and body["run"]["input"] == {"pr": 7}
+    assert body["grants"]["startsAgents"] == ["worker"]

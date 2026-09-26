@@ -139,3 +139,24 @@ Run with `pytest services/knowledge/tests`. Fixture documents are generated in c
 - **Lifecycle:** deletion and re-index, retry on embedding failure, and profile mismatch.
 - **Limits:** the child process, its timeout and memory limit, the docx, character and chunk caps, the ingestion deadline, and the abandoned-document sweep.
 - **Model:** `fetch-model` against a local HTTP server (checksums, idempotence, exit codes), offline loading, and readiness while the model is missing. No test needs the network or the real model.
+
+## Finding documents by file name from an agent
+
+An agent with `knowledge: [config]` can find documents in its knowledge base by file-name pattern, then
+search only those. The broker route is `GET /internal/v1/sdk/knowledge/documents` (capability
+`knowledge.search:config`; the base must be the one chosen in the installation config). It matches a
+case-insensitive glob (`*`, `?`, `[abc]`) against each `READY` document's name, newest first, up to 200.
+
+```python
+kb = ctx.knowledge.connect()                     # the base the owner selected (or connect("<id>"))
+policies = await kb.find_files("policy-*.md")    # glob, matched on the broker
+recent = await kb.find_files("*.pdf", regex=r"-20(25|26)\.pdf$")   # plus a regex, applied in the SDK
+policies.files, policies.total, policies.truncated
+result = await kb.search("refund window", files="policy-*.md")     # search only those files
+```
+
+`find_files` returns `KnowledgeFile(id, name, mime, bytes)` items. With a `regex`, the SDK asks for up to 200
+glob matches and filters them itself, so `truncated` says when more matched than were considered. The regex is
+matched anywhere in the name and is case-sensitive unless you add `(?i)`. A search limited to files that match
+nothing returns no passages without calling the model or the index. `connect()` needs exactly one granted
+base; pass the id if there could be more.

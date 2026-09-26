@@ -43,8 +43,10 @@ describe('speech-to-text models', () => {
     expect(sent).not.toBeNull();
     const form = sent as unknown as FormData;
     expect(form.get('language')).toBe('en');
-    // jsdom's FormData round trip drops the file name; the size proves the audio was sent.
-    expect((form.get('file') as File).size).toBe(64);
+    // The control API picks the audio type from the file name's extension.
+    const audio = form.get('file') as File;
+    expect(audio.name).toBe('memo.wav');
+    expect(audio.size).toBe(64);
   });
 
   it('explains a failure instead of showing a transcript', async () => {

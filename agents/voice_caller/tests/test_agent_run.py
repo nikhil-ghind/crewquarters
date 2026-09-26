@@ -167,6 +167,8 @@ async def test_answered_unanswered_and_dnc_calls_are_recorded(
     assert (summary["completed"], summary["noAnswer"], summary["dnc"]) == (1, 1, 1)
     dispositions = {r["row"]: r["disposition"] for r in result["rows"]}
     assert dispositions == {2: "completed", 3: "no_answer", 4: "dnc"}
+    # Every write stayed inside resultRange: the fake refuses anything else, as the broker does.
+    assert [r["sheetWrite"] for r in result["rows"]] == ["written"] * 3
     results = sheet(client, "Results")
     assert results[0][:5] == ["source_row", "name", "phone_masked", "call_id", "disposition"]
     assert results[1][:5][:3] == ["2", "Asha Rao", "••••0101"] and results[1][4] == "completed"

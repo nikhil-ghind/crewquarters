@@ -33,6 +33,7 @@ def load(store: Store, path: Path, now: datetime | None = None) -> dict[str, Any
     mailbox = expand_mailbox(_data(root, doc.get("gmail", {}).get("mailbox", [])) or [], tz, now)
     store.gmail.load([build_message(spec, tz, now) for spec in mailbox])
     store.sheets.load(_data(root, doc.get("sheets", {}).get("spreadsheets", {})) or {})
+    store.github.load(_data(root, doc.get("github", {}).get("pulls", [])) or [])
     store.twilio.load(_data(root, doc.get("twilio", {}).get("outcomes", {})) or {})
     llm = doc.get("llm", {})
     store.gateway.rules = RuleSet.from_list(_data(root, llm.get("rules", [])) or [])

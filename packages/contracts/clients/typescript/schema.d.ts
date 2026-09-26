@@ -1359,6 +1359,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/v1/runs/{run_id}/agent-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ctx.agents.start: start another agent from this run (idempotent per startKey) */
+        post: operations["start_agent_internal_v1_runs__run_id__agent_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/v1/runs/{run_id}/actions/{key}/claim": {
         parameters: {
             query?: never;
@@ -1461,6 +1478,44 @@ export interface components {
             payload: {
                 [key: string]: unknown;
             };
+        };
+        /** AgentStartIn */
+        AgentStartIn: {
+            /** Attempt */
+            attempt: number;
+            /** Agentid */
+            agentId: string;
+            /** Startkey */
+            startKey: string;
+            /** Input */
+            input?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** AgentStartOut */
+        AgentStartOut: {
+            /**
+             * Runid
+             * Format: uuid
+             */
+            runId: string;
+            /** Agentid */
+            agentId: string;
+            /**
+             * Installationid
+             * Format: uuid
+             */
+            installationId: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "QUEUED" | "PREPARING" | "LOADING_MODEL" | "RUNNING" | "WAITING_INPUT" | "CANCELLING" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "INTERRUPTED";
+            /**
+             * Created
+             * @description False when this startKey had already started the run.
+             */
+            created: boolean;
         };
         /** AgentVersionOut */
         AgentVersionOut: {
@@ -1968,7 +2023,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "google" | "twilio" | "openai" | "anthropic";
+            provider: "google" | "twilio" | "github" | "openai" | "anthropic";
             /** Displayname */
             displayName: string;
             /**
@@ -2324,7 +2379,16 @@ export interface components {
              * Trigger
              * @enum {string}
              */
-            trigger: "manual" | "schedule";
+            trigger: "manual" | "schedule" | "agent";
+            /** Parentrunid */
+            parentRunId?: string | null;
+            /**
+             * Triggerinput
+             * @description Untrusted input the starting agent passed (trigger `agent`).
+             */
+            triggerInput?: {
+                [key: string]: unknown;
+            } | null;
             /** Scheduledfor */
             scheduledFor: string | null;
             /**
@@ -2919,7 +2983,12 @@ export interface components {
              * Trigger
              * @enum {string}
              */
-            trigger: "manual" | "schedule";
+            trigger: "manual" | "schedule" | "agent";
+            /**
+             * Parentrunid
+             * @description The run that started this one (trigger `agent`).
+             */
+            parentRunId?: string | null;
             /** Scheduleid */
             scheduleId: string | null;
             /** Scheduledfor */
@@ -8267,6 +8336,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InputRequestOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    start_agent_internal_v1_runs__run_id__agent_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentStartIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentStartOut"];
                 };
             };
             /** @description Unauthorized */

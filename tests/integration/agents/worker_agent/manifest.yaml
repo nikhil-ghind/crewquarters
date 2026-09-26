@@ -1,0 +1,31 @@
+apiVersion: crewquarters/v1alpha1
+kind: Agent
+metadata:
+  id: worker-agent
+  name: Worker Agent
+  version: 0.1.0
+  summary: Integration-test agent that another agent starts.
+  description: Reports how it was started; with startBack it tries to start the starter agent.
+spec:
+  image: localhost:5001/crewquarters/worker-agent@sha256:REQUIRED_DIGEST
+  entrypoint: ["python", "-m", "worker_agent"]
+  architectures: ["linux/amd64", "linux/arm64"]
+  triggers: ["manual", "agent"]
+  permissions:
+    llmProfiles: []
+    knowledge: []
+    connectors: {}
+    cloudProviders: []
+    startsAgents: ["starter-agent"]
+    userInput: false
+  resources:
+    cpu: 0.5
+    memoryMb: 256
+    activeTimeoutSeconds: 120
+    maxInputWaitSeconds: 0
+  configurationSchema:
+    type: object
+    properties:
+      startBack:
+        type: boolean
+        default: false

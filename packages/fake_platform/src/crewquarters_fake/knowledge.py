@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import math
 import re
 from collections import Counter
@@ -80,6 +81,25 @@ class KnowledgeIndex:
                     )
                 )
         self.kbs[kb_id] = chunks
+
+    def documents(self, kb_id: str, pattern: str = "*") -> list[dict[str, Any]]:
+        """Distinct documents whose file name matches a case-insensitive glob, newest first."""
+        docs: dict[str, dict[str, Any]] = {}
+        for chunk in self.kbs.get(kb_id, []):
+            doc = docs.setdefault(
+                chunk.doc_id,
+                {
+                    "id": chunk.doc_id,
+                    "name": chunk.doc_name,
+                    "mime": "text/markdown" if chunk.doc_name.endswith(".md") else "text/plain",
+                    "bytes": 0,
+                },
+            )
+            doc["bytes"] += len(chunk.text.encode())
+        matching = [
+            d for d in docs.values() if fnmatch.fnmatchcase(d["name"].lower(), pattern.lower())
+        ]
+        return list(reversed(matching))
 
     def search(
         self, kb_id: str, query: str, top_k: int = 8, document_ids: list[str] | None = None

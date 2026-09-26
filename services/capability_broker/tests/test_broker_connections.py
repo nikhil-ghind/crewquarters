@@ -23,8 +23,16 @@ async def test_listing_requires_service_token(harness: Any) -> None:
 
 async def test_empty_listing_matches_control_api_contract(harness: Any) -> None:
     resp = await harness.client.get("/internal/v1/connections", headers=harness.service_headers)
-    assert [c["provider"] for c in resp.json()] == ["google", "twilio", "openai", "anthropic"]
+    assert [c["provider"] for c in resp.json()] == [
+        "google",
+        "twilio",
+        "github",
+        "openai",
+        "anthropic",
+    ]
     for row in resp.json():
+        if row["provider"] == "github":
+            continue  # the fake GitHub needs no token, so fake mode reports it connected
         assert row["status"] == "NOT_CONNECTED" and row["grantedCapabilities"] == []
         assert {"provider", "displayName", "status", "grantedCapabilities", "lastCheckedAt"} <= set(
             row

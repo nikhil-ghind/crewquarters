@@ -36,6 +36,21 @@ capabilities:
     from: permissions.connectors.sip
     enforcedBy: capability_broker
     ui: "Hold live phone conversations through your SIP trunk"
+  - pattern: "github.pull_requests.read"
+    from: permissions.connectors.github
+    enforcedBy: capability_broker
+    resource: config.repo
+    ui: "Read pull requests in the GitHub repository you configure"
+  - pattern: "github.pull_requests.write"
+    from: permissions.connectors.github
+    enforcedBy: capability_broker
+    resource: config.repo
+    ui: "Post review comments on pull requests in the GitHub repository you configure"
+  - pattern: "agents.start:<agent-id>"
+    from: permissions.startsAgents
+    enforcedBy: capability_broker (and control_api, which enforces the platform limits)
+    resource: config.agentTargets.<agent-id> (only when the agent is installed more than once)
+    ui: "Start the {agent-id} agent"
   - pattern: "cloud.openai"
     from: permissions.cloudProviders
     enforcedBy: model_gateway

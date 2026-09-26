@@ -41,9 +41,11 @@ run, call recording storage, and SMS.
 - Only rows with recorded consent are called, reusing the caller agent's consent rules
   (`caller_agent.rows.classify`). The owner approves the exact recipients, brief, and disclosure
   before any dialing (`ctx.input.ask`, key hashed over all three).
-- "Stop calling me" or "not interested" ends the call politely and marks the row `dnc` or
-  `declined`. The agent never pressures, never asks for payment or identity numbers, and never
-  leaves a voicemail.
+- "Stop calling me" or "not interested" ends the call politely and records `dnc` or `declined`
+  in the contact's result row. Agents write only within the configured `resultRange`, so the
+  owner marks the contact's `status` (a `dnc` request is logged as a warning naming the row;
+  see [docs/voice](../../voice/README.md)). The agent never pressures, never asks for payment
+  or identity numbers, and never leaves a voicemail.
 - A per-call time cap, a per-run call cap, and ring timeouts bound what one run can do.
 
 ## 3. Architecture

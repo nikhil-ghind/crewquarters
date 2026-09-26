@@ -35,7 +35,11 @@ class FakeBroker:
         input_wait_remaining: float = 3600,
         trigger: str = "manual",
         scheduled_for: str | None = None,
+        parent_run_id: str | None = None,
+        trigger_input: dict[str, Any] | None = None,
     ) -> None:
+        self.parent_run_id = parent_run_id
+        self.trigger_input = trigger_input
         self.config = config if config is not None else {}
         self.capabilities = list(capabilities)
         self.llm_profiles = list(llm_profiles)
@@ -71,6 +75,8 @@ class FakeBroker:
                 "agentId": "test-agent",
                 "agentVersion": "0.1.0",
                 "createdAt": "2026-09-24T10:00:00+00:00",
+                "parentRunId": self.parent_run_id,
+                "input": self.trigger_input,
             },
             "config": self.config,
             "capabilities": self.capabilities,
@@ -80,6 +86,8 @@ class FakeBroker:
                 "knowledgeBaseIds": ["kb-1"],
                 "google": [],
                 "twilio": [],
+                "github": [],
+                "startsAgents": ["worker"],
                 "cloudProviders": [],
             },
             "limits": {

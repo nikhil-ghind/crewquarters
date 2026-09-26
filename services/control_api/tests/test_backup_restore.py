@@ -151,7 +151,7 @@ def test_create_backup_archive_contents_and_permissions(scratch_db: str, tmp_pat
     assert sidecar.stat().st_mode & 0o777 == 0o600
     manifest = result.manifest.to_json()
     assert manifest["includesMasterKey"] is False
-    assert manifest["migrationHead"] == "0004"
+    assert manifest["migrationHead"] == "0005"
     assert manifest["platformVersion"] == "9.9.9"
     assert manifest["documents"] == {"count": 1, "missing": 0, "bytes": 5}
     assert set(manifest["parts"]) == {"database.dump", "documents.tar"}
@@ -284,7 +284,7 @@ async def test_restore_round_trip_older_head_and_documents(tmp_path: Path) -> No
         report = await restore(
             result.path, url, documents, tools=TOOLS, master_key_file=None, say=lambda _: None
         )
-        assert report.head == "0004" and report.previous_head == "0003"
+        assert report.head == "0005" and report.previous_head == "0003"
         assert report.documents_restored == 1
         assert _count(url, "settings") == 1
         assert _count(url, "documents") == 1
@@ -295,7 +295,7 @@ async def test_restore_round_trip_older_head_and_documents(tmp_path: Path) -> No
                 text("SELECT count(*) FROM audit_events WHERE action = 'system.backup_restored'")
             ).scalar_one()
         engine.dispose()
-        assert head == "0004"
+        assert head == "0005"
         assert restored_audit == 1
         assert (documents / str(ids["kb"]) / f"{ids['doc']}.txt").read_text() == "hello"
         assert not (documents / "later.txt").exists()

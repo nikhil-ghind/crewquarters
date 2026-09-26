@@ -8,6 +8,12 @@ rtc:
   udp_port: 7882
   use_external_ip: false
   node_ip: 10.231.72.10
+  # Gather ICE candidates on crewq-agents only. LiveKit is also on Compose's default network
+  # (for the published ports), and a candidate from that interface is advertised as node_ip
+  # too, so checks went out from the default-network address and agents on the internal
+  # network never connected when the default network is eth0 (as on Docker 29).
+  ips:
+    includes: [10.231.72.0/24]
 keys:
   crewq-dev: crewquarters-local-development-secret-0001
 room:

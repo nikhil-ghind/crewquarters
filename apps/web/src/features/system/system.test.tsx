@@ -203,11 +203,17 @@ describe('sign up', () => {
 
   it('creates the owner account with the setup code', async () => {
     let body: unknown = null;
+    let saved: { setupState?: unknown } | null = null;
     server.use(
       http.get('/api/v1/bootstrap/status', () => HttpResponse.json({ ownerExists: false })),
       http.post('/api/v1/bootstrap', async ({ request }) => {
         body = await request.json();
         return HttpResponse.json(f.session, { status: 201 });
+      }),
+      // The wizard then records the owner step and moves on to storage.
+      http.patch('/api/v1/settings', async ({ request }) => {
+        saved = (await request.json()) as { setupState?: unknown };
+        return HttpResponse.json({ ...f.settings, setupState: saved.setupState as Record<string, unknown> });
       }),
     );
     renderWithProviders(<SignUpPage />, { path: '/signup', route: '/signup' });
@@ -219,6 +225,9 @@ describe('sign up', () => {
     await user.click(screen.getByRole('button', { name: 'Create account' }));
     await waitFor(() =>
       expect(body).toEqual({ token: 'setup-code-0123456789', username: 'owner', password: 'a-long-demo-password', email: null }),
+    );
+    await waitFor(() =>
+      expect(saved?.setupState).toMatchObject({ current: 'storage', completed: ['welcome', 'preflight', 'owner'] }),
     );
   });
 });

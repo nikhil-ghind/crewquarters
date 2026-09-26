@@ -115,6 +115,10 @@ class FakeModelStatusClient:
 _PROVIDERS = {
     "google": {"displayName": "Google", "capabilities": ["gmail.readonly", "spreadsheets"]},
     "twilio": {"displayName": "Twilio", "capabilities": ["call.fixed_script"]},
+    "github": {
+        "displayName": "GitHub",
+        "capabilities": ["pull_requests.read", "pull_requests.write"],
+    },
     "openai": {"displayName": "OpenAI", "capabilities": ["cloud.openai"]},
     "anthropic": {"displayName": "Anthropic", "capabilities": ["cloud.anthropic"]},
 }

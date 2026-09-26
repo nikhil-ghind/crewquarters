@@ -26,6 +26,7 @@ router = APIRouter(prefix="/internal/v1", dependencies=[Depends(internal_auth)])
 DISPLAY_NAMES = {
     "google": "Google",
     "twilio": "Twilio",
+    "github": "GitHub",
     "openai": "OpenAI",
     "anthropic": "Anthropic",
 }
@@ -77,6 +78,7 @@ async def list_connections(state: BrokerState = Depends(broker_state)) -> list[d
     statuses = {
         "google": await state.google.status(),
         "twilio": await state.telephony.status(),
+        "github": await state.github.status(),
     }
     async with state.sessions() as db:
         profiles = (

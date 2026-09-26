@@ -4074,6 +4074,57 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: Unprocessable Entity
+  /internal/v1/runs/{run_id}/agent-runs:
+    post:
+      tags:
+      - internal
+      summary: 'ctx.agents.start: start another agent from this run (idempotent per startKey)'
+      operationId: start_agent_internal_v1_runs__run_id__agent_runs_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Run Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentStartIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentStartOut'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable Entity
   /internal/v1/runs/{run_id}/actions/{key}/claim:
     post:
       tags:
@@ -4282,6 +4333,71 @@ components:
       - type
       - payload
       title: AgentEventIn
+    AgentStartIn:
+      properties:
+        attempt:
+          type: integer
+          minimum: 1.0
+          title: Attempt
+        agentId:
+          type: string
+          pattern: ^[a-z][a-z0-9-]{1,62}$
+          title: Agentid
+        startKey:
+          type: string
+          pattern: ^[A-Za-z0-9_.:-]{1,200}$
+          title: Startkey
+        input:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Input
+      type: object
+      required:
+      - attempt
+      - agentId
+      - startKey
+      title: AgentStartIn
+    AgentStartOut:
+      properties:
+        runId:
+          type: string
+          format: uuid
+          title: Runid
+        agentId:
+          type: string
+          title: Agentid
+        installationId:
+          type: string
+          format: uuid
+          title: Installationid
+        state:
+          type: string
+          enum:
+          - QUEUED
+          - PREPARING
+          - LOADING_MODEL
+          - RUNNING
+          - WAITING_INPUT
+          - CANCELLING
+          - SUCCEEDED
+          - FAILED
+          - CANCELLED
+          - INTERRUPTED
+          title: State
+        created:
+          type: boolean
+          title: Created
+          description: False when this startKey had already started the run.
+      type: object
+      required:
+      - runId
+      - agentId
+      - installationId
+      - state
+      - created
+      title: AgentStartOut
     AgentVersionOut:
       properties:
         id:
@@ -5137,6 +5253,7 @@ components:
           enum:
           - google
           - twilio
+          - github
           - openai
           - anthropic
           title: Provider
@@ -5674,7 +5791,21 @@ components:
           enum:
           - manual
           - schedule
+          - agent
           title: Trigger
+        parentRunId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Parentrunid
+        triggerInput:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Triggerinput
+          description: Untrusted input the starting agent passed (trigger `agent`).
         scheduledFor:
           anyOf:
           - type: string
@@ -6625,7 +6756,15 @@ components:
           enum:
           - manual
           - schedule
+          - agent
           title: Trigger
+        parentRunId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Parentrunid
+          description: The run that started this one (trigger `agent`).
         scheduleId:
           anyOf:
           - type: string

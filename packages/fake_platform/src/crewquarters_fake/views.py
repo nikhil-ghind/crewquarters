@@ -97,6 +97,7 @@ def run_view(store: Store, run: Run) -> dict[str, Any]:
         "agentName": run.agent_name,
         "agentVersion": run.agent_version,
         "trigger": run.trigger,
+        "parentRunId": run.parent_run_id,
         "scheduleId": None,
         "scheduledFor": run.scheduled_for,
         "state": run.state,

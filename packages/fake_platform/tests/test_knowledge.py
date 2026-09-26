@@ -37,3 +37,12 @@ def test_has_kb(tmp_path: Path) -> None:
     index = build(tmp_path)
     assert index.has("kb-1")
     assert not index.has("kb-2")
+
+
+def test_documents_match_a_case_insensitive_glob_and_report_size(tmp_path: Path) -> None:
+    index = build(tmp_path)
+    assert {d["name"] for d in index.documents("kb-1")} == {"terms.md", "faq.txt"}
+    (only,) = index.documents("kb-1", "TERMS.*")
+    assert only["id"] == "terms" and only["mime"] == "text/markdown" and only["bytes"] > 0
+    assert index.documents("kb-1", "*.pdf") == []
+    assert index.documents("kb-2") == []

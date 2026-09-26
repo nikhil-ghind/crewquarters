@@ -33,6 +33,10 @@ class FakeSettings:
     gateway_stt_model: str = "local.asr.r2t2"
     gateway_tts_model: str = "local.tts.voxtream"
     gateway_voice: str = "female"
+    # Platform limits on agents starting agents (the real platform's CQ_AGENT_* settings).
+    agent_starts_enabled: bool = True
+    agent_chain_max_depth: int = 3
+    agent_starts_per_run: int = 5
 
     @classmethod
     def from_env(cls) -> FakeSettings:
@@ -61,4 +65,8 @@ class FakeSettings:
             gateway_tts_model=os.environ.get("CREWQ_FAKE_GATEWAY_TTS_MODEL")
             or cls.gateway_tts_model,
             gateway_voice=os.environ.get("CREWQ_FAKE_GATEWAY_VOICE") or cls.gateway_voice,
+            agent_starts_enabled=os.environ.get("CREWQ_FAKE_AGENT_STARTS", "1")
+            in {"1", "true", "yes"},
+            agent_chain_max_depth=int(os.environ.get("CREWQ_FAKE_AGENT_CHAIN_MAX_DEPTH", "3")),
+            agent_starts_per_run=int(os.environ.get("CREWQ_FAKE_AGENT_STARTS_PER_RUN", "5")),
         )

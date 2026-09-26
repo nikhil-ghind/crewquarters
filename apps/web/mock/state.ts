@@ -253,7 +253,7 @@ export function memoryOut(): Obj {
 
 // --- Connections -----------------------------------------------------------------------
 
-const DISPLAY: Record<Provider, string> = { google: 'Google', twilio: 'Twilio', openai: 'OpenAI', anthropic: 'Anthropic' };
+const DISPLAY: Record<Provider, string> = { google: 'Google', twilio: 'Twilio', github: 'GitHub', openai: 'OpenAI', anthropic: 'Anthropic' };
 
 export function setConnection(provider: Provider, patch: Partial<ConnectionOut>): ConnectionOut {
   const s = st();

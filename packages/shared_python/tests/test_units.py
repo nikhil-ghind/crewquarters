@@ -31,11 +31,13 @@ def test_capability_token_round_trip_and_tamper() -> None:
             "knowledge": ["config"],
             "connectors": {"google": ["gmail.readonly"], "twilio": ["call.fixed_script"]},
             "cloudProviders": ["openai"],
+            "startsAgents": ["notifier"],
             "userInput": True,
         },
         {"local.general": "local.general.quality"},
     )
     assert caps == [
+        "agents.start:notifier",
         "cloud.openai",
         "events.write",
         "google.gmail.readonly",

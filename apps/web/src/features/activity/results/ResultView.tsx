@@ -3,11 +3,13 @@ import { asSchema } from '../../../lib/jsonSchema';
 import { CallerResult, parseCaller } from './CallerResult';
 import { GmailDigestResult, parseDigest } from './GmailDigestResult';
 import { PersonalSpaceResult, parsePersonalSpace } from './PersonalSpaceResult';
+import { PrReviewResult, parsePrReview } from './PrReviewResult';
 
 export const RENDERERS = {
   gmailDigest: 'crewquarters.gmail-digest/v1',
   caller: 'crewquarters.caller/v1',
   personalSpace: 'crewquarters.personal-space/v1',
+  prReview: 'crewquarters.pr-review/v1',
 } as const;
 
 function scalar(v: unknown): string | null {
@@ -50,6 +52,10 @@ export function ResultView({
   if (renderer === RENDERERS.personalSpace || (!renderer && 'themes' in result && 'highlights' in result && 'status' in result)) {
     const space = parsePersonalSpace(result);
     if (space) return <PersonalSpaceResult data={space} timeZone={timeZone} />;
+  }
+  if (renderer === RENDERERS.prReview) {
+    const review = parsePrReview(result);
+    if (review) return <PrReviewResult data={review} />;
   }
   return <GenericResult result={result} />;
 }

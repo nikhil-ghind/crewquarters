@@ -17,7 +17,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from crewquarters_api import schemas, views
+from crewquarters_api import chaining, schemas, views
 from crewquarters_api.deps import AppState, app_state, get_db, internal_auth
 from crewquarters_shared.db.models import AgentRun, AgentVersion, InputRequest
 from crewquarters_shared.errors import not_found
@@ -60,6 +60,8 @@ async def internal_run(
         current_attempt=run.current_attempt,
         installation_id=run.installation_id,
         trigger=run.trigger,
+        parent_run_id=run.parent_run_id,
+        trigger_input=run.trigger_input,
         scheduled_for=run.scheduled_for,
         agent_id=version.agent_id,
         agent_version=version.version,
@@ -254,6 +256,37 @@ async def poll_input(
         if request.state != "pending" or loop.time() >= deadline:
             return views.input_out(request, None)
         await asyncio.sleep(min(LONG_POLL_STEP_SECONDS, max(0.0, deadline - loop.time())))
+
+
+@router.post(
+    "/runs/{run_id}/agent-runs",
+    response_model=schemas.AgentStartOut,
+    responses=ERRORS,
+    summary="ctx.agents.start: start another agent from this run (idempotent per startKey)",
+)
+async def start_agent(
+    run_id: uuid.UUID,
+    body: schemas.AgentStartIn,
+    state: AppState = Depends(app_state),
+    db: AsyncSession = Depends(get_db),
+) -> schemas.AgentStartOut:
+    child, created = await chaining.start_agent_run(
+        db,
+        state,
+        run_id,
+        body.attempt,
+        agent_id=body.agent_id,
+        start_key=body.start_key,
+        trigger_input=body.input,
+    )
+    await db.commit()
+    return schemas.AgentStartOut(
+        run_id=child.id,
+        agent_id=body.agent_id,
+        installation_id=child.installation_id,
+        state=child.state,
+        created=created,
+    )
 
 
 @router.post(
