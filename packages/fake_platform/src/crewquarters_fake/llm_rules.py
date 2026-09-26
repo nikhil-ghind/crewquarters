@@ -14,6 +14,22 @@ import yaml
 from crewquarters.untrusted import parse_evidence
 
 
+def content_text(content: Any) -> str:
+    """Message content as text: a string, or OpenAI-style content parts."""
+    if isinstance(content, list):
+        return " ".join(
+            str(part.get("text", "")) for part in content if isinstance(part, dict)
+        ).strip()
+    return "" if content is None else str(content)
+
+
+@dataclass(frozen=True)
+class Reply:
+    text: str
+    structured: Any | None = None
+    tool_call: dict[str, Any] | None = None  # {"name": ..., "arguments": {...}}
+
+
 @dataclass
 class Rule:
     name: str
@@ -22,6 +38,14 @@ class Rule:
     regex: str | None = None
     respond: dict[str, Any] = field(default_factory=dict)
     delay_ms: int = 0
+    # Match only the most recent user message (for scripted multi-turn conversations).
+    last_user: bool = False
+
+    def text_for(self, messages: list[dict[str, Any]]) -> str:
+        if self.last_user:
+            users = [m for m in messages if m.get("role") == "user"]
+            return content_text(users[-1].get("content")) if users else ""
+        return "\n".join(content_text(m.get("content")) for m in messages)
 
     def matches(self, text: str, response_schema: dict[str, Any] | None) -> bool:
         if (
@@ -76,6 +100,7 @@ class RuleSet:
                     regex=match.get("regex"),
                     respond=dict(entry.get("respond", {})),
                     delay_ms=int(entry.get("delayMs", 0)),
+                    last_user=bool(match.get("lastUser", False)),
                 )
             )
         return cls(rules)
@@ -87,8 +112,20 @@ class RuleSet:
     def match(
         self, messages: list[dict[str, Any]], response_schema: dict[str, Any] | None
     ) -> Rule | None:
-        text = "\n".join(str(m.get("content", "")) for m in messages)
-        return next((rule for rule in self.rules if rule.matches(text, response_schema)), None)
+        return next(
+            (r for r in self.rules if r.matches(r.text_for(messages), response_schema)), None
+        )
+
+    def reply(
+        self, messages: list[dict[str, Any]], response_schema: dict[str, Any] | None = None
+    ) -> Reply:
+        """The mock answer, including an optional tool call (OpenAI-compatible facade)."""
+        text, structured = self.respond(messages, response_schema)
+        rule = self.match(messages, response_schema)
+        call = (rule.respond.get("toolCall") if rule else None) or None
+        if rule is not None and call is not None and "text" not in rule.respond:
+            text = ""
+        return Reply(text, structured, dict(call) if call else None)
 
     def respond(
         self, messages: list[dict[str, Any]], response_schema: dict[str, Any] | None
@@ -99,7 +136,7 @@ class RuleSet:
                 instance = minimal_instance(response_schema)
                 return json.dumps(instance), instance
             return "MOCK RESPONSE", None
-        text = "\n".join(str(m.get("content", "")) for m in messages)
+        text = rule.text_for(messages)
         if "perEvidence" in rule.respond:
             structured = _per_evidence(rule.respond["perEvidence"], text)
             return json.dumps(structured), structured

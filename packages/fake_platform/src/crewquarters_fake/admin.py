@@ -64,6 +64,10 @@ class ScheduledRunIn(BaseModel):
     scheduledFor: str | None = None
 
 
+class TranscriptsIn(BaseModel):
+    lines: list[str]
+
+
 class ConnectionIn(BaseModel):
     provider: Literal["google", "twilio"]
     status: Literal["connected", "expired", "missing"]
@@ -144,6 +148,13 @@ async def set_connection(body: ConnectionIn, request: Request) -> dict[str, Any]
     return dict(store_of(request).connections)
 
 
+@router.post("/speech/transcripts")
+async def queue_transcripts(body: TranscriptsIn, request: Request) -> dict[str, Any]:
+    """Queue what the fake speech-to-text will "hear" next (in order)."""
+    store_of(request).fake_speech.queue_transcripts(body.lines)
+    return {"queued": len(body.lines)}
+
+
 @router.get("/state/{kind}")
 async def state(kind: str, request: Request) -> Any:
     store = store_of(request)
@@ -167,6 +178,11 @@ async def state(kind: str, request: Request) -> Any:
         return store.sheets.snapshot()
     if kind == "llm":
         return store.gateway.log
+    if kind == "speech":
+        return {
+            "synthesized": store.fake_speech.synthesized,
+            "transcribed": store.fake_speech.transcribed,
+        }
     if kind == "gmail":
         return sorted(store.gmail.messages)
     if kind == "connections":

@@ -38,29 +38,35 @@ class ChatIn(BaseModel):
 CLOUD_PROVIDERS = frozenset({"openai", "anthropic"})
 
 
-async def _prepare(auth: RunAuth, body: ChatIn, operation: str) -> ProfileInfo:
-    """Capabilities per packages/contracts/capabilities.yaml: ``llm.profile:<variant>`` for every
-    profile, plus ``cloud.<provider>`` for cloud profiles."""
-    require(auth, f"llm.profile:{body.profile}", operation)
-    provider = body.profile.split(".", 1)[0]
+async def prepare_profile(auth: RunAuth, profile: str, operation: str) -> ProfileInfo:
+    """Check the profile capabilities (packages/contracts/capabilities.yaml):
+    ``llm.profile:<variant>`` for every profile, plus ``cloud.<provider>`` for cloud profiles.
+    A cold local model moves the run through LOADING_MODEL."""
+    require(auth, f"llm.profile:{profile}", operation)
+    provider = profile.split(".", 1)[0]
     if provider in CLOUD_PROVIDERS:
         require(auth, f"cloud.{provider}", operation)
-    if body.tools:
-        raise ApiError(422, "UNSUPPORTED_FEATURE", "tools are not supported in v1alpha1")
-    if body.profile not in auth.installation.resolved_profiles:
-        deny(auth, f"llm.profile:{body.profile}", operation)
-    info = auth.store.gateway.profile(body.profile)
+    if profile not in auth.installation.resolved_profiles:
+        deny(auth, f"llm.profile:{profile}", operation)
+    info = auth.store.gateway.profile(profile)
     gateway, store, run = auth.store.gateway, auth.store, auth.run
-    cold = body.profile not in gateway.loaded and gateway.cold_start_seconds > 0
+    cold = profile not in gateway.loaded and gateway.cold_start_seconds > 0
     if info.locality == "local" and cold:
         if run.state == "RUNNING":
-            store.transition(run, "LOADING_MODEL", f"loading {body.profile}")
+            store.transition(run, "LOADING_MODEL", f"loading {profile}")
             await store.notify()
         await asyncio.sleep(gateway.cold_start_seconds)
         if run.state == "LOADING_MODEL":
-            store.transition(run, "RUNNING", f"{body.profile} ready")
+            store.transition(run, "RUNNING", f"{profile} ready")
             await store.notify()
-    gateway.loaded.add(body.profile)
+    gateway.loaded.add(profile)
+    return info
+
+
+async def _prepare(auth: RunAuth, body: ChatIn, operation: str) -> ProfileInfo:
+    info = await prepare_profile(auth, body.profile, operation)
+    if body.tools:
+        raise ApiError(422, "UNSUPPORTED_FEATURE", "tools are not supported in v1alpha1")
     return info
 
 

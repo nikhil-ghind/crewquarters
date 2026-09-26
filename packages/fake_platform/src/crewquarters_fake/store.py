@@ -21,8 +21,10 @@ from crewquarters_fake.providers.gmail import GmailProvider
 from crewquarters_fake.providers.sheets import SheetsProvider
 from crewquarters_fake.providers.twilio import TwilioProvider
 from crewquarters_fake.settings import FakeSettings
+from crewquarters_fake.speech import LocalSpeech, RemoteSpeech, SpeechService
 from crewquarters_fake.statemachine import check_transition
 from crewquarters_fake.timeutil import iso, utcnow
+from crewquarters_speech.fake import FakeSpeechEngine
 
 __all__ = ["iso", "utcnow"]
 
@@ -186,6 +188,13 @@ class Store:
         self.twilio = TwilioProvider()
         self.knowledge = KnowledgeIndex()
         self.gateway = Gateway(self.settings)
+        # The fake engine always exists: a simulated callee queues its lines here.
+        self.fake_speech = FakeSpeechEngine()
+        self.speech: SpeechService = (
+            RemoteSpeech(self.settings.speech_url)
+            if self.settings.speech_url
+            else LocalSpeech(self.fake_speech)
+        )
 
     # --- events -------------------------------------------------------------------------------
     def append_event(self, run: Run, event_type: str, payload: dict[str, Any]) -> Event:
