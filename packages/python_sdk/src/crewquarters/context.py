@@ -14,6 +14,7 @@ from crewquarters.input import InputClient
 from crewquarters.knowledge import KnowledgeClient
 from crewquarters.llm import LLMClient
 from crewquarters.telephony import TelephonyClient
+from crewquarters.voice import VoiceClient
 
 
 def parse_time(value: object) -> datetime | None:
@@ -88,6 +89,22 @@ class Limits:
         )
 
 
+@dataclass(frozen=True)
+class ModelEndpoint:
+    """An OpenAI-compatible endpoint for this run's models (the broker's facade).
+
+    Use it with OpenAI-compatible clients, for example LiveKit's OpenAI plugins:
+    ``openai.LLM(model=profile, base_url=endpoint.base_url, api_key=endpoint.api_key)``.
+    ``model`` must be a profile variant this installation was granted."""
+
+    base_url: str
+    api_key: str
+
+    @classmethod
+    def for_transport(cls, transport: BrokerClient) -> ModelEndpoint:
+        return cls(base_url=f"{transport.base_url}/openai/v1", api_key=transport.token)
+
+
 class RunContext[ConfigT]:
     """Everything an agent needs for one run: run metadata, configuration, and platform clients."""
 
@@ -114,3 +131,9 @@ class RunContext[ConfigT]:
         self.knowledge = KnowledgeClient(transport)
         self.google = GoogleClients(transport)
         self.telephony = TelephonyClient(transport)
+        self.voice = VoiceClient(transport)
+        self._transport = transport
+
+    def model_endpoint(self) -> ModelEndpoint:
+        """The OpenAI-compatible endpoint for this run's granted model profiles."""
+        return ModelEndpoint.for_transport(self._transport)

@@ -2,7 +2,7 @@
 
 from crewquarters._version import PROTOCOL, __version__
 from crewquarters.agent import Agent
-from crewquarters.context import Grants, Limits, RunContext, RunInfo
+from crewquarters.context import Grants, Limits, ModelEndpoint, RunContext, RunInfo
 from crewquarters.input import Choice, InputAnswer, key_value_block, table_block, text_block
 
 __all__ = [
@@ -12,6 +12,7 @@ __all__ = [
     "Grants",
     "InputAnswer",
     "Limits",
+    "ModelEndpoint",
     "RunContext",
     "RunInfo",
     "__version__",

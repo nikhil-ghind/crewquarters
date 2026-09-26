@@ -81,6 +81,16 @@ class BrokerClient:
         self._clock = clock
         self.outage_budget = outage_budget
 
+    @property
+    def base_url(self) -> str:
+        """The broker's SDK API base (``…/internal/v1/sdk``)."""
+        return self._base
+
+    @property
+    def token(self) -> str:
+        """The run token (the credential for OpenAI-compatible model calls)."""
+        return self._token
+
     def _headers(self, request_id: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._token}", "X-Request-Id": request_id}
 

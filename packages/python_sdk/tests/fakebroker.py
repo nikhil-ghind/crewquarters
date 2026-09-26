@@ -52,6 +52,8 @@ class FakeBroker:
         self.input_creates: list[dict[str, Any]] = []
         self.input_script: dict[str, list[dict[str, Any]]] = {}
         self.actions: dict[str, dict[str, Any]] = {}
+        self.voice_calls: dict[str, dict[str, Any]] = {}
+        self.voice_bodies: list[dict[str, Any]] = []
         self.requests: list[httpx.Request] = []
         self.overrides: dict[tuple[str, str], Callable[[httpx.Request], httpx.Response]] = {}
 
@@ -128,7 +130,45 @@ class FakeBroker:
                 return error(409, "ACTION_NOT_CLAIMED")
             self.actions[key].update(status="completed", result=body.get("result"))
             return httpx.Response(200, json=self.actions[key])
+        if request.method == "POST" and path == "/voice/calls":
+            return self._dial(body)
+        if path.startswith("/voice/calls/"):
+            call_id = path.removeprefix("/voice/calls/").removesuffix("/hangup")
+            call = self.voice_calls.get(call_id)
+            if call is None:
+                return error(404, "NOT_FOUND")
+            if request.method == "POST" and path.endswith("/hangup"):
+                call.update(state="completed", room=None, endedAt="2026-09-25T10:01:00Z")
+            return httpx.Response(200, json=call)
         return error(404, "NOT_FOUND", f"{request.method} {path}")
+
+    def _dial(self, body: dict[str, Any]) -> httpx.Response:
+        self.voice_bodies.append(body)
+        key = body["idempotencyKey"]
+        existing = next((c for c in self.voice_calls.values() if c["idempotencyKey"] == key), None)
+        if existing is not None:
+            return httpx.Response(200, json=existing)
+        call_id = f"vc-{len(self.voice_calls) + 1}"
+        self.voice_calls[call_id] = {
+            "id": call_id,
+            "idempotencyKey": key,
+            "toMasked": "••••" + body["to"][-4:],
+            "state": "ringing",
+            "room": {
+                "url": "ws://livekit.test:7880",
+                "name": f"call-{call_id}",
+                "token": "room-token",
+                "identity": "agent",
+            },
+            "calleeIdentity": "callee",
+            "answeredAt": None,
+            "endedAt": None,
+            "durationSeconds": None,
+            "errorCode": None,
+            "createdAt": "2026-09-25T10:00:00Z",
+            "updatedAt": "2026-09-25T10:00:00Z",
+        }
+        return httpx.Response(200, json=self.voice_calls[call_id])
 
     def _input_state(self, key: str) -> dict[str, Any]:
         script = self.input_script.setdefault(key, [{"state": "pending"}])
