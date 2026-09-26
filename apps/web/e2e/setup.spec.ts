@@ -93,3 +93,19 @@ test('once the owner exists, sign-in does not offer setup and the wizard offers 
   await page.getByRole('link', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/login\?next=/);
 });
+
+test('a fresh device can be claimed from the sign-up page', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('link', { name: 'Create your account' }).click();
+  await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
+  await page.getByLabel('Setup code').fill(SETUP_CODE);
+  await page.getByLabel('Username').fill('owner');
+  await page.getByLabel(/^Password\*?$/).fill('a-long-demo-password');
+  await page.getByLabel('Confirm password').fill('a-long-demo-password');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await new SetupWizardPage(page).expectStep('Storage and network');
+
+  await page.goto('/signup');
+  await expect(page.getByText('This device already has an owner')).toBeVisible();
+  await expect(page.getByLabel('Setup code')).toHaveCount(0);
+});

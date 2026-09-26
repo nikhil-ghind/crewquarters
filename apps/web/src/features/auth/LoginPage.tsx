@@ -108,8 +108,8 @@ export default function LoginPage() {
           </form>
           {bootstrap.data?.ownerExists === false ? (
             <p className="muted">
-              First time on this device? <Link to="/setup">Set up Crewquarters</Link> with the setup code shown by the
-              installer.
+              First time on this device? <Link to="/signup">Create your account</Link> with the setup code shown by
+              the installer, or <Link to="/setup">Set up Crewquarters</Link> step by step.
             </p>
           ) : null}
         </div>
