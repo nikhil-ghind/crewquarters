@@ -222,7 +222,9 @@ services:
       dockerfile: infra/docker/proxy.Dockerfile
     image: ${CQ_PROXY_IMAGE:-crewquarters/proxy:dev}
     ports:
-      - "127.0.0.1:${CQ_HTTP_PORT:-8080}:8080"
+      # CQ_HTTP_BIND=0.0.0.0 lets other devices on the LAN reach the UI (plain HTTP; see
+      # docs/runbooks/local-demo.md "Other devices"). Loopback only by default.
+      - "${CQ_HTTP_BIND:-127.0.0.1}:${CQ_HTTP_PORT:-8080}:8080"
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]

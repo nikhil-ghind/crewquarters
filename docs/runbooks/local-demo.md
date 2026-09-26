@@ -247,6 +247,43 @@ docker compose -f infra/compose/compose.yaml --profile callbacks-quick rm -sf tu
 
 Use only numbers whose owners have agreed to test calls.
 
+## Other devices: answering an agent's question from a phone
+
+An agent that needs a decision (for example the caller's "Approve 3 automated calls?") opens
+an input request. It appears on every signed-in device: the **Activity** badge, the page
+title (`(1) …`), **Crew Requests**, and the run page. Any device can answer; the first answer
+wins, the agent continues within a few seconds, and a second answer from another device is
+refused with "already answered".
+
+By default the stack listens only on this machine. To reach it from a phone or another
+computer on the same network (a trusted home or office network only — this is plain HTTP):
+
+```bash
+IP=$(hostname -I | awk '{print $1}')      # macOS: ipconfig getifaddr en0
+make demo-down
+CQ_HTTP_BIND=0.0.0.0 CQ_PUBLIC_BASE_URL=http://$IP:8080 make demo-up
+```
+
+- Open `http://<IP>:8080` on the phone and sign in as the owner. `CQ_PUBLIC_BASE_URL` makes
+  that address an allowed origin; `http://localhost:8080` keeps working on the laptop.
+- A host firewall may block port 8080 (Ubuntu: `sudo ufw allow 8080/tcp`, remove it after).
+- In fake mode Google sign-in returns to `CQ_PUBLIC_BASE_URL`, so connect Google from the
+  address you set there. With real Google, the redirect URI registered in the Google console
+  must match it exactly; keep `http://localhost:8080` for live Google.
+- **Browser notifications** ("Needs your input") only work on HTTPS or `localhost`. The phone
+  on `http://<IP>:8080` gets the badge, title and Crew Requests but no pop-up; the laptop on
+  `http://localhost:8080` can enable notifications in Settings. For notifications on phones,
+  use the appliance's LAN HTTPS mode ([lan-https.md](lan-https.md)).
+
+A test that follows the whole path:
+
+1. Laptop: install the caller with the spreadsheet id `demo-contacts` and click **Run**.
+2. Phone: within ~10 seconds the Activity badge shows 1. Open **Crew Requests**, read the
+   preview (3 calls, 2 skipped contacts), and approve.
+3. Laptop: the run page moves from **Needs your input** to **Running** and then **Succeeded**
+   with 3 calls (2 answered, 1 no answer). Try answering on the laptop too: it reports the
+   request was already answered.
+
 ## Limitations on a laptop
 
 - **No real classification.** The dev model catalog serves a deterministic mock, so every digest

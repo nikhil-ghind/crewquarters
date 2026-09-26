@@ -118,7 +118,7 @@ surfaced only after `CQ_PREPARE_TIMEOUT_SECONDS` (600 s by default).
 
     | Exit | Code | Message / details |
     | --- | --- | --- |
-    | `oomKilled`, or exit code 137 (SIGKILL) without it | `AGENT_OUT_OF_MEMORY` | Names the memory limit (the daemon's `memoryLimitBytes`, else the manifest's `resources.memoryMb`); `details: {exitCode, oomKilled, memoryLimitMb}`. Docker loses `OOMKilled` for about 1 in 12 OOM kills (Docker 29, cgroup v2). The platform never SIGKILLs a container whose run is still in these states, so an unflagged 137 is reported as a probable OOM and the message says it was not confirmed. |
+    | `oomKilled`, or exit code 137 (SIGKILL) without it | `AGENT_OUT_OF_MEMORY` | Names the memory limit (the daemon's `memoryLimitBytes`, else the manifest's `resources.memoryMb`); `details: {exitCode, oomKilled, memoryLimitMb}`. Docker loses `OOMKilled` for about 1 in 12 OOM kills (Docker 29, cgroup v2). The platform never SIGKILLs a container whose run is still in these states, so an unflagged 137 is reported as a probable OOM and the message says it was not confirmed. The project owner confirmed this behaviour on 2026-09-25. |
     | any other non-zero | `AGENT_EXITED` | The exit code, and "before its handshake" in `PREPARING`; `details: {exitCode, oomKilled: false}` |
     | 0 | `AGENT_EXITED_WITHOUT_RESULT` | `details: {exitCode: 0, oomKilled: false}` |
 
