@@ -8,6 +8,7 @@ import * as f from '../../test/fixtures';
 import { renderWithProviders } from '../../test/render';
 import { errorEnvelope, server } from '../../test/server';
 import LoginPage from '../auth/LoginPage';
+import SignUpPage from '../auth/SignUpPage';
 import { OwnerStep, ValidationStep } from '../setup/steps';
 import BackupsPage from './BackupsPage';
 import StatusPage from './StatusPage';
@@ -139,6 +140,7 @@ describe('bootstrap status', () => {
     server.use(http.get('/api/v1/bootstrap/status', () => HttpResponse.json({ ownerExists: false })));
     renderWithProviders(<LoginPage />, { path: '/login', route: '/login' });
     expect(await screen.findByRole('link', { name: 'Set up Crewquarters' })).toHaveAttribute('href', '/setup');
+    expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute('href', '/signup');
   });
 
   it('the sign-in page hides the setup link once the owner exists', async () => {
@@ -154,6 +156,8 @@ describe('bootstrap status', () => {
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Set up Crewquarters' })).not.toBeInTheDocument();
     expect(screen.queryByText(/First time on this device/)).not.toBeInTheDocument();
+    // Sign-up is always reachable; the page itself explains when an owner already exists.
+    expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute('href', '/signup');
   });
 
   it('the setup owner step does not offer a second owner account', async () => {
@@ -167,5 +171,54 @@ describe('bootstrap status', () => {
     server.use(http.get('/api/v1/bootstrap/status', () => HttpResponse.json({ ownerExists: false })));
     renderWithProviders(<OwnerStep signedIn={false} />);
     expect(await screen.findByLabelText(/Setup code/)).toBeInTheDocument();
+  });
+});
+
+describe('sign up', () => {
+  it('tells visitors the device already has an owner instead of showing the form', async () => {
+    renderWithProviders(<SignUpPage />, { path: '/signup', route: '/signup' });
+    expect(await screen.findByText('This device already has an owner')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
+    expect(screen.queryByLabelText(/Setup code/)).not.toBeInTheDocument();
+  });
+
+  it('checks the fields locally before calling the device', async () => {
+    let called = false;
+    server.use(
+      http.get('/api/v1/bootstrap/status', () => HttpResponse.json({ ownerExists: false })),
+      http.post('/api/v1/bootstrap', () => {
+        called = true;
+        return HttpResponse.json(f.session, { status: 201 });
+      }),
+    );
+    renderWithProviders(<SignUpPage />, { path: '/signup', route: '/signup' });
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/Username/), 'x');
+    await user.type(screen.getByLabelText(/^Password/), 'short');
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+    expect(await screen.findAllByText('Enter the setup code shown by the installer.')).not.toHaveLength(0);
+    expect(screen.getAllByText('Use at least 12 characters.')).not.toHaveLength(0);
+    expect(called).toBe(false);
+  });
+
+  it('creates the owner account with the setup code', async () => {
+    let body: unknown = null;
+    server.use(
+      http.get('/api/v1/bootstrap/status', () => HttpResponse.json({ ownerExists: false })),
+      http.post('/api/v1/bootstrap', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(f.session, { status: 201 });
+      }),
+    );
+    renderWithProviders(<SignUpPage />, { path: '/signup', route: '/signup' });
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/Setup code/), 'setup-code-0123456789');
+    await user.type(screen.getByLabelText(/Username/), 'owner');
+    await user.type(screen.getByLabelText(/^Password/), 'a-long-demo-password');
+    await user.type(screen.getByLabelText(/Confirm password/), 'a-long-demo-password');
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+    await waitFor(() =>
+      expect(body).toEqual({ token: 'setup-code-0123456789', username: 'owner', password: 'a-long-demo-password', email: null }),
+    );
   });
 });

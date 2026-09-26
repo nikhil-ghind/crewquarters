@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, Bot, CheckCircle2, Circle, Cpu, MessagesSquare, Play, Plus } from 'lucide-react';
+import { AlertTriangle, Bot, CheckCircle2, Circle, Cpu, Play } from 'lucide-react';
 import { Link } from 'react-router';
 import { useAcknowledgeRun } from '../../api/mutations';
 import {
@@ -67,7 +67,7 @@ function NeedsAttention() {
   const pending = requests.data ?? [];
   if (pending.length === 0 && other.length === 0 && !google) return null;
   return (
-    <Section title="Needs attention" id="needs-attention">
+    <Section title="Needs you" id="needs-attention">
       <div className="stack">
         {pending.map((r) => (
           <InputRequestCard key={r.id} request={r} showRunLink timeZone={timeZone} headingLevel={3} />
@@ -173,8 +173,8 @@ export default function OverviewPage() {
   return (
     <Page>
       <PageHeader
-        title="Overview"
-        purpose="Command Center: what needs you, what is running, and what to do next."
+        title="Home"
+        purpose="What needs you, what is running, and what just finished."
         actions={
           <ButtonLink to="/agents/installed" variant="primary" icon={<Play size={16} aria-hidden="true" />}>
             Run a crew member
@@ -183,65 +183,8 @@ export default function OverviewPage() {
       />
       <NeedsAttention />
       {isNew ? <GettingStarted hasModel={hasModel} hasAgent={hasAgent} hasRun={hasRun} /> : null}
-      <Section title="Quick actions" id="quick-actions">
-        <div className="row">
-          <ButtonLink to="/agents/marketplace" icon={<Plus size={16} aria-hidden="true" />}>
-            Add to your crew
-          </ButtonLink>
-          <ButtonLink to="/knowledge" icon={<BookOpen size={16} aria-hidden="true" />}>
-            Add knowledge
-          </ButtonLink>
-          <ButtonLink to="/chat" icon={<MessagesSquare size={16} aria-hidden="true" />}>
-            Start chat
-          </ButtonLink>
-        </div>
-      </Section>
-      <div className="grid-2">
-        <Card title="Device resources">
-          <div className="stack">
-            {used ? (
-              <ResourceMeter
-                label="Unified memory"
-                value={used.used}
-                max={used.total}
-                valueText={`${formatBytes(used.used)} of ${formatBytes(used.total)} used`}
-                warnAt={0.85}
-                dangerAt={0.95}
-              />
-            ) : memory.isPending ? (
-              <SkeletonBlock lines={1} />
-            ) : (
-              <p className="muted">Memory is not reported by this device.</p>
-            )}
-            <p>
-              <span className="field-label">Storage: </span>
-              {disk ? disk.detail : '—'}
-            </p>
-            <div className="stack-sm">
-              <span className="field-label">Models in memory</span>
-              {resident.length === 0 ? (
-                <span className="muted">No model active. Models load when chat or an agent needs them.</span>
-              ) : (
-                resident.map((m) => (
-                  <span key={m.id} className="row">
-                    <Link to={`/models/${encodeURIComponent(m.id)}`}>{m.displayName}</Link>
-                    <StatusBadge status={MODEL_MEMORY_STATUS[m.memoryState]} context="Memory" />
-                    {m.idleUnloadAt && (m.activeLeases ?? []).length === 0 ? (
-                      <span className="muted" title={formatUtc(m.idleUnloadAt)}>
-                        Unloads {formatRelative(m.idleUnloadAt)} if unused
-                      </span>
-                    ) : null}
-                  </span>
-                ))
-              )}
-            </div>
-            <p>
-              <span className="field-label">Active agent containers: </span>
-              {activeRuns.length}
-            </p>
-          </div>
-        </Card>
-        <Card title="Active work" actions={<Link to="/activity/runs">All runs</Link>}>
+      <div className="grid-3">
+        <Card title="Running now" actions={<Link to="/activity/runs">All runs</Link>}>
           {active.isError ? <ErrorPanel error={active.error} title="Could not load active runs" /> : null}
           {active.isPending ? (
             <SkeletonBlock lines={2} />
@@ -255,9 +198,7 @@ export default function OverviewPage() {
             </div>
           )}
         </Card>
-      </div>
-      <div className="grid-2">
-        <Card title="Recent results" actions={<Link to="/activity/runs">History</Link>}>
+        <Card title="Just finished" actions={<Link to="/activity/runs">History</Link>}>
           {recent.isPending ? (
             <SkeletonBlock lines={3} />
           ) : recent.isError ? (
@@ -266,13 +207,11 @@ export default function OverviewPage() {
             <EmptyState title="No results yet">Completed runs appear here.</EmptyState>
           ) : (
             <ul className="stack-sm" style={{ listStyle: 'none' }}>
-              {recent.data?.items.map((r) => (
-                <li key={r.id} className="row-between" style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: 8 }}>
-                  <span className="stack-sm" style={{ gap: 2 }}>
-                    <span className="field-label">{r.agentName}</span>
-                    <span className="muted">
-                      {formatDateTime(r.finishedAt ?? r.updatedAt, timeZone)} · {formatDuration(runDuration(r))}
-                    </span>
+              {recent.data?.items.slice(0, 3).map((r) => (
+                <li key={r.id} className="stack-sm" style={{ gap: 4, borderBottom: '1px solid var(--color-border)', paddingBottom: 8 }}>
+                  <span className="field-label">{r.agentName}</span>
+                  <span className="muted">
+                    {formatDateTime(r.finishedAt ?? r.updatedAt, timeZone)} · {formatDuration(runDuration(r))}
                   </span>
                   <span className="row">
                     <StatusBadge status={RUN_STATUS[r.state]} />
@@ -286,7 +225,7 @@ export default function OverviewPage() {
             </ul>
           )}
         </Card>
-        <Card title="Upcoming schedules" actions={<Link to="/schedules">Schedules</Link>}>
+        <Card title="Next up" actions={<Link to="/schedules">Schedules</Link>}>
           {schedules.isPending ? (
             <SkeletonBlock lines={2} />
           ) : upcoming.length === 0 ? (
@@ -294,8 +233,8 @@ export default function OverviewPage() {
           ) : (
             <ul className="stack-sm" style={{ listStyle: 'none' }}>
               {upcoming.map((u) => (
-                <li key={`${u.schedule.id}-${u.at}`} className="row-between">
-                  <span>{u.schedule.agentName}</span>
+                <li key={`${u.schedule.id}-${u.at}`} className="stack-sm" style={{ gap: 2 }}>
+                  <span className="field-label">{u.schedule.agentName}</span>
                   <span className="muted" title={formatUtc(u.at)}>
                     {formatDateTime(u.at, timeZone)}
                   </span>
@@ -305,6 +244,45 @@ export default function OverviewPage() {
           )}
         </Card>
       </div>
+      <Card title="This device">
+        <div className="stack">
+          {used ? (
+            <ResourceMeter
+              label="Unified memory"
+              value={used.used}
+              max={used.total}
+              valueText={`${formatBytes(used.used)} of ${formatBytes(used.total)} used`}
+              warnAt={0.85}
+              dangerAt={0.95}
+            />
+          ) : memory.isPending ? (
+            <SkeletonBlock lines={1} />
+          ) : (
+            <p className="muted">Memory is not reported by this device.</p>
+          )}
+          <div className="row">
+            <span className="field-label">Models in memory:</span>
+            {resident.length === 0 ? (
+              <span className="muted">None. Models load when chat or an agent needs them.</span>
+            ) : (
+              resident.map((m) => (
+                <span key={m.id} className="row">
+                  <Link to={`/models/${encodeURIComponent(m.id)}`}>{m.displayName}</Link>
+                  <StatusBadge status={MODEL_MEMORY_STATUS[m.memoryState]} context="Memory" />
+                  {m.idleUnloadAt && (m.activeLeases ?? []).length === 0 ? (
+                    <span className="muted" title={formatUtc(m.idleUnloadAt)}>
+                      Unloads {formatRelative(m.idleUnloadAt)} if unused
+                    </span>
+                  ) : null}
+                </span>
+              ))
+            )}
+          </div>
+          <p className="muted">
+            Storage: {disk ? disk.detail : '—'} · Agent containers running: {activeRuns.length}
+          </p>
+        </div>
+      </Card>
     </Page>
   );
 }

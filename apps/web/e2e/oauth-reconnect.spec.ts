@@ -6,7 +6,7 @@ test.beforeEach(async ({ mock, page }) => {
   await login(page);
 });
 
-test('expired Google access links from banner and Overview to one reconnect flow', async ({ page, mock }) => {
+test('expired Google access links from banner and Home to one reconnect flow', async ({ page, mock }) => {
   await mock.googleExpired();
   await page.reload();
   await expect(page.getByText('Google access expired').first()).toBeVisible();

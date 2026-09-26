@@ -71,7 +71,7 @@ test('first-run setup completes without a shell and resumes after refresh and Go
   expect((await download).suggestedFilename()).toMatch(/^crewquarters-diagnostics-.*\.zip$/);
   await page.getByRole('button', { name: 'Finish setup' }).click();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible();
 
   // The wizard is hidden once setup is complete.
   await page.goto('/setup');
@@ -92,4 +92,20 @@ test('once the owner exists, sign-in does not offer setup and the wizard offers 
   await expect(page.getByLabel('Setup code')).toHaveCount(0);
   await page.getByRole('link', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/login\?next=/);
+});
+
+test('a fresh device can be claimed from the sign-up page', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('link', { name: 'Create an account' }).click();
+  await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
+  await page.getByLabel('Setup code').fill(SETUP_CODE);
+  await page.getByLabel('Username').fill('owner');
+  await page.getByLabel(/^Password\*?$/).fill('a-long-demo-password');
+  await page.getByLabel('Confirm password').fill('a-long-demo-password');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await new SetupWizardPage(page).expectStep('Storage and network');
+
+  await page.goto('/signup');
+  await expect(page.getByText('This device already has an owner')).toBeVisible();
+  await expect(page.getByLabel('Setup code')).toHaveCount(0);
 });
