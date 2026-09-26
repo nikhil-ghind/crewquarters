@@ -11,7 +11,7 @@ MYPY_PATHS := packages/shared_python/src services/control_api/src services/sched
 	packages/secret_store/src services/capability_broker/src services/knowledge/src \
 	packages/python_sdk/src packages/fake_platform/src packages/crewctl/src \
 	agents/contract_probe/src agents/gmail_digest/src agents/caller/src agents/personal_space/src \
-	packages/speech_server/src
+	packages/speech_server/src agents/voice_caller/src
 # Suites that need no PostgreSQL (SDK, fake platform, crewctl, agents, fake-platform integration).
 SDK_TESTS := packages/python_sdk packages/fake_platform packages/crewctl agents tests/integration \
 	packages/speech_server \

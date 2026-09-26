@@ -38,6 +38,7 @@ members = [
     "agents/caller",
     "agents/personal_space",
     "packages/speech_server",
+    "agents/voice_caller",
 ]
 
 [tool.uv.sources]
@@ -109,6 +110,8 @@ known-first-party = [
 "packages/crewctl/src/crewctl/build.py" = ["S603", "S607"]
 "infra/scripts/evidence_report.py" = ["S603", "S607"]
 "tests/e2e/**" = ["S603", "S607"]
+# Ported truestar-voice tests keep their long literal utterances verbatim.
+"agents/voice_caller/tests/test_texture.py" = ["E501"]
 # The classification prompt is model input; wrapping it would change what the model sees.
 "agents/gmail_digest/src/gmail_digest/prompts.py" = ["E501"]
 
@@ -123,7 +126,7 @@ exclude = ["migrations/", "tests/"]
 # importlib mode lets test modules share basenames across packages; pythonpath keeps
 # `from conftest import ...` working for the control-plane tests. "." must stay first so that
 # `conftest` is the root one; the other entries hold test-helper modules (fakebroker,
-# fake_helpers, agent_runs, openapi_check, gateway_helpers). Never insert test directories into sys.path.
+# fake_helpers, agent_runs, openapi_check, gateway_helpers, voice_helpers). Never insert test directories into sys.path.
 addopts = "--import-mode=importlib -ra"
 pythonpath = [
     ".",
@@ -132,6 +135,7 @@ pythonpath = [
     "tests/integration",
     "tests/contract",
     "services/model_gateway/tests",
+    "agents/voice_caller/tests",
 ]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
