@@ -127,3 +127,31 @@ def test_agent_event_types_match_the_internal_api() -> None:
         broker["AgentEvent"]["properties"]["type"]["enum"]
         == (control["AgentEventIn"]["properties"]["type"]["enum"])
     )
+
+
+VOICE_OPERATIONS = {
+    ("post", "/voice/calls"): ("createVoiceCall", "sip.call.conversational"),
+    ("get", "/voice/calls/{id}"): ("getVoiceCall", "sip.call.conversational"),
+    ("post", "/voice/calls/{id}/hangup"): ("hangupVoiceCall", "sip.call.conversational"),
+    ("post", "/openai/v1/chat/completions"): ("openaiChatCompletions", "llm.profile:<variant>"),
+    ("post", "/openai/v1/audio/transcriptions"): ("openaiTranscriptions", "llm.profile:<variant>"),
+    ("post", "/openai/v1/audio/speech"): ("openaiSpeech", "llm.profile:<variant>"),
+}
+
+
+@pytest.mark.parametrize(("key", "expected"), sorted(VOICE_OPERATIONS.items()))
+def test_voice_and_model_facade_operations_are_declared(
+    key: tuple[str, str], expected: tuple[str, str]
+) -> None:
+    method, path = key
+    operation = contracts.broker_openapi()["paths"][path][method]
+    assert operation["operationId"] == expected[0]
+    assert str(operation["x-capability"]).split(" ")[0] == expected[1]
+
+
+def test_voice_call_never_exposes_the_full_number() -> None:
+    broker, _ = schemas()
+    call = broker["VoiceCall"]["properties"]
+    assert "to" not in call and "toMasked" in call
+    room = broker["VoiceRoom"]
+    assert set(room["required"]) == {"url", "name", "token", "identity"}
