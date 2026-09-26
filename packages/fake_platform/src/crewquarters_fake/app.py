@@ -28,7 +28,10 @@ def create_app(settings: FakeSettings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
-        await app.state.store.voice_backend.aclose()
+        store = app.state.store
+        await store.voice_backend.aclose()
+        if store.crewq_gateway is not None:
+            await store.crewq_gateway.release()
 
     app = FastAPI(
         title="Crewquarters fake platform",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,9 @@ def cli() -> None:
 @click.option("--port", default=8090, show_default=True, type=int)
 def serve(host: str, port: int) -> None:
     """Serve the fake platform (settings come from CREWQ_FAKE_* environment variables)."""
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
     uvicorn.run(create_app(), host=host, port=port, log_level="info")
 
 

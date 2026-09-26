@@ -158,15 +158,19 @@ async def chat_completions(
         require_kind(model, "chat")
         info = await prepare_profile(auth, model, "broker.openai.chat")
         started = time.monotonic()
-        reply = await auth.store.gateway.chat_completion(info, body)
+        appliance = auth.store.crewq_gateway
+        if appliance is not None:
+            reply = await appliance.chat(model, body)
+        else:
+            reply = await auth.store.gateway.chat_completion(info, body)
         latency = int((time.monotonic() - started) * 1000)
         auth.store.audit_event(
             auth.run,
             "llm.call",
             {
                 "profile": model,
-                "provider": info.provider,
-                "model": info.model,
+                "provider": "crewquarters-gateway" if appliance is not None else info.provider,
+                "model": model if appliance is not None else info.model,
                 "locality": info.locality,
                 "inputTokens": reply.input_tokens,
                 "outputTokens": reply.output_tokens,

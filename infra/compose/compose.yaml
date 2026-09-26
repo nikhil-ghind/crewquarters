@@ -295,6 +295,10 @@ services:
       CREWQ_FAKE_LIVEKIT_API_SECRET: ${CREWQ_FAKE_LIVEKIT_API_SECRET:-}
       CREWQ_FAKE_SPEECH_URL: ${CREWQ_FAKE_SPEECH_URL:-}
       CREWQ_FAKE_SIP_TRUNK_ID: ${CREWQ_FAKE_SIP_TRUNK_ID:-}
+      # A real model gateway for the facade (docs/voice/README.md), e.g. a GB10 through a tunnel.
+      CREWQ_FAKE_GATEWAY_URL: ${CREWQ_FAKE_GATEWAY_URL:-}
+      CREWQ_FAKE_GATEWAY_SERVICE_TOKEN: ${CREWQ_FAKE_GATEWAY_SERVICE_TOKEN:-}
+      CREWQ_FAKE_GATEWAY_VOICE_TOKEN: ${CREWQ_FAKE_GATEWAY_VOICE_TOKEN:-}
     volumes:
       # Scenarios are read from the repository (read-only): tests/fixtures/scenarios, agents/*/scenarios.
       - ../..:/workspace:ro

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from crewquarters_fake.crewq_gateway import CrewquartersGateway
 from crewquarters_fake.faults import FaultRegistry
 from crewquarters_fake.gateway import Gateway
 from crewquarters_fake.knowledge import KnowledgeIndex
@@ -29,6 +30,21 @@ from crewquarters_fake.voice.scenario import CalleeScenario
 from crewquarters_speech.fake import FakeSpeechEngine
 
 __all__ = ["iso", "utcnow"]
+
+
+def _crewq_gateway(settings: FakeSettings) -> CrewquartersGateway | None:
+    if not settings.gateway_url:
+        return None
+    if not (settings.gateway_service_token and settings.gateway_voice_token):
+        raise ValueError("CREWQ_FAKE_GATEWAY_URL needs the service and voice client tokens")
+    return CrewquartersGateway(
+        settings.gateway_url,
+        settings.gateway_service_token,
+        settings.gateway_voice_token,
+        stt_model=settings.gateway_stt_model,
+        tts_model=settings.gateway_tts_model,
+        voice=settings.gateway_voice,
+    )
 
 
 def _voice_backend(settings: FakeSettings) -> VoiceBackend:
@@ -234,10 +250,11 @@ class Store:
         self.gateway = Gateway(self.settings)
         # The fake engine always exists: a simulated callee queues its lines here.
         self.fake_speech = FakeSpeechEngine()
+        self.crewq_gateway = _crewq_gateway(self.settings)
         self.speech: SpeechService = (
-            RemoteSpeech(self.settings.speech_url)
-            if self.settings.speech_url
-            else LocalSpeech(self.fake_speech)
+            self.crewq_gateway
+            or (RemoteSpeech(self.settings.speech_url) if self.settings.speech_url else None)
+            or LocalSpeech(self.fake_speech)
         )
         self.voice_callees: dict[str, CalleeScenario] = {}
         self.voice_backend = _voice_backend(self.settings)
