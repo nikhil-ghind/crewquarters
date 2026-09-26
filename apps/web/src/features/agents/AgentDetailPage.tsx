@@ -15,6 +15,8 @@ const EXAMPLES: Record<string, string> = {
     'A morning summary of yesterday’s mail in three groups — Urgent, Important and Low priority — with a one-line reason, a suggested next step and a link to each message in Gmail.',
   'crewquarters.caller/v1':
     'A table of the people called from your sheet: consent check, call status, the transcribed reply, and whether the result was written back to the sheet.',
+  'crewquarters.personal-space/v1':
+    'A brief built around what you want from your knowledge base: highlights with a reason and a next step, the main themes, questions to explore next, and numbered sources from your own documents.',
 };
 
 function defaultText(value: unknown): string {

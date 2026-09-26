@@ -2,10 +2,12 @@ import { KeyValue } from '../../../components/Layout';
 import { asSchema } from '../../../lib/jsonSchema';
 import { CallerResult, parseCaller } from './CallerResult';
 import { GmailDigestResult, parseDigest } from './GmailDigestResult';
+import { PersonalSpaceResult, parsePersonalSpace } from './PersonalSpaceResult';
 
 export const RENDERERS = {
   gmailDigest: 'crewquarters.gmail-digest/v1',
   caller: 'crewquarters.caller/v1',
+  personalSpace: 'crewquarters.personal-space/v1',
 } as const;
 
 function scalar(v: unknown): string | null {
@@ -44,6 +46,10 @@ export function ResultView({
   if (renderer === RENDERERS.caller || (!renderer && 'rows' in result && 'operatorDecision' in result)) {
     const caller = parseCaller(result);
     if (caller) return <CallerResult data={caller} timeZone={timeZone} />;
+  }
+  if (renderer === RENDERERS.personalSpace || (!renderer && 'themes' in result && 'highlights' in result && 'status' in result)) {
+    const space = parsePersonalSpace(result);
+    if (space) return <PersonalSpaceResult data={space} timeZone={timeZone} />;
   }
   return <GenericResult result={result} />;
 }

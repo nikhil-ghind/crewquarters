@@ -10,6 +10,7 @@ import { renderWithProviders } from '../test/render';
 import { errorEnvelope, server } from '../test/server';
 import { CallerResult, parseCaller } from './activity/results/CallerResult';
 import { GmailDigestResult, parseDigest } from './activity/results/GmailDigestResult';
+import { PersonalSpaceResult, parsePersonalSpace } from './activity/results/PersonalSpaceResult';
 import { ResultView } from './activity/results/ResultView';
 import { eventEntry } from './activity/RunDetailPage';
 import LoginPage, { safeNext } from './auth/LoginPage';
@@ -132,6 +133,97 @@ describe('result renderers', () => {
   it('falls back to escaped generic output for unknown renderers', () => {
     renderWithProviders(<ResultView result={{ summary: '<script>x</script>' }} resultSchema={null} timeZone="UTC" />);
     expect(screen.getByText('<script>x</script>')).toBeInTheDocument();
+  });
+
+  const spaceResult = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    status: 'ready',
+    domain: 'Personal notes',
+    intent: 'Plan my week',
+    summary: 'Your notes cover goals and a project.',
+    generatedAt: f.NOW,
+    degraded: false,
+    themes: [{ title: 'Goals', summary: 'Health first.', citations: ['c2', 'c-unknown'] }],
+    highlights: [
+      { title: '<img src=x onerror=alert(1)>', whyItMatters: 'Nearest deadline', nextStep: 'Finish the alerts page', citations: ['c1', 'c2'] },
+      { title: 'No next step', whyItMatters: 'Just because', nextStep: null, citations: ['c1'] },
+    ],
+    exploreNext: ['What is left on the dashboard?'],
+    suggestedAdditions: [],
+    sources: [
+      { citationId: 'c1', documentName: 'projects.md', locator: { section: 'Home-lab dashboard' }, score: 0.82 },
+      { citationId: 'c2', documentName: 'goals.md', locator: { page: 3 }, score: 0.7 },
+    ],
+    stats: { queriesRun: 9, passagesConsidered: 14, passagesUsed: 6, documentsSeen: 3 },
+    model: { profile: 'local.general.small', provider: 'local', locality: 'local' },
+    ...over,
+  });
+
+  it('Personal Space: highlights, themes, explore next and numbered sources, all as text', () => {
+    const data = parsePersonalSpace(spaceResult());
+    expect(data).not.toBeNull();
+    if (!data) return;
+    const { container } = renderWithProviders(<PersonalSpaceResult data={data} timeZone="Asia/Kolkata" />);
+    const labels = [...container.querySelectorAll('.result-section-header .badge, .result-section > summary .badge')].map((b) => b.textContent);
+    expect(labels).toEqual(['Highlights', 'Themes', 'Explore next', 'Sources']);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
+    expect(screen.getByText('Personal notes')).toBeInTheDocument();
+    expect(screen.getByText('Plan my week')).toBeInTheDocument();
+    expect(screen.getByText('Local on this device')).toBeInTheDocument();
+    // c1 is Source 1, c2 is Source 2; an unknown citation id is not shown.
+    expect(screen.getAllByText('Source 1').length).toBe(2);
+    expect(screen.getAllByText('Source 2').length).toBe(2);
+    expect(screen.queryByText(/c-unknown/)).toBeNull();
+    expect(screen.getByText('projects.md')).toBeInTheDocument();
+    expect(screen.getByText(/Page 3/)).toBeInTheDocument();
+    expect(screen.getByText(/Home-lab dashboard/)).toBeInTheDocument();
+    expect(screen.getByText(/Searched with 9 queries; used 6 passages from 3 documents/)).toBeInTheDocument();
+    expect(screen.queryByText('The model could not write a brief this time')).toBeNull();
+  });
+
+  it('Personal Space: a thin knowledge base shows what to add instead of an empty brief', () => {
+    const data = parsePersonalSpace(
+      spaceResult({
+        status: 'insufficient_context',
+        domain: null,
+        summary: 'Only 1 relevant passage(s) were found.',
+        themes: [],
+        highlights: [],
+        exploreNext: [],
+        suggestedAdditions: ['Add notes about your goals.'],
+        sources: [],
+        stats: { queriesRun: 5, passagesConsidered: 1, passagesUsed: 1, documentsSeen: 1 },
+      }),
+    );
+    expect(data).not.toBeNull();
+    if (!data) return;
+    renderWithProviders(<PersonalSpaceResult data={data} timeZone="UTC" />);
+    expect(screen.getByText('Not enough in this knowledge base to personalize yet')).toBeInTheDocument();
+    expect(screen.getByText('Add notes about your goals.')).toBeInTheDocument();
+    expect(screen.queryByText('Highlights')).toBeNull();
+  });
+
+  it('Personal Space: a degraded result says so and labels the fallback section honestly', () => {
+    const data = parsePersonalSpace(spaceResult({ degraded: true, domain: null, highlights: [], exploreNext: [] }));
+    expect(data).not.toBeNull();
+    if (!data) return;
+    renderWithProviders(<PersonalSpaceResult data={data} timeZone="UTC" />);
+    expect(screen.getByText('The model could not write a brief this time')).toBeInTheDocument();
+    expect(screen.getByText('From your documents')).toBeInTheDocument();
+    expect(screen.queryByText('Highlights')).toBeNull();
+  });
+
+  it('Personal Space: chosen by the declared renderer or by shape, and never for unrelated results', () => {
+    const { unmount } = renderWithProviders(
+      <ResultView result={spaceResult()} resultSchema={{ 'x-crewquarters-renderer': 'crewquarters.personal-space/v1' }} timeZone="UTC" />,
+    );
+    expect(screen.getByRole('region', { name: 'Highlights' })).toBeInTheDocument();
+    unmount();
+    renderWithProviders(<ResultView result={spaceResult()} resultSchema={null} timeZone="UTC" />);
+    expect(screen.getByRole('region', { name: 'Themes' })).toBeInTheDocument();
+    expect(parsePersonalSpace({ status: 'ok', summary: 'x' })).toBeNull();
+    expect(parsePersonalSpace({ status: 'ready' })).toBeNull();
+    expect(parsePersonalSpace(null)).toBeNull();
   });
 });
 
