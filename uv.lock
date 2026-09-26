@@ -6,6 +6,7 @@ members = [
     "crewquarters-agent-caller",
     "crewquarters-agent-contract-probe",
     "crewquarters-agent-gmail-digest",
+    "crewquarters-agent-personal-space",
     "crewquarters-capability-broker",
     "crewquarters-control-api",
     "crewquarters-crewctl",
@@ -314,6 +315,21 @@ requires-dist = [{ name = "crewquarters-sdk", editable = "packages/python_sdk" }
 name = "crewquarters-agent-gmail-digest"
 version = "0.1.0"
 source = { editable = "agents/gmail_digest" }
+dependencies = [
+    { name = "crewquarters-sdk" },
+    { name = "tzdata" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "crewquarters-sdk", editable = "packages/python_sdk" },
+    { name = "tzdata", specifier = ">=2024.1" },
+]
+
+[[package]]
+name = "crewquarters-agent-personal-space"
+version = "0.1.0"
+source = { editable = "agents/personal_space" }
 dependencies = [
     { name = "crewquarters-sdk" },
     { name = "tzdata" },

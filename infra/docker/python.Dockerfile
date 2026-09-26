@@ -25,6 +25,7 @@ COPY packages/crewctl/pyproject.toml packages/crewctl/
 COPY agents/contract_probe/pyproject.toml agents/contract_probe/
 COPY agents/gmail_digest/pyproject.toml agents/gmail_digest/
 COPY agents/caller/pyproject.toml agents/caller/
+COPY agents/personal_space/pyproject.toml agents/personal_space/
 RUN for pkg in packages/shared_python/src/crewquarters_shared services/control_api/src/crewquarters_api \
         services/scheduler/src/crewquarters_scheduler services/runtime_daemon/src/crewquarters_runtime \
         services/model_gateway/src/crewquarters_gateway packages/secret_store/src/crewquarters_secret_store \

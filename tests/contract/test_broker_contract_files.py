@@ -70,7 +70,7 @@ def test_bundled_manifests_pass_control_plane_validation(path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "agent", ["contract_probe", "gmail_digest", "caller"], ids=lambda a: str(a)
+    "agent", ["contract_probe", "gmail_digest", "caller", "personal_space"], ids=lambda a: str(a)
 )
 def test_agent_result_schemas_name_a_renderer(agent: str) -> None:
     manifest = contracts.load_manifest(REPO / "agents" / agent / "manifest.yaml")

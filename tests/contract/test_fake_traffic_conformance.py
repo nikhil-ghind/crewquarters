@@ -80,6 +80,13 @@ def traffic(tmp_path_factory: pytest.TempPathFactory) -> Iterator[list[dict[str,
             {"spreadsheetId": "caller-sheet", "callPollSeconds": 0.05},
             approve=True,
         )
+        run(
+            client,
+            tmp,
+            "personal_space",
+            REPO / "agents" / "personal_space" / "scenarios" / "default",
+            {"knowledgeBaseId": "kb-notes", "minRelevance": 0},
+        )
         # The operator paths the UI uses: list pending requests and page through events.
         client.input_requests(state="all")
         yield list(client.state("traffic"))

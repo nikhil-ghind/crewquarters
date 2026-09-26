@@ -35,6 +35,7 @@ members = [
     "agents/contract_probe",
     "agents/gmail_digest",
     "agents/caller",
+    "agents/personal_space",
 ]
 
 [tool.uv.sources]
@@ -93,6 +94,7 @@ known-first-party = [
     "contract_probe",
     "gmail_digest",
     "caller_agent",
+    "personal_space",
 ]
 
 [tool.ruff.lint.per-file-ignores]

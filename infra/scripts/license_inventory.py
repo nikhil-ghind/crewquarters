@@ -52,6 +52,7 @@ AGENT_ROOTS = [
     "crewquarters-agent-contract-probe",
     "crewquarters-agent-gmail-digest",
     "crewquarters-agent-caller",
+    "crewquarters-agent-personal-space",
 ]
 
 REVIEW = re.compile(r"GPL|SSPL|EUPL|MPL|CDDL|EPL|OSL|CC-BY-SA|Commons Clause|BUSL|Proprietary|"
