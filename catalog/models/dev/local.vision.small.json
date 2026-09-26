@@ -1,0 +1,59 @@
+{
+  "id": "local.vision.small",
+  "family": "local.vision",
+  "displayName": "Vision (small) - mock",
+  "backend": "mock",
+  "source": {
+    "type": "bundled",
+    "files": [
+      {
+        "path": "mock_openai_server.py",
+        "from": "files/mock_openai_server.py",
+        "sha256": "4184d11270d4503751795a3011cb9e5d81555971b1980d3e3b3c0746965c417a",
+        "size": 10483
+      }
+    ]
+  },
+  "license": {
+    "name": "Apache-2.0",
+    "gated": false,
+    "url": null
+  },
+  "quantization": "none",
+  "launch": {
+    "image": "python@sha256:4c47124a8391cb7a9f571164147d154777cf012a4ece5f86097130d7a4478111",
+    "gpu": false,
+    "ipcHost": false,
+    "port": 8000,
+    "healthPath": "/v1/models",
+    "startupTimeoutSeconds": 60,
+    "user": "65532:65532",
+    "args": [
+      "python",
+      "{model_path}/mock_openai_server.py",
+      "--served-model-name",
+      "{served_model_name}",
+      "--port",
+      "{port}",
+      "--startup-delay",
+      "1.0"
+    ],
+    "env": {}
+  },
+  "memory": {
+    "weightBytes": 10483,
+    "startupPeakBytes": 2147483648,
+    "validated": true
+  },
+  "contextLimit": 8192,
+  "capabilities": [
+    "chat",
+    "structured_output",
+    "streaming",
+    "vision"
+  ],
+  "validation": {
+    "status": "mock",
+    "note": "Deterministic mock for laptops and CI; no GPU."
+  }
+}

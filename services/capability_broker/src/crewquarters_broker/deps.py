@@ -37,6 +37,8 @@ class BrokerState:
     control: InternalClient
     knowledge: InternalClient
     gateway: httpx.AsyncClient
+    # Provider HTTP (Google, Twilio, cameras); in fake provider mode, crewquarters_broker.fakes.
+    http: httpx.AsyncClient
     google: GoogleConnector
     telephony: TelephonyService
     voice: VoiceService

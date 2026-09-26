@@ -2142,7 +2142,7 @@ export interface components {
              * Capabilities
              * @description Consent is requested separately per capability.
              */
-            capabilities: ("gmail.readonly" | "spreadsheets")[];
+            capabilities: ("gmail.readonly" | "gmail.send" | "spreadsheets")[];
         };
         /** GoogleStartOut */
         GoogleStartOut: {

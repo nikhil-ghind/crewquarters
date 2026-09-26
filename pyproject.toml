@@ -40,6 +40,7 @@ members = [
     "packages/speech_server",
     "agents/voice_caller",
     "agents/pr_reviewer",
+    "agents/intruder_watch",
 ]
 
 [tool.uv.sources]
@@ -102,6 +103,7 @@ known-first-party = [
     "crewquarters_speech",
     "voice_caller",
     "pr_reviewer",
+    "intruder_watch",
 ]
 
 [tool.ruff.lint.per-file-ignores]

@@ -426,7 +426,7 @@ E164 = r"^\+[1-9][0-9]{7,14}$"
 
 
 class GoogleStartIn(ApiModel):
-    capabilities: list[Literal["gmail.readonly", "spreadsheets"]] = Field(
+    capabilities: list[Literal["gmail.readonly", "gmail.send", "spreadsheets"]] = Field(
         min_length=1, description="Consent is requested separately per capability."
     )
 

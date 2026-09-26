@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from crewquarters_fake.broker import (
     actions,
     agents,
+    camera,
     github,
     google,
     input,
@@ -29,5 +30,6 @@ for module in (
     github,
     telephony,
     voice,
+    camera,
 ):
     router.include_router(module.router)

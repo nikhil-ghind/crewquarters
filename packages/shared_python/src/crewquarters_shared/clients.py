@@ -113,7 +113,10 @@ class FakeModelStatusClient:
 
 
 _PROVIDERS = {
-    "google": {"displayName": "Google", "capabilities": ["gmail.readonly", "spreadsheets"]},
+    "google": {
+        "displayName": "Google",
+        "capabilities": ["gmail.readonly", "gmail.send", "spreadsheets"],
+    },
     "twilio": {"displayName": "Twilio", "capabilities": ["call.fixed_script"]},
     "github": {
         "displayName": "GitHub",

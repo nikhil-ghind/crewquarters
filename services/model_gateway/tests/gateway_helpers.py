@@ -26,6 +26,7 @@ SIGNING = "dev-insecure-capability-key-change-me-00000"
 CHAT_TOKEN = "dev-insecure-chat-token-change-me-000000000"
 SERVICE = {"Authorization": f"Bearer {TOKEN}", "X-Chat-Client-Token": CHAT_TOKEN}
 SMALL, QUALITY = "local.general.small", "local.general.quality"
+VISION = "local.vision.small"
 
 
 class FakeControl:

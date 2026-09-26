@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from crewquarters_fake.broker import sheet_scope
 from crewquarters_fake.broker.audit import audited, require_connection
 from crewquarters_fake.broker.auth import RunAuth, require, run_auth
+from crewquarters_fake.timeutil import iso, utcnow
 
 router = APIRouter()
 
@@ -52,6 +53,38 @@ async def gmail_get(
         return auth.store.gmail.get(message_id)
 
     return await audited(auth, request, "google.gmail", "broker.gmail.get", call)
+
+
+class ImageIn(BaseModel):
+    mediaType: str = Field(pattern="^image/(jpeg|png)$")
+    data: str = Field(min_length=1)
+
+
+class NotifyIn(BaseModel):
+    subject: str = Field(min_length=1, max_length=120, pattern=r"^[^\r\n]+$")
+    text: str = Field(min_length=1, max_length=5000)
+    image: ImageIn | None = None
+
+
+@router.post("/google/gmail/notify-owner")
+async def gmail_notify_owner(
+    body: NotifyIn, request: Request, auth: RunAuth = Depends(run_auth)
+) -> dict[str, Any]:
+    require(auth, "google.gmail.send", "broker.gmail.notify")
+    require_connection(auth, "google")
+
+    async def call() -> dict[str, Any]:
+        emails = auth.store.owner_emails
+        emails.append(
+            {
+                "subject": f"[Crewquarters] {body.subject}",
+                "text": body.text,
+                "image": body.image.model_dump() if body.image else None,
+            }
+        )
+        return {"id": f"sent-{len(emails)}", "sentAt": iso(utcnow())}
+
+    return await audited(auth, request, "google.gmail", "broker.gmail.notify", call)
 
 
 def _scoped(auth: RunAuth, key: str, body: RangeIn) -> None:

@@ -9,6 +9,8 @@ send call text, the broker accepts it only if it matches the owner-approved conf
 
 from __future__ import annotations
 
+import base64
+import binascii
 import fnmatch
 import itertools
 import json
@@ -24,7 +26,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import Field
 
-from crewquarters_broker import a1
+from crewquarters_broker import a1, camera
 from crewquarters_broker.auth import Grant, authorize, bearer
 from crewquarters_broker.deps import ApiModel, BrokerState, agent_grant, broker_state
 from crewquarters_broker.errors import permission_denied
@@ -78,9 +80,30 @@ class CompleteIn(ApiModel):
     result: Any = None
 
 
+class Image(ApiModel):
+    media_type: Literal["image/jpeg", "image/png"]
+    data: str = Field(min_length=1, max_length=4_000_000)
+
+    def decoded(self) -> bytes:
+        try:
+            body = base64.b64decode(self.data, validate=True)
+        except (binascii.Error, ValueError):
+            raise invalid("INVALID_REQUEST", "Image data must be base64.") from None
+        if camera.media_type(body) != self.media_type:
+            raise invalid("INVALID_REQUEST", f"Image data is not {self.media_type}.")
+        return body
+
+
 class ChatMessage(ApiModel):
     role: Literal["system", "user", "assistant"]
     content: str
+    images: list[Image] | None = Field(None, max_length=4)
+
+
+class NotifyIn(ApiModel):
+    subject: str = Field(min_length=1, max_length=120, pattern=r"^[^\r\n]+$")
+    text: str = Field(min_length=1, max_length=5000)
+    image: Image | None = None
 
 
 class ChatIn(ApiModel):
@@ -167,6 +190,7 @@ def _grants(grant: Grant) -> dict[str, Any]:
         "twilio": after("twilio."),
         "github": after("github."),
         "startsAgents": after("agents.start:"),
+        "camera": after("camera.snapshot:"),
         "cloudProviders": after("cloud."),
     }
 
@@ -349,6 +373,11 @@ def _relay(resp: httpx.Response) -> Response:
 
 
 def _chat_request(state: BrokerState, grant: Grant, body: ChatIn, stream: bool) -> httpx.Request:
+    for message in body.messages:
+        if message.images and message.role != "user":
+            raise invalid("INVALID_REQUEST", "Only user messages may carry images.")
+        for image in message.images or []:
+            image.decoded()
     payload = {**body.model_dump(by_alias=True, exclude_none=True), "stream": stream}
     return state.gateway.build_request(
         "POST", "/llm/chat", json=payload, headers={"x-capability-token": grant.token}
@@ -500,6 +529,26 @@ async def gmail_get(
 ) -> Any:
     grant.require("google.gmail.readonly")
     return await state.google.gmail_get(message_id)
+
+
+@router.post("/google/gmail/notify-owner", summary="Email the owner (their own address only)")
+async def gmail_notify_owner(
+    body: NotifyIn, grant: Grant = Depends(agent_grant), state: BrokerState = Depends(broker_state)
+) -> Any:
+    grant.require("google.gmail.send")
+    image = (body.image.media_type, body.image.decoded()) if body.image else None
+    return await state.google.notify_owner(body.subject, body.text, image)
+
+
+# --- Camera --------------------------------------------------------------------------------
+
+
+@router.get("/camera/frame", summary="One snapshot from the configured camera")
+async def camera_frame(
+    grant: Grant = Depends(agent_grant), state: BrokerState = Depends(broker_state)
+) -> Any:
+    grant.require("camera.snapshot:config")
+    return await camera.snapshot(state.http, grant.configured("cameraUrl"))
 
 
 # --- GitHub pull requests (only the repository the owner configured) ------------------------

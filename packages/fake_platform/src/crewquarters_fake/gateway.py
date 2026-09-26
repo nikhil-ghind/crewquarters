@@ -72,7 +72,7 @@ class Gateway:
 
     def profile(self, name: str) -> ProfileInfo:
         parts = name.split(".")
-        if name.startswith("local.general.") and self.settings.llm_base_url:
+        if name.startswith(("local.general.", "local.vision.")) and self.settings.llm_base_url:
             model = self.settings.llm_model or parts[-1]
             return ProfileInfo(name, "local", "openai-compatible", model, "openai-compatible")
         if name.startswith("local."):
@@ -162,7 +162,10 @@ class Gateway:
         return data
 
     async def _openai_compatible(self, info: ProfileInfo, request: dict[str, Any]) -> Completion:
-        body: dict[str, Any] = {"model": info.model, "messages": request["messages"]}
+        body: dict[str, Any] = {
+            "model": info.model,
+            "messages": [_openai_message(m) for m in request["messages"]],
+        }
         if request.get("temperature") is not None:
             body["temperature"] = request["temperature"]
         if request.get("maxOutputTokens"):
@@ -193,3 +196,14 @@ class Gateway:
             int(usage.get("completion_tokens", 0)),
             finish,
         )
+
+
+def _openai_message(message: dict[str, Any]) -> dict[str, Any]:
+    """Like the real gateway: images become OpenAI ``image_url`` data-URL content parts."""
+    if not message.get("images"):
+        return {"role": message["role"], "content": message["content"]}
+    parts: list[dict[str, Any]] = [{"type": "text", "text": message["content"]}]
+    for image in message["images"]:
+        url = f"data:{image['mediaType']};base64,{image['data']}"
+        parts.append({"type": "image_url", "image_url": {"url": url}})
+    return {"role": message["role"], "content": parts}

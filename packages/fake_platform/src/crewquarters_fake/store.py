@@ -64,6 +64,12 @@ def new_id(prefix: str = "") -> str:
     return str(uuid.uuid4())
 
 
+# A 1x1 grey PNG: the fake camera's frame until a test or scenario sets others.
+BLANK_PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNoAAAAggCBd81ytgAAAABJRU5ErkJggg=="
+)
+
+
 @dataclass
 class CatalogEntry:
     agent_id: str
@@ -258,6 +264,10 @@ class Store:
         self.github = GitHubProvider()
         self.knowledge = KnowledgeIndex()
         self.gateway = Gateway(self.settings)
+        # Camera frames served in turn (base64 PNG/JPEG), and owner emails "sent".
+        self.camera_frames: list[str] = [BLANK_PNG]
+        self.camera_calls = 0
+        self.owner_emails: list[dict[str, Any]] = []
         # The fake engine always exists: a simulated callee queues its lines here.
         self.fake_speech = FakeSpeechEngine()
         self.crewq_gateway = _crewq_gateway(self.settings)

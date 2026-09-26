@@ -122,3 +122,20 @@ def test_rule_delay_is_reported() -> None:
         [{"name": "slow", "match": {}, "respond": {"text": "ok"}, "delayMs": 25}]
     )
     assert rules.match([{"role": "user", "content": "x"}], None).delay_ms == 25  # type: ignore[union-attr]
+
+
+def test_openai_compatible_messages_carry_images_as_data_urls() -> None:
+    from crewquarters_fake.gateway import _openai_message
+
+    image = {"mediaType": "image/png", "data": "AAAA"}
+    assert _openai_message({"role": "user", "content": "hi", "images": None}) == {
+        "role": "user",
+        "content": "hi",
+    }
+    assert _openai_message({"role": "user", "content": "hi", "images": [image]}) == {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "hi"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+        ],
+    }

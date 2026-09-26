@@ -22,6 +22,11 @@ capabilities:
     from: permissions.connectors.google
     enforcedBy: capability_broker
     ui: "Read your Gmail messages"
+  - pattern: "google.gmail.send"
+    from: permissions.connectors.google
+    enforcedBy: capability_broker
+    resource: the connected account's own address (the broker sets the recipient)
+    ui: "Email alerts to your own Gmail address"
   - pattern: "google.spreadsheets"
     from: permissions.connectors.google
     enforcedBy: capability_broker
@@ -51,6 +56,11 @@ capabilities:
     enforcedBy: capability_broker (and control_api, which enforces the platform limits)
     resource: config.agentTargets.<agent-id> (only when the agent is installed more than once)
     ui: "Start the {agent-id} agent"
+  - pattern: "camera.snapshot:config"
+    from: permissions.camera
+    enforcedBy: capability_broker
+    resource: config.cameraUrl
+    ui: "Take snapshots from the camera you configure"
   - pattern: "cloud.openai"
     from: permissions.cloudProviders
     enforcedBy: model_gateway

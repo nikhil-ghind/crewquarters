@@ -95,7 +95,7 @@
             "google": {
               "type": "array",
               "uniqueItems": true,
-              "items": {"type": "string", "enum": ["gmail.readonly", "spreadsheets"]}
+              "items": {"type": "string", "enum": ["gmail.readonly", "gmail.send", "spreadsheets"]}
             },
             "twilio": {
               "type": "array",
@@ -114,6 +114,12 @@
               "items": {"type": "string", "enum": ["pull_requests.read", "pull_requests.write"]}
             }
           }
+        },
+        "camera": {
+          "description": "Camera snapshots. 'config' means the snapshot URL set in installation config (cameraUrl).",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "enum": ["config"]}
         },
         "cloudProviders": {
           "type": "array",

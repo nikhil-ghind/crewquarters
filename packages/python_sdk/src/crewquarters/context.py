@@ -8,6 +8,7 @@ from typing import Any
 
 from crewquarters._transport import BrokerClient
 from crewquarters.agents import AgentsClient
+from crewquarters.camera import CameraClient
 from crewquarters.events import EventsClient
 from crewquarters.github import GitHubClient
 from crewquarters.google import GoogleClients
@@ -67,6 +68,7 @@ class Grants:
     twilio: tuple[str, ...] = ()
     github: tuple[str, ...] = ()
     starts_agents: tuple[str, ...] = ()
+    camera: tuple[str, ...] = ()
     cloud_providers: tuple[str, ...] = ()
     # Requested profile (family or exact) -> the variant the owner approved.
     model_bindings: dict[str, str] = field(default_factory=dict)
@@ -83,6 +85,7 @@ class Grants:
             twilio=items("twilio"),
             github=items("github"),
             starts_agents=items("startsAgents"),
+            camera=items("camera"),
             cloud_providers=items("cloudProviders"),
             model_bindings={str(k): str(v) for k, v in (data.get("modelBindings") or {}).items()},
         )
@@ -146,6 +149,7 @@ class RunContext[ConfigT]:
         self.github = GitHubClient(transport)
         self.agents = AgentsClient(transport)
         self.voice = VoiceClient(transport)
+        self.camera = CameraClient(transport)
         self._transport = transport
 
     def model_endpoint(self) -> ModelEndpoint:

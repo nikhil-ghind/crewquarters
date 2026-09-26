@@ -69,6 +69,7 @@ async def test_handshake_returns_run_context(harness: Any) -> None:
         "twilio": [],
         "github": [],
         "startsAgents": [],
+        "camera": [],
         "cloudProviders": [],
     }
     assert 0 < body["limits"]["activeTimeoutSeconds"] <= 600

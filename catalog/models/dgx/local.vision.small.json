@@ -1,0 +1,69 @@
+{
+  "id": "local.vision.small",
+  "family": "local.vision",
+  "displayName": "Vision (small) - Qwen2.5-VL 7B Instruct",
+  "backend": "vllm",
+  "source": {
+    "type": "huggingface",
+    "repo": "Qwen/Qwen2.5-VL-7B-Instruct",
+    "revision": "cc594898137f460bfe9f0759e9844b3ce807cfb5",
+    "allowPatterns": [
+      "*.json",
+      "*.safetensors",
+      "*.txt",
+      "*.model",
+      "tokenizer*",
+      "LICENSE"
+    ]
+  },
+  "license": {
+    "name": "Apache-2.0",
+    "gated": false,
+    "url": "https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct"
+  },
+  "quantization": "bf16",
+  "launch": {
+    "image": "nvcr.io/nvidia/vllm@sha256:15f380ad9c32f0ac57ac16e4b778c6f733c88b9ffe3a936035d0a59ad17b1aab",
+    "gpu": true,
+    "ipcHost": true,
+    "port": 8000,
+    "healthPath": "/v1/models",
+    "startupTimeoutSeconds": 900,
+    "args": [
+      "vllm",
+      "serve",
+      "{model_path}",
+      "--served-model-name",
+      "{served_model_name}",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "{port}",
+      "--max-model-len",
+      "8192",
+      "--gpu-memory-utilization",
+      "0.25",
+      "--enable-prefix-caching"
+    ],
+    "env": {
+      "HF_HUB_OFFLINE": "1",
+      "VLLM_NO_USAGE_STATS": "1"
+    }
+  },
+  "memory": {
+    "weightBytes": 16584414560,
+    "startupPeakBytes": 36507222016,
+    "validated": false
+  },
+  "contextLimit": 8192,
+  "capabilities": [
+    "chat",
+    "structured_output",
+    "streaming",
+    "vision"
+  ],
+  "validation": {
+    "status": "candidate",
+    "note": "Pinned candidate for the Intruder Watch agent (one image per request). Measure memory and latency on the target GB10 before the demo."
+  }
+}

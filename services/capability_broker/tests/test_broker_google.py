@@ -52,7 +52,8 @@ async def test_start_builds_exact_consent_url(live_harness: Any, user_id: uuid.U
     params = url.params
     assert str(url).startswith(google.AUTH_URL + "?")
     assert params["redirect_uri"] == f"{live_harness.PUBLIC}/api/v1/connections/google/callback"
-    assert params["scope"] == " ".join(sorted(google.SCOPES.values()))
+    requested = [google.SCOPES["gmail.readonly"], google.SCOPES["spreadsheets"]]
+    assert params["scope"] == " ".join(sorted(requested))
     assert params["access_type"] == "offline" and params["include_granted_scopes"] == "true"
     assert params["code_challenge_method"] == "S256" and len(state) >= 43
 

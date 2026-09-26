@@ -31,7 +31,7 @@ import { useTimeZone } from '../common/useTimeZone';
 import { draftFromCron, cronFor, newDraft, ScheduleEditor, summary, type ScheduleDraft } from '../schedules/ScheduleEditor';
 import { installationStatus, ReadinessList } from './AgentBits';
 import { resourcesText } from './AgentDetailPage';
-import { RunNowButton } from './RunNowButton';
+import { RunNowButton, StopButton } from './RunNowButton';
 import { useFormOptions } from './useFormOptions';
 
 const TABS = ['overview', 'runs', 'schedule', 'configuration', 'permissions', 'advanced'] as const;
@@ -95,7 +95,12 @@ function InstallationView({ inst, tab }: { inst: InstallationOut; tab: Tab }) {
             </label>
           </>
         }
-        actions={<RunNowButton installation={inst} />}
+        actions={
+          <>
+            <StopButton installation={inst} />
+            <RunNowButton installation={inst} />
+          </>
+        }
       />
       {patch.isError ? <ErrorPanel error={patch.error} title="Could not change this agent" /> : null}
       {inst.needsReapproval ? (

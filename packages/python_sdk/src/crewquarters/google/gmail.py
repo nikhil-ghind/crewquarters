@@ -89,6 +89,23 @@ class GmailClient:
     ) -> IdIteration:
         return IdIteration(self, query, limit, label_ids)
 
+    async def notify_owner(
+        self, subject: str, text: str, image: dict[str, Any] | None = None
+    ) -> str:
+        """Email the owner's own Gmail address (the broker sets the recipient). Returns the
+        Gmail message id. Not retried: a lost response could otherwise send twice."""
+        body: dict[str, Any] = {"subject": subject, "text": text}
+        if image is not None:
+            body["image"] = {"mediaType": image["mediaType"], "data": image["data"]}
+        data = await self._transport.request(
+            "POST",
+            "/google/gmail/notify-owner",
+            operation="gmail.notify",
+            idempotent=False,
+            json=body,
+        )
+        return str(data["id"])
+
     async def get_message(self, message_id: str, *, max_chars: int = 4000) -> GmailMessage:
         data = await self._transport.request(
             "GET",

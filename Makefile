@@ -11,14 +11,15 @@ MYPY_PATHS := packages/shared_python/src services/control_api/src services/sched
 	packages/secret_store/src services/capability_broker/src services/knowledge/src \
 	packages/python_sdk/src packages/fake_platform/src packages/crewctl/src \
 	agents/contract_probe/src agents/gmail_digest/src agents/caller/src agents/personal_space/src \
-	packages/speech_server/src agents/voice_caller/src agents/pr_reviewer/src
+	packages/speech_server/src agents/voice_caller/src agents/pr_reviewer/src \
+	agents/intruder_watch/src
 # Suites that need no PostgreSQL (SDK, fake platform, crewctl, agents, fake-platform integration).
 SDK_TESTS := packages/python_sdk packages/fake_platform packages/crewctl agents tests/integration \
 	packages/speech_server \
 	tests/contract/test_broker_contract_files.py tests/contract/test_fake_route_parity.py \
 	tests/contract/test_fake_traffic_conformance.py
 
-AGENTS := contract_probe gmail_digest caller personal_space pr_reviewer
+AGENTS := contract_probe gmail_digest caller personal_space pr_reviewer intruder_watch
 REGISTRY ?= localhost:5001
 FAKE_URL ?= http://127.0.0.1:8090
 VOICE_COMPOSE := $(COMPOSE) --profile voice

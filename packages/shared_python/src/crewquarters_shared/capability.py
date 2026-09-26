@@ -56,6 +56,8 @@ def capabilities_from_permissions(
         caps.add(f"github.{op}")
     for agent_id in permissions.get("startsAgents", []) or []:
         caps.add(f"agents.start:{agent_id}")
+    for camera in permissions.get("camera", []):
+        caps.add(f"camera.snapshot:{camera}")
     for provider in permissions.get("cloudProviders", []):
         caps.add(f"cloud.{provider}")
     if permissions.get("userInput"):

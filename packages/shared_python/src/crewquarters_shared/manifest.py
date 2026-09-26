@@ -26,6 +26,7 @@ DEFAULT_VARIANTS: dict[str, str] = {
     # Speech models for voice agents: streaming-capable speech-to-text and text-to-speech.
     "local.stt": "local.stt.small",
     "local.tts": "local.tts.small",
+    "local.vision": "local.vision.small",
 }
 # Variants known to the v1 catalog. The model gateway owner extends this list.
 KNOWN_VARIANTS: frozenset[str] = frozenset(
@@ -35,6 +36,7 @@ KNOWN_VARIANTS: frozenset[str] = frozenset(
         "local.embedding.small",
         "local.stt.small",
         "local.tts.small",
+        "local.vision.small",
     }
 )
 

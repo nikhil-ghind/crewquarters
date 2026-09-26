@@ -191,6 +191,14 @@ describe('PermissionList', () => {
     expect(screen.getByText('New in this version')).toBeInTheDocument();
     expect(screen.getByText('Place phone calls with a fixed script').closest('li')).toHaveAttribute('data-emphasis', 'phone');
   });
+
+  it('describes the camera and owner-email permissions', () => {
+    const items = permissionItems({ camera: ['config'], connectors: { google: ['gmail.send'] } });
+    expect(items.map((i) => [i.id, i.capability])).toEqual([
+      ['camera.snapshot:config', 'Take snapshots from the camera you configure'],
+      ['google.gmail.send', 'Email alerts to your own Gmail address'],
+    ]);
+  });
 });
 
 describe('ConfirmDialog', () => {

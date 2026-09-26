@@ -23,6 +23,7 @@ export const GOOGLE_RETURN_KEY = 'google.returnTo';
 
 const GOOGLE_CAPABILITIES: { id: GoogleCapability; label: string; help: string }[] = [
   { id: 'gmail.readonly', label: 'Read Gmail (read-only)', help: 'Used by Daily Gmail Digest. Cannot send or delete mail.' },
+  { id: 'gmail.send', label: 'Email alerts to you', help: 'Used by Intruder Watch. Sends only to your own Gmail address. Needs Read Gmail to learn it.' },
   { id: 'spreadsheets', label: 'Google Sheets', help: 'Used by Caller to read contacts and write results to the sheet you configure.' },
 ];
 
