@@ -57,12 +57,12 @@ h3 {
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--color-primary-strong);
   text-underline-offset: 2px;
 }
 
 a:hover {
-  color: var(--color-primary-hover);
+  color: var(--color-primary-strong-hover);
 }
 
 code,
@@ -108,9 +108,9 @@ textarea {
   top: -100px;
   z-index: 100;
   background: var(--color-surface);
-  color: var(--color-primary);
+  color: var(--color-primary-strong);
   padding: var(--space-2) var(--space-4);
-  border: 2px solid var(--color-primary);
+  border: 2px solid var(--color-primary-strong);
   border-radius: var(--radius-control);
   font-weight: 600;
 }

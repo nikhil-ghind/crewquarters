@@ -9,6 +9,7 @@ import { RequireAuth } from './shell/AuthGate';
 
 // Route-level code splitting (section 13.19).
 const LoginPage = lazy(() => import('./features/auth/LoginPage'));
+const SignUpPage = lazy(() => import('./features/auth/SignUpPage'));
 const SetupWizard = lazy(() => import('./features/setup/SetupWizard'));
 const OverviewPage = lazy(() => import('./features/overview/OverviewPage'));
 const MarketplacePage = lazy(() => import('./features/agents/MarketplacePage'));
@@ -50,6 +51,7 @@ function Bare({ children }: { children: ReactNode }) {
 
 export const routes: RouteObject[] = [
   { path: '/login', element: <Bare><LoginPage /></Bare> },
+  { path: '/signup', element: <Bare><SignUpPage /></Bare> },
   { path: '/setup', element: <Bare><SetupWizard /></Bare> },
   { path: '/setup/:step', element: <Bare><SetupWizard /></Bare> },
   // Component gallery: static fixtures only, no API calls (see docs/web-ui.md).

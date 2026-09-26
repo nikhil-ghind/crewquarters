@@ -6,7 +6,7 @@ import { api, mutate } from '../../api/client';
 import { isApiError, remediation } from '../../api/errors';
 import { keys, useBootstrapStatus } from '../../api/queries';
 import { session } from '../../api/session';
-import { Button } from '../../components/Button';
+import { Button, ButtonLink } from '../../components/Button';
 import { Banner } from '../../components/Feedback';
 import { Field } from '../../components/Field';
 import { useDocumentTitle } from '../../components/Layout';
@@ -59,7 +59,14 @@ export default function LoginPage() {
         </span>
         <span className="brand-name">Crewquarters</span>
       </header>
-      <main id="main" className="bare-main">
+      <main id="main" className="bare-main auth-split">
+        <section className="auth-intro stack" aria-label="About Crewquarters">
+          <p className="auth-intro-title">Your AI crew, running on your own device.</p>
+          <p>
+            Agents read your mail, call your contacts, and answer from your documents. You approve anything risky, and
+            nothing leaves the device unless you say so.
+          </p>
+        </section>
         <div className="card auth-card stack">
           <div className="stack-sm">
             <h1>Sign in</h1>
@@ -99,10 +106,13 @@ export default function LoginPage() {
               Sign in
             </Button>
           </form>
+          <ButtonLink to="/signup" className="btn-block">
+            Create an account
+          </ButtonLink>
           {bootstrap.data?.ownerExists === false ? (
             <p className="muted">
-              First time on this device? <Link to="/setup">Set up Crewquarters</Link> with the setup code shown by the
-              installer.
+              First time on this device? <Link to="/setup">Set up Crewquarters</Link> step by step with the setup code
+              shown by the installer.
             </p>
           ) : null}
         </div>

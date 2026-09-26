@@ -23,7 +23,7 @@ export default function ApprovalsPage() {
         isEmpty={(d) => d.length === 0}
         empty={
           <EmptyState icon={Hand} title="Nothing needs you">
-            When an agent asks a question or needs approval, it appears here, on the Overview and on the run page.
+            When an agent asks a question or needs approval, it appears here, on Home and on the run page.
           </EmptyState>
         }
       >
