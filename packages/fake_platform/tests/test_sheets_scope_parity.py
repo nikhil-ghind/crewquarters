@@ -68,6 +68,17 @@ SCOPED = [
     ("append", "Contacts!A:D", False),
 ]
 KEYS = {"get": "inputRange", "update": "resultRange", "append": "resultRange"}
+# The voice caller's defaults: its result rows are ten columns wide, and it never writes a
+# contact's status cell (that stays the owner's; docs/voice/README.md).
+VOICE_CONFIG = {"spreadsheetId": SHEET, "inputRange": "Contacts!A2:D", "resultRange": "Results!A:J"}
+VOICE_SCOPED = [
+    ("inputRange", "Contacts!A2:D", True),
+    ("resultRange", "Results!A1:J1", True),
+    ("resultRange", "Results!A4:J4", True),
+    ("resultRange", "Results!A4:K4", False),
+    ("resultRange", "Contacts!D2", False),
+    ("resultRange", "Contacts!A2:D2", False),
+]
 
 
 def _broker_parse(text: str) -> tuple[Any, ...] | None:
@@ -123,6 +134,7 @@ CONFIGS = [
     {**CONFIG, "inputRange": "", "resultRange": 7},
     {**CONFIG, "spreadsheetId": "someone-elses-sheet"},
     {"inputRange": "Contacts!A2:D"},  # no spreadsheet
+    VOICE_CONFIG,
 ]
 
 
@@ -230,3 +242,15 @@ async def test_sheets_use_configured_spreadsheet_only(
     )
     assert resp.status_code == 403 and resp.json()["error"]["code"] == "PERMISSION_DENIED"
     assert resp.json()["error"]["details"] == {"key": "spreadsheetId"}
+
+
+@pytest.mark.parametrize(("key", "requested", "allowed"), VOICE_SCOPED)
+def test_the_voice_callers_writes_are_scoped_like_the_real_broker(
+    key: str, requested: str, allowed: bool
+) -> None:
+    outcome = _broker_outcome(VOICE_CONFIG, key, requested)
+    assert _fake_outcome(VOICE_CONFIG, key, requested) == outcome
+    if allowed:
+        assert outcome == ("ok",)
+    else:
+        assert outcome[:2] == (403, "PERMISSION_DENIED") and outcome[3] == {"key": key}

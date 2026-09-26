@@ -1,4 +1,4 @@
-"""Result rows (one per called contact) and contact status updates in the owner's sheet."""
+"""Result rows (one per called contact) in the result tab of the owner's sheet."""
 
 from __future__ import annotations
 

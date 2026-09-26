@@ -94,9 +94,19 @@ def check_calls(outcome: RunOutcome, sheets: dict[str, Any]) -> None:
     assert rows[2]["durationSeconds"] and rows[2]["durationSeconds"] > 0
     everything = json.dumps(outcome.events) + outcome.log + json.dumps(outcome.result)
     assert not FULL_NUMBER.search(everything), "a full phone number leaked"
+    # Agents write only within the configured resultRange (the broker refuses anything else), so
+    # each call lands as a Results row at the contact's own row number and the Contacts tab,
+    # status column included, stays the owner's (docs/voice/README.md, "Results").
+    assert all(r["sheetWrite"] == "written" for r in rows.values()), outcome.result
     contacts = sheets["voice-sheet"]["Contacts"]
-    assert contacts[1][3] == "called"
-    assert contacts[2][3] == "" and contacts[3][3] == ""
+    assert [contacts[i][3] for i in (1, 2, 3)] == ["", "", ""]
+    results = sheets["voice-sheet"]["Results"]
+    assert results[0][:5] == ["source_row", "name", "phone_masked", "call_id", "disposition"]
+    assert [(results[i][0], results[i][4]) for i in (1, 2, 3)] == [
+        ("2", "completed"),
+        ("3", "voicemail"),
+        ("4", "busy"),
+    ]
     metrics = [e for e in outcome.events if e["type"] == "run.metric"]
     assert any(m["payload"]["name"] == "turn_latency_p50_ms" for m in metrics)
 
