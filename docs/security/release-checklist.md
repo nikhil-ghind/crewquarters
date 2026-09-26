@@ -109,7 +109,7 @@ decision:
 | Debian and Alpine base packages (GPL/LGPL) | various | Accept as mere aggregation. The per-package list is in the SBOMs, and the source is available from the distribution archives. |
 | NVIDIA vLLM container | NVIDIA Deep Learning Container License | Review before redistributing it in an offline bundle (`--with-vllm`). Pulling it from NGC on the appliance is the default. |
 | Xenova/jina-embeddings-v2-small-en | No license in the repository; the base model is Apache-2.0 | Accept with attribution to Jina AI in NOTICE, or switch to an export that carries the license. |
-| Crewquarters' own code | No `LICENSE` file | **Blocking for a public release**. The project owner must choose a license. |
+| Crewquarters' own code | Apache-2.0 (`LICENSE`, chosen 2026-09-25) | Resolved. `NOTICE` and the `.deb` copyright file state it. |
 
 ## Open risks for signoff
 

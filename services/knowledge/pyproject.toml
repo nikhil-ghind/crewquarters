@@ -2,6 +2,7 @@
 name = "crewquarters-knowledge"
 version = "0.1.0"
 description = "Crewquarters knowledge service: document ingestion, local embeddings, pgvector retrieval"
+license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "crewquarters-shared",

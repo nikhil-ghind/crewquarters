@@ -2,6 +2,7 @@
 name = "crewquarters-secret-store"
 version = "0.1.0"
 description = "Envelope encryption of provider secrets under the device master key"
+license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
 dependencies = ["cryptography>=43.0", "crewquarters-shared"]
 

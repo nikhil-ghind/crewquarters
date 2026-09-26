@@ -2,6 +2,7 @@
 name = "crewquarters-capability-broker"
 version = "0.1.0"
 description = "Crewquarters capability broker: agent capability checks, Google and Twilio adapters"
+license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "crewquarters-shared",

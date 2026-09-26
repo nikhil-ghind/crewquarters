@@ -1,9 +1,9 @@
 Crewquarters
 Copyright 2026 the Crewquarters authors.
 
-The repository does not yet carry a LICENSE file for Crewquarters' own code; the project
-license is an open release item (docs/security/release-checklist.md). Until it is chosen,
-no license to Crewquarters' own code is granted by this notice.
+Crewquarters' own code is licensed under the Apache License, Version 2.0 (see LICENSE).
+Unless required by applicable law or agreed to in writing, it is distributed on an "AS IS"
+BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
 This product includes or downloads third-party software and models. The full inventory,
 with versions, pinned references, and licenses, is THIRD_PARTY_LICENSES.md (installed by
