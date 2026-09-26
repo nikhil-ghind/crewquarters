@@ -96,7 +96,7 @@ test('once the owner exists, sign-in does not offer setup and the wizard offers 
 
 test('a fresh device can be claimed from the sign-up page', async ({ page }) => {
   await page.goto('/login');
-  await page.getByRole('link', { name: 'Create your account' }).click();
+  await page.getByRole('link', { name: 'Create an account' }).click();
   await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
   await page.getByLabel('Setup code').fill(SETUP_CODE);
   await page.getByLabel('Username').fill('owner');

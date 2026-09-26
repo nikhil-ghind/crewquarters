@@ -140,7 +140,7 @@ describe('bootstrap status', () => {
     server.use(http.get('/api/v1/bootstrap/status', () => HttpResponse.json({ ownerExists: false })));
     renderWithProviders(<LoginPage />, { path: '/login', route: '/login' });
     expect(await screen.findByRole('link', { name: 'Set up Crewquarters' })).toHaveAttribute('href', '/setup');
-    expect(screen.getByRole('link', { name: 'Create your account' })).toHaveAttribute('href', '/signup');
+    expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute('href', '/signup');
   });
 
   it('the sign-in page hides the setup link once the owner exists', async () => {
@@ -156,6 +156,8 @@ describe('bootstrap status', () => {
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Set up Crewquarters' })).not.toBeInTheDocument();
     expect(screen.queryByText(/First time on this device/)).not.toBeInTheDocument();
+    // Sign-up is always reachable; the page itself explains when an owner already exists.
+    expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute('href', '/signup');
   });
 
   it('the setup owner step does not offer a second owner account', async () => {
